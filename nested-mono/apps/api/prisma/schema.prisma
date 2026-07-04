@@ -1,0 +1,387 @@
+// Prisma schema for the Nested co-living platform.
+// Covers the core domain from ARCHITECTURE.md §6.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  GUEST
+  HOST
+  ADMIN
+}
+
+enum RoomType {
+  ONE_ROOM
+  SHARE_ROOM
+  WHOLE_HOUSE
+  APARTMENT
+}
+
+enum GenderPolicy {
+  ANY
+  MALE_ONLY
+  FEMALE_ONLY
+}
+
+enum ReservationStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELLED_BY_GUEST
+  CANCELLED_BY_HOST
+  COMPLETED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String?       // null for OAuth-only accounts
+  name         String
+  role         Role          @default(GUEST)
+  provider     String?       // "google" | null
+  providerId   String?
+  avatarColor  String        @default("#FF5A5F")
+  bio          String?
+  suspended    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+
+  listings     Room[]        @relation("HostRooms")
+  reservations Reservation[]
+  reviews      Review[]
+  messages     Message[]
+  sessions     RefreshToken[]
+  hostProfile  HostProfile?
+  properties   Property[]     @relation("HostProperties")
+  notifications Notification[]
+  wishlists    Wishlist[]
+  favorites    Favorite[]
+  reportsMade  Report[]       @relation("Reporter")
+  chatRooms    ChatRoom[]     @relation("GuestChatRooms")
+  settlements  Settlement[]
+
+  @@index([provider, providerId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Room {
+  id             String       @id @default(cuid())
+  hostId         String
+  host           User         @relation("HostRooms", fields: [hostId], references: [id])
+  propertyId     String?
+  property       Property?    @relation(fields: [propertyId], references: [id])
+  name           String
+  region         String
+  lat            Float
+  lng            Float
+  roomType       RoomType
+  genderPolicy   GenderPolicy @default(ANY)
+  monthlyRent    Int
+  deposit        Int
+  cleaningFee    Int
+  maintenanceFee Int
+  minStayMonths  Int          @default(3)
+  availableFrom  DateTime
+  petsAllowed    Boolean      @default(false)
+  smokingAllowed Boolean      @default(false)
+  parking        Boolean      @default(false)
+  published      Boolean      @default(false)
+  images         Image[]
+  reservations   Reservation[]
+  reviews        Review[]
+  amenities      RoomAmenity[]
+  calendar       CalendarBlock[]
+  chatRooms      ChatRoom[]
+  favorites      Favorite[]
+  createdAt      DateTime     @default(now())
+
+  @@index([region])
+  @@index([hostId])
+  @@index([propertyId])
+}
+
+// A building/address that contains one or more rentable Rooms.
+model Property {
+  id        String   @id @default(cuid())
+  hostId    String
+  host      User     @relation("HostProperties", fields: [hostId], references: [id])
+  title     String
+  address   String
+  region    String
+  city      String
+  zipCode   String?
+  lat       Float
+  lng       Float
+  builtYear Int?
+  floors    Int?
+  rooms     Room[]
+  createdAt DateTime @default(now())
+
+  @@index([hostId])
+  @@index([region])
+}
+
+// Extended profile for users acting as hosts (superhost, payout info, etc.).
+model HostProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio           String?
+  superhost     Boolean  @default(false)
+  responseRate  Int      @default(100)
+  payoutBank    String?
+  payoutAccount String?
+  createdAt     DateTime @default(now())
+}
+
+model Image {
+  id     String @id @default(cuid())
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  url    String
+  order  Int    @default(0)
+}
+
+model Reservation {
+  id             String            @id @default(cuid())
+  roomId         String
+  room           Room              @relation(fields: [roomId], references: [id])
+  guestId        String
+  guest          User              @relation(fields: [guestId], references: [id])
+  checkIn        DateTime
+  checkOut       DateTime
+  months         Int
+  status         ReservationStatus @default(PENDING_PAYMENT)
+  monthlyRent    Int
+  deposit        Int
+  cleaningFee    Int
+  maintenanceFee Int
+  serviceFee     Int
+  discount       Int               @default(0)
+  totalDueNow    Int
+  payment        Payment?
+  settlement     Settlement?
+  createdAt      DateTime          @default(now())
+
+  // DB-level guard against double-booking is enforced with an exclusion
+  // constraint on (roomId, tstzrange(checkIn, checkOut)) via a migration.
+  @@index([roomId, checkIn, checkOut])
+  @@index([guestId])
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  reservationId String        @unique
+  reservation   Reservation   @relation(fields: [reservationId], references: [id])
+  provider      String        // TOSS | PORTONE | STRIPE
+  providerTxnId String
+  amount        Int
+  status        PaymentStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  rating    Int
+  body      String
+  hostReply String?
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  chatRoomId String
+  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User     @relation(fields: [senderId], references: [id])
+  body       String?
+  imageUrl   String?  // S3 key served via CloudFront
+  readBy     String[] @default([])
+  createdAt  DateTime @default(now())
+
+  @@index([chatRoomId, createdAt])
+}
+
+model Coupon {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  type        String   // FIXED | PERCENT
+  value       Int
+  maxDiscount Int?
+  minSpend    Int      @default(0)
+  validFrom   DateTime
+  validTo     DateTime
+  usageLimit  Int?
+  usedCount   Int      @default(0)
+}
+
+// ── Notifications ──────────────────────────────────────────────────
+enum NotificationType {
+  RESERVATION
+  PAYMENT
+  MESSAGE
+  REVIEW
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+}
+
+// ── Wishlist (a named collection) + Favorite (a saved room in it) ───
+model Wishlist {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String     @default("찜 목록")
+  favorites Favorite[]
+  createdAt DateTime   @default(now())
+
+  @@index([userId])
+}
+
+model Favorite {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId     String
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  wishlistId String?
+  wishlist   Wishlist? @relation(fields: [wishlistId], references: [id])
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, roomId])
+  @@index([roomId])
+}
+
+// ── Reports (moderation) ───────────────────────────────────────────
+enum ReportTargetType {
+  ROOM
+  REVIEW
+  USER
+  MESSAGE
+}
+
+enum ReportStatus {
+  RECEIVED
+  IN_REVIEW
+  RESOLVED
+}
+
+model Report {
+  id         String           @id @default(cuid())
+  reporterId String
+  reporter   User             @relation("Reporter", fields: [reporterId], references: [id])
+  targetType ReportTargetType
+  targetId   String
+  reason     String
+  status     ReportStatus     @default(RECEIVED)
+  createdAt  DateTime         @default(now())
+
+  @@index([status])
+}
+
+// ── Amenities (many-to-many with Room) ─────────────────────────────
+model Amenity {
+  id    String        @id @default(cuid())
+  key   String        @unique // "wifi", "parking", "rooftop"
+  label String
+  icon  String?
+  rooms RoomAmenity[]
+}
+
+model RoomAmenity {
+  roomId    String
+  room      Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  amenityId String
+  amenity   Amenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, amenityId])
+}
+
+// ── ChatRoom (a conversation between a guest and a host about a room) ─
+model ChatRoom {
+  id        String    @id @default(cuid())
+  roomId    String
+  room      Room      @relation(fields: [roomId], references: [id])
+  guestId   String
+  guest     User      @relation("GuestChatRooms", fields: [guestId], references: [id])
+  hostId    String
+  messages  Message[]
+  createdAt DateTime  @default(now())
+
+  @@unique([roomId, guestId])
+  @@index([hostId])
+}
+
+// ── CalendarBlock (availability / blocked dates per room) ───────────
+model CalendarBlock {
+  id      String   @id @default(cuid())
+  roomId  String
+  room    Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  date    DateTime
+  blocked Boolean  @default(true)
+  reason  String?
+
+  @@unique([roomId, date])
+  @@index([roomId])
+}
+
+// ── Settlement (monthly host payout for a confirmed reservation) ────
+enum SettlementStatus {
+  SCHEDULED
+  PAID
+  ON_HOLD
+}
+
+model Settlement {
+  id            String           @id @default(cuid())
+  reservationId String           @unique
+  reservation   Reservation      @relation(fields: [reservationId], references: [id])
+  hostId        String
+  host          User             @relation(fields: [hostId], references: [id])
+  grossAmount   Int
+  commission    Int
+  netAmount     Int
+  status        SettlementStatus @default(SCHEDULED)
+  scheduledFor  DateTime
+  paidAt        DateTime?
+  createdAt     DateTime         @default(now())
+
+  @@index([hostId, status])
+}

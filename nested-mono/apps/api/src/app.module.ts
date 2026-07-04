@@ -1,0 +1,56 @@
+import { Module } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
+import { GraphQLModule } from "@nestjs/graphql";
+import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
+import { BullModule } from "@nestjs/bullmq";
+import { join } from "path";
+
+import { PrismaModule } from "./prisma/prisma.module";
+import { RedisModule } from "./redis/redis.module";
+import { AuthModule } from "./modules/auth/auth.controller";
+import { ReservationsModule } from "./modules/reservations/reservations.module";
+import { ChatModule } from "./modules/chat/chat.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { RoomsModule } from "./modules/rooms/rooms.resolver";
+import { StorageModule } from "./modules/storage/storage.controller";
+import { ReviewsModule } from "./modules/reviews/reviews.module";
+import { FavoritesModule } from "./modules/favorites/favorites.module";
+import { NotificationsApiModule } from "./modules/notifications-api/notifications-api.module";
+import { MessagesModule } from "./modules/messages/messages.module";
+import { AdminModule } from "./modules/admin/admin.module";
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+
+    // BullMQ shares the Redis connection.
+    BullModule.forRoot({
+      connection: {
+        url: process.env.REDIS_URL ?? "redis://localhost:6379",
+      },
+    }),
+
+    // GraphQL (optional) alongside REST — code-first, auto-generated schema.
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      autoSchemaFile: join(process.cwd(), "src/schema.gql"),
+      sortSchema: true,
+      playground: true,
+    }),
+
+    PrismaModule,
+    RedisModule,
+    AuthModule,
+    ReservationsModule,
+    ChatModule,
+    NotificationsModule,
+    RoomsModule,
+    StorageModule,
+    ReviewsModule,
+    FavoritesModule,
+    NotificationsApiModule,
+    MessagesModule,
+    AdminModule,
+  ],
+})
+export class AppModule {}

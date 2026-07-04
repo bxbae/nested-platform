@@ -1,0 +1,17 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Query {
+  room(id: ID!): RoomType
+  rooms(region: String, take: Int): [RoomType!]!
+}
+
+type RoomType {
+  deposit: Int!
+  id: ID!
+  monthlyRent: Int!
+  name: String!
+  published: Boolean!
+  region: String!
+}

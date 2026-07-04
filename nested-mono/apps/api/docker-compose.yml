@@ -1,0 +1,42 @@
+# Local dev infra for the Nested backend: PostgreSQL + Redis.
+#   docker compose up -d
+# Then: cp .env.example .env && npx prisma migrate dev && npm run start:dev
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nested-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nested
+      POSTGRES_PASSWORD: nested
+      POSTGRES_DB: nested
+    ports:
+      - "5432:5432"
+    volumes:
+      - nested_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nested"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nested-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - nested_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  nested_pg:
+  nested_redis:
