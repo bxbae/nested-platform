@@ -81,7 +81,7 @@ export class RoomsService {
     const page = hasMore ? items.slice(0, take) : items;
     return {
       items: page,
-      nextCursor: hasMore ? page[page.length - 1].id : null,
+      nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
       ...(total !== undefined ? { total } : {}),
     };
   }
