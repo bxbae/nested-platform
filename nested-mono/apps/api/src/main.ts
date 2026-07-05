@@ -37,6 +37,8 @@ async function bootstrap() {
   await redisAdapter.connect(process.env.REDIS_URL ?? "redis://localhost:6379");
   app.useWebSocketAdapter(redisAdapter);
 
-  await app.listen(process.env.PORT ?? 4000);
+  // Bind to 0.0.0.0 (not localhost) so the platform's proxy — Railway, Render,
+  // Docker, etc. — can route external traffic into the container.
+  await app.listen(process.env.PORT ?? 4000, "0.0.0.0");
 }
 bootstrap();
