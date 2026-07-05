@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Rings } from "./Rings";
 import { ThemeToggle } from "./ThemeToggle";
+import { AuthModal } from "./AuthModal";
+import { useAuth } from "@/lib/api/useAuth";
 
 const links = [
   { href: "/search", label: "숙소 검색" },
@@ -17,6 +20,8 @@ const links = [
 
 export function Nav() {
   const path = usePathname();
+  const { user, isAuthenticated, logout } = useAuth();
+  const [authOpen, setAuthOpen] = useState(false);
   return (
     <header
       style={{
@@ -64,7 +69,9 @@ export function Nav() {
                     fontWeight: active ? 600 : 450,
                     padding: "8px 14px",
                     borderRadius: 999,
-                    color: active ? "var(--text)" : "var(--text-2)",
+                    // Active pill is always white, so force a dark text color
+                    // (var(--text) is light in dark mode and would vanish here).
+                    color: active ? "#222222" : "var(--text-2)",
                     background: active ? "#fff" : "transparent",
                     border: active ? "1px solid var(--border)" : "1px solid transparent",
                   }}
@@ -76,15 +83,66 @@ export function Nav() {
             })}
           </nav>
           <ThemeToggle />
-          <Link
-            href="/browse"
-            className="btn btn-primary nav-cta press"
-            style={{ padding: "9px 18px" }}
-          >
-            Get started
-          </Link>
+          {isAuthenticated ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Link
+                href="/me"
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    background: "var(--brand, #FF5A5F)",
+                    color: "#fff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  {(user?.name ?? user?.email ?? "U").charAt(0).toUpperCase()}
+                </span>
+                {user?.name ?? "마이"}
+              </Link>
+              <button
+                onClick={logout}
+                className="press"
+                style={{
+                  fontSize: 13.5,
+                  color: "var(--text-2)",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 999,
+                  padding: "7px 14px",
+                  cursor: "pointer",
+                }}
+              >
+                로그아웃
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAuthOpen(true)}
+              className="btn btn-primary nav-cta press"
+              style={{ padding: "9px 18px", border: "none", cursor: "pointer" }}
+            >
+              Get started
+            </button>
+          )}
         </div>
       </div>
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </header>
   );
 }

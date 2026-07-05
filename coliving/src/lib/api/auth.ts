@@ -7,13 +7,39 @@ import { API_BASE_URL, USE_REAL_API } from "./config";
 import { api } from "./client";
 import { authStore, type AuthTokens, type AuthUser } from "./auth-store";
 
+// In demo mode (no backend) we fabricate a local session so the login UI is
+// fully clickable on the portfolio deployment. Tokens are dummy strings — the
+// app never calls a real API in this mode.
+function demoTokens(email: string, name?: string): AuthTokens {
+  return {
+    accessToken: "demo-access",
+    refreshToken: "demo-refresh",
+    user: {
+      id: "demo-user",
+      email,
+      role: "USER",
+      name: name ?? email.split("@")[0],
+    },
+  };
+}
+
 export async function register(email: string, password: string, name: string): Promise<AuthUser> {
+  if (!USE_REAL_API) {
+    const t = demoTokens(email, name);
+    authStore.set(t);
+    return t.user;
+  }
   const res = await api.post<AuthTokens>("/auth/register", { email, password, name }, { auth: false });
   authStore.set(res);
   return res.user;
 }
 
 export async function login(email: string, password: string): Promise<AuthUser> {
+  if (!USE_REAL_API) {
+    const t = demoTokens(email);
+    authStore.set(t);
+    return t.user;
+  }
   const res = await api.post<AuthTokens>("/auth/login", { email, password }, { auth: false });
   authStore.set(res);
   return res.user;
