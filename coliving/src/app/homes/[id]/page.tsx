@@ -3,21 +3,43 @@ import Link from "next/link";
 import { houses } from "@/lib/data";
 import { won } from "@/lib/format";
 import { ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
+import type { House } from "@/lib/types";
 import { jobHubs, estimateCommute, commuteBand } from "@/lib/commute";
 import { enrichHouse } from "@/lib/detail";
 import { BookingWidget } from "@/components/BookingWidget";
 import { Gallery } from "@/components/Gallery";
 import { DetailActions } from "@/components/DetailActions";
 import { LocationMap } from "@/components/LocationMap";
+import { USE_REAL_API } from "@/lib/api/config";
+import { getRoom } from "@/lib/api/rooms";
+
+// When the real API is on, detail pages are rendered on demand (the DB holds
+// the source of truth), so we allow params not returned by generateStaticParams.
+export const dynamicParams = true;
+
+// Resolve a single listing: from the live API when enabled, else the demo seed.
+async function loadHouse(id: string): Promise<House | null> {
+  if (USE_REAL_API) {
+    try {
+      return await getRoom(id);
+    } catch {
+      return null;
+    }
+  }
+  return houses.find((h) => h.id === id) ?? null;
+}
 
 export function generateStaticParams() {
+  // In live mode the listings live in the DB, so pre-render nothing and let
+  // pages render on demand. In demo mode, pre-render the seed listings.
+  if (USE_REAL_API) return [];
   return houses.map((h) => ({ id: h.id }));
 }
 
 // Per-listing SEO metadata (title, description, OG image).
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const house = houses.find((h) => h.id === id);
+  const house = await loadHouse(id);
   if (!house) return { title: "숙소를 찾을 수 없습니다" };
   const title = `${house.name.trim()} · ${house.region}`;
   const description = `${house.region}의 ${ROOM_TYPE_LABELS[house.roomType]} · 월 ${won(house.monthlyRent)} · ★ ${house.rating}. Nested에서 월 단위로 예약하세요.`;
@@ -52,7 +74,7 @@ export default async function HomeDetail({
 }) {
   const { id } = await params;
   const { hub: hubId } = await searchParams;
-  const base = houses.find((h) => h.id === id);
+  const base = await loadHouse(id);
   if (!base) notFound();
   const house = enrichHouse(base);
 
