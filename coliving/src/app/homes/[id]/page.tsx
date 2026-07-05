@@ -13,8 +13,11 @@ import { LocationMap } from "@/components/LocationMap";
 import { USE_REAL_API } from "@/lib/api/config";
 import { getRoom } from "@/lib/api/rooms";
 
-// When the real API is on, detail pages are rendered on demand (the DB holds
-// the source of truth), so we allow params not returned by generateStaticParams.
+// Render this page on demand so it always reads live data and the current
+// USE_REAL_API value at request time — never a stale build-time snapshot.
+// (Removing generateStaticParams + forcing dynamic avoids 404s when the DB
+// holds ids that weren't known at build time.)
+export const dynamic = "force-dynamic";
 export const dynamicParams = true;
 
 // Resolve a single listing: from the live API when enabled, else the demo seed.
@@ -29,12 +32,8 @@ async function loadHouse(id: string): Promise<House | null> {
   return houses.find((h) => h.id === id) ?? null;
 }
 
-export function generateStaticParams() {
-  // In live mode the listings live in the DB, so pre-render nothing and let
-  // pages render on demand. In demo mode, pre-render the seed listings.
-  if (USE_REAL_API) return [];
-  return houses.map((h) => ({ id: h.id }));
-}
+// (No generateStaticParams: this route is force-dynamic, so every listing —
+// demo or live — is resolved at request time via loadHouse.)
 
 // Per-listing SEO metadata (title, description, OG image).
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
