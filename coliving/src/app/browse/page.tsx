@@ -76,7 +76,9 @@ export default function Browse() {
                   cursor: "pointer",
                   border: on ? "1.5px solid var(--text)" : "1px solid var(--border)",
                   background: on ? "var(--text)" : "#fff",
-                  color: on ? "var(--bg)" : "var(--text)",
+                  // Inactive buttons are always white, so force dark text
+                  // (var(--text) is light in dark mode and would vanish).
+                  color: on ? "var(--bg)" : "#222222",
                   transition: "all .15s ease",
                 }}
               >

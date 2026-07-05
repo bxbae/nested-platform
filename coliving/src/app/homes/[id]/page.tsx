@@ -10,7 +10,7 @@ import { BookingWidget } from "@/components/BookingWidget";
 import { Gallery } from "@/components/Gallery";
 import { DetailActions } from "@/components/DetailActions";
 import { LocationMap } from "@/components/LocationMap";
-import { USE_REAL_API, API_BASE_URL } from "@/lib/api/config";
+import { USE_REAL_API } from "@/lib/api/config";
 import { getRoom } from "@/lib/api/rooms";
 
 // Render this page on demand so it always reads live data and the current
@@ -22,14 +22,10 @@ export const dynamicParams = true;
 
 // Resolve a single listing: from the live API when enabled, else the demo seed.
 async function loadHouse(id: string): Promise<House | null> {
-  console.log(`[loadHouse] id=${id} USE_REAL_API=${USE_REAL_API} API_BASE_URL=${API_BASE_URL}`);
   if (USE_REAL_API) {
     try {
-      const h = await getRoom(id);
-      console.log(`[loadHouse] live fetch OK: ${h?.name}`);
-      return h;
-    } catch (e) {
-      console.error(`[loadHouse] live fetch FAILED:`, e);
+      return await getRoom(id);
+    } catch {
       return null;
     }
   }
