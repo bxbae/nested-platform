@@ -52,9 +52,14 @@ export function AuthModal({
       onClick={onClose}
       style={{
         position: "fixed",
-        inset: 0,
-        zIndex: 100,
-        background: "rgba(0,0,0,0.5)",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(2px)",
+        WebkitBackdropFilter: "blur(2px)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -66,11 +71,12 @@ export function AuthModal({
         style={{
           width: "100%",
           maxWidth: 400,
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
+          background: "var(--surface, #ffffff)",
+          border: "1px solid var(--border, #ebebeb)",
           borderRadius: 20,
           padding: 28,
           position: "relative",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
         }}
       >
         <button
@@ -168,9 +174,9 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "11px 14px",
   borderRadius: 12,
-  border: "1px solid var(--border)",
-  background: "var(--bg)",
-  color: "var(--text)",
+  border: "1px solid var(--border, #ebebeb)",
+  background: "var(--bg-2, #f7f7f7)",
+  color: "var(--text, #222222)",
   fontSize: 15,
   outline: "none",
 };
