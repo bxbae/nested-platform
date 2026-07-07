@@ -95,11 +95,17 @@ export interface ApiRoom {
   smokingAllowed?: boolean;
   parking?: boolean;
   images?: ApiImage[];
-  amenities?: { amenity?: { name?: string } }[];
+  amenities?: { amenity?: { label?: string; name?: string } }[];
   host?: ApiHostProfile;
   rating?: number;
   reviews?: number;
   reviewCount?: number;
+  reviewList?: {
+    rating: number;
+    body: string;
+    createdAt?: string;
+    author?: { name?: string; avatarColor?: string };
+  }[];
   description?: string;
   blurb?: string;
   color?: string;
@@ -128,10 +134,19 @@ export function apiRoomToHouse(r: ApiRoom): House {
     bedrooms: 1,
     residents: 0,
     capacity: 1,
-    amenities: (r.amenities ?? []).map((a) => a.amenity?.name ?? "").filter(Boolean),
+    amenities: (r.amenities ?? []).map((a) => a.amenity?.label ?? a.amenity?.name ?? "").filter(Boolean),
     vibe: [],
     rating: r.rating ?? 0,
-    reviews: r.reviews ?? r.reviewCount ?? 0,
+    reviews: r.reviewCount ?? (Array.isArray(r.reviewList) ? r.reviewList.length : r.reviews ?? 0),
+    houseReviews: (r.reviewList ?? []).map((rv) => ({
+      author: rv.author?.name ?? "게스트",
+      rating: rv.rating,
+      date: rv.createdAt
+        ? `${new Date(rv.createdAt).getFullYear()}.${String(new Date(rv.createdAt).getMonth() + 1).padStart(2, "0")}`
+        : "",
+      body: rv.body,
+      avatarColor: rv.author?.avatarColor ?? "#FF5A5F",
+    })),
     color: r.color ?? "#FF5A5F",
     photo: gallery[0],
     gallery,

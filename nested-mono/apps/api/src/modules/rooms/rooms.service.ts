@@ -94,11 +94,28 @@ export class RoomsService {
 
     const room = await this.prisma.room.findUnique({
       where: { id },
-      include: { images: true, amenities: { include: { amenity: true } }, host: true },
+      include: {
+        images: true,
+        amenities: { include: { amenity: true } },
+        host: true,
+        reviews: {
+          orderBy: { createdAt: "desc" },
+          include: { author: { select: { name: true, avatarColor: true } } },
+        },
+      },
     });
     if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
-    await this.redis.cacheSet(cacheKey, room, 60);
-    return room;
+    // Flatten a rating summary the frontend adapter expects.
+    const reviewCount = room.reviews.length;
+    const rating =
+      reviewCount > 0
+        ? Math.round(
+            (room.reviews.reduce((s: number, rv: { rating: number }) => s + rv.rating, 0) / reviewCount) * 10,
+          ) / 10
+        : 0;
+    const result = { ...room, rating, reviewCount, reviewList: room.reviews };
+    await this.redis.cacheSet(cacheKey, result, 60);
+    return result;
   }
 
   // ── Create (host) ──
