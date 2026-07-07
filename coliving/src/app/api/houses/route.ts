@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { houses } from "@/lib/data";
 import { jobHubs, estimateCommute } from "@/lib/commute";
 import type { House } from "@/lib/types";
+import { loadHouses } from "@/lib/houses-source";
 
 interface HouseWithCommute extends House {
   commute?: { minutes: number; km: number; mode: string; hubId: string };
@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
   const sort = p.get("sort") ?? "recommended";
 
   const hub = hubId ? jobHubs.find((h) => h.id === hubId) : null;
+
+  const houses = await loadHouses();
 
   let result: HouseWithCommute[] = houses.map((h) => {
     if (!hub) return { ...h };

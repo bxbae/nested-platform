@@ -9,10 +9,27 @@ import {
   categories,
   totalListings,
 } from "@/lib/landing";
+import { loadHouses } from "@/lib/houses-source";
+import type { House } from "@/lib/types";
 
-export default function Home() {
+// Always render on demand so the recommended list reflects live DB rooms.
+export const dynamic = "force-dynamic";
+
+// Recommended homes come from the same source as the browse page
+// (live backend when enabled, else demo seed) via the shared module.
+async function loadRecommended(limit = 4): Promise<House[]> {
+  try {
+    const all = await loadHouses();
+    if (all.length > 0) return all.slice(0, limit);
+  } catch {
+    // fall through to demo seed on any error
+  }
+  return recommendedHomes(limit);
+}
+
+export default async function Home() {
   const regions = popularRegions(6);
-  const recommended = recommendedHomes(4);
+  const recommended = await loadRecommended(4);
   const cats = categories();
 
   return (
