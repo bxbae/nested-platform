@@ -107,7 +107,9 @@ async function main() {
           create: photos.map((url, i) => ({ url, order: i })),
         },
         amenities: {
-          create: amenityKeys.map((k) => ({ amenityId: amenityByKey[k] })),
+          create: amenityKeys.map((k) => ({
+            amenity: { connect: { id: amenityByKey[k] } },
+          })),
         },
         reviews: {
           create: reviews.map((rv) => ({
