@@ -1,14 +1,15 @@
 "use client";
 
 // Wrapper that loads the real Leaflet search map only on the client
-// (Leaflet needs `window`). Same props/hover contract as before.
+// (Leaflet needs `window`). Flex column so the map fills the height left by
+// the header — Leaflet needs a resolved pixel height to render tiles.
 import dynamic from "next/dynamic";
 import type { House } from "@/lib/types";
 
 const SearchMapInner = dynamic(() => import("./SearchMapInner"), {
   ssr: false,
   loading: () => (
-    <div style={{ width: "100%", height: "100%", minHeight: 420, background: "var(--secondary-soft)" }} />
+    <div style={{ flex: 1, minHeight: 300, background: "var(--secondary-soft)" }} />
   ),
 });
 
@@ -22,7 +23,10 @@ export function SearchMap({
   onHover: (id: string | null) => void;
 }) {
   return (
-    <div className="card" style={{ padding: 0, overflow: "hidden", height: "100%" }}>
+    <div
+      className="card"
+      style={{ padding: 0, overflow: "hidden", height: "100%", display: "flex", flexDirection: "column" }}
+    >
       <div
         style={{
           padding: "12px 16px",
@@ -31,12 +35,15 @@ export function SearchMap({
           color: "var(--text-2)",
           display: "flex",
           justifyContent: "space-between",
+          flexShrink: 0,
         }}
       >
         <strong style={{ color: "var(--text)", fontSize: 14 }}>지도</strong>
         <span>{houses.length}곳 표시</span>
       </div>
-      <SearchMapInner houses={houses} hover={hover} onHover={onHover} />
+      <div style={{ flex: 1, minHeight: 300 }}>
+        <SearchMapInner houses={houses} hover={hover} onHover={onHover} />
+      </div>
     </div>
   );
 }

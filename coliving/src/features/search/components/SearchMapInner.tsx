@@ -54,7 +54,7 @@ export default function SearchMapInner({
       center={center}
       zoom={12}
       scrollWheelZoom={false}
-      style={{ width: "100%", height: "100%", minHeight: 420 }}
+      style={{ width: "100%", height: "100%", minHeight: 300 }}
       attributionControl={false}
     >
       <TileLayer
