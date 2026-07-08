@@ -31,7 +31,12 @@ export class RoomsService {
   async search(query: RoomSearchQuery) {
     const take = Math.min(query.take ?? 20, 50);
     const where: any = { published: true };
-    if (query.region) where.region = query.region;
+    if (query.region) {
+      // Partial, case-insensitive so "Seocho-gu" also matches "Seocho-dong",
+      // and a bare neighborhood term still works.
+      const term = query.region.split("-")[0] || query.region;
+      where.region = { contains: term, mode: "insensitive" };
+    }
 
     // roomType (single) or roomTypes (multi-select) → Prisma `in`
     const types = query.roomTypes?.length

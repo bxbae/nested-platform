@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useAuth } from "@/lib/api/useAuth";
 
 // Login / sign-up modal. Uses the existing useAuth() hook, so it works in both
 // demo mode (fabricated local session) and real-API mode (NestJS /auth).
-// Tab state toggles between "login" and "register".
+// Rendered through a portal to document.body so the sticky header's stacking
+// context can't clip it.
 
 export function AuthModal({
   open,
@@ -22,8 +24,11 @@ export function AuthModal({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [mounted, setMounted] = useState(false);
 
-  if (!open) return null;
+  useEffect(() => setMounted(true), []);
+
+  if (!open || !mounted) return null;
 
   async function submit() {
     setError("");
@@ -51,7 +56,7 @@ export function AuthModal({
     }
   }
 
-  return (
+  return createPortal(
     <div
       onClick={onClose}
       style={{
@@ -173,7 +178,8 @@ export function AuthModal({
           </button>
         </p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
