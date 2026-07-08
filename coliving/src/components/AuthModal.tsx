@@ -27,8 +27,12 @@ export function AuthModal({
 
   async function submit() {
     setError("");
-    if (!email || !password || (mode === "register" && !name)) {
-      setError("모든 항목을 입력해주세요.");
+    if (mode === "register" && !name.trim()) {
+      setError("이름을 입력해주세요.");
+      return;
+    }
+    if (!email.trim() || !password) {
+      setError("이메일과 비밀번호를 입력해주세요.");
       return;
     }
     setBusy(true);
@@ -61,9 +65,10 @@ export function AuthModal({
         backdropFilter: "blur(2px)",
         WebkitBackdropFilter: "blur(2px)",
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         justifyContent: "center",
         padding: 20,
+        overflowY: "auto",
       }}
     >
       <div
@@ -71,6 +76,7 @@ export function AuthModal({
         style={{
           width: "100%",
           maxWidth: 400,
+          margin: "auto",
           background: "var(--surface, #ffffff)",
           border: "1px solid var(--border, #ebebeb)",
           borderRadius: 20,

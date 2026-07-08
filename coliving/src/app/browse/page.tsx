@@ -1,11 +1,20 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import type { House } from "@/lib/types";
 import { won } from "@/lib/format";
 import { jobHubs, commuteBand } from "@/lib/commute";
 import { Thumbnail } from "@/components/Thumbnail";
+
+// Leaflet touches window, so load the map only on the client.
+const BrowseMap = dynamic(() => import("@/components/BrowseMap"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ width: "100%", height: 380, background: "var(--secondary-soft)" }} />
+  ),
+});
 
 const vibes = ["any", "quiet", "social", "creative", "calm", "wellness", "international"];
 const roomTypes = ["any", "one_room", "share_room", "whole_house", "apartment"];
@@ -246,89 +255,22 @@ export default function Browse() {
           )}
         </div>
 
-        {/* Mini map with hub */}
+        {/* Real map (Leaflet + OSM) with hub */}
         <div className="map-sticky">
-          <MiniMap houses={results} hover={hover} onHover={setHover} hubId={hub} />
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
+              <strong style={{ fontSize: 14 }}>Distance to {jobHubs.find((h) => h.id === hub)?.name ?? ""}</strong>
+              <span className="mono" style={{ fontSize: 12, color: "var(--primary)" }}>◆ office</span>
+            </div>
+            <BrowseMap
+              houses={results}
+              hover={hover}
+              onHover={setHover}
+              hub={jobHubs.find((h) => h.id === hub)!}
+            />
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function MiniMap({
-  houses,
-  hover,
-  onHover,
-  hubId,
-}: {
-  houses: House[];
-  hover: string | null;
-  onHover: (id: string | null) => void;
-  hubId: string;
-}) {
-  const hub = jobHubs.find((h) => h.id === hubId)!;
-  const latMin = 37.38, latMax = 37.59, lngMin = 126.88, lngMax = 127.13;
-  const px = (lng: number) => ((lng - lngMin) / (lngMax - lngMin)) * 360 + 20;
-  const py = (lat: number) => (1 - (lat - latMin) / (latMax - latMin)) * 340 + 20;
-  const hx = px(hub.lng), hy = py(hub.lat);
-
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
-        <strong style={{ fontSize: 14 }}>Distance to {hub.name}</strong>
-        <span className="mono" style={{ fontSize: 12, color: "var(--primary)" }}>◆ office</span>
-      </div>
-      <svg viewBox="0 0 400 380" style={{ width: "100%", display: "block", background: "var(--secondary-soft)" }}>
-        <path
-          d="M0 250 Q100 230 200 255 T400 250 L400 300 Q250 290 120 300 T0 300 Z"
-          fill="#c7d7e0"
-          opacity="0.7"
-        />
-        {/* commute lines from hub to hovered house */}
-        {houses.map((h) => {
-          if (hover !== h.id) return null;
-          return (
-            <line
-              key={`l-${h.id}`}
-              x1={hx}
-              y1={hy}
-              x2={px(h.lng)}
-              y2={py(h.lat)}
-              stroke="var(--text)"
-              strokeWidth="1.5"
-              strokeDasharray="4 4"
-            />
-          );
-        })}
-        {/* houses */}
-        {houses.map((h) => {
-          const active = hover === h.id;
-          return (
-            <g
-              key={h.id}
-              transform={`translate(${px(h.lng)}, ${py(h.lat)})`}
-              onMouseEnter={() => onHover(h.id)}
-              onMouseLeave={() => onHover(null)}
-              style={{ cursor: "pointer" }}
-            >
-              <circle r={active ? 13 : 9} fill={h.color} opacity={active ? 1 : 0.85} />
-              <circle r={active ? 13 : 9} fill="none" stroke="#fff" strokeWidth="2" />
-              {active && h.commute && (
-                <text y="-18" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--text)">
-                  {h.name.trim()} · {h.commute.minutes}min
-                </text>
-              )}
-            </g>
-          );
-        })}
-        {/* office marker on top */}
-        <g transform={`translate(${hx}, ${hy})`}>
-          <rect x="-8" y="-8" width="16" height="16" fill="var(--primary)" transform="rotate(45)" stroke="#fff" strokeWidth="2" />
-          <text y="-16" textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--primary)">
-            {hub.name}
-          </text>
-        </g>
-      </svg>
     </div>
   );
 }
