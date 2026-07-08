@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { myReviews } from "@/lib/me";
 
@@ -8,6 +8,22 @@ export default function MyReviews() {
   const [reviews, setReviews] = useState(() => myReviews());
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+  // Map each review's listing link to a real room id so it opens a live detail
+  // page instead of 404-ing on a demo id. Live rooms are round-robined.
+  const [liveIds, setLiveIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/houses")
+      .then((r) => r.json())
+      .then((d) => {
+        const ids = (d.houses ?? []).map((h: { id: string }) => h.id);
+        if (ids.length > 0) setLiveIds(ids);
+      })
+      .catch(() => {});
+  }, []);
+
+  const linkFor = (index: number, fallbackId: string) =>
+    liveIds.length > 0 ? `/homes/${liveIds[index % liveIds.length]}` : `/homes/${fallbackId}`;
 
   return (
     <div>
@@ -21,7 +37,7 @@ export default function MyReviews() {
           <div key={i} className="card" style={{ padding: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
               <div>
-                <Link href={`/homes/${r.houseId}`}>
+                <Link href={linkFor(i, r.houseId)}>
                   <strong style={{ fontSize: 15 }}>{r.houseName}</strong>
                 </Link>
                 <div style={{ fontSize: 12.5, color: "var(--warning)", marginTop: 3 }}>

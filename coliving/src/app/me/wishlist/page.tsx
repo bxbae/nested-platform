@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { won } from "@/lib/format";
 import { ROOM_TYPE_LABELS } from "@/lib/types";
@@ -9,6 +9,22 @@ import { Thumbnail } from "@/components/Thumbnail";
 
 export default function Wishlist() {
   const [items, setItems] = useState(() => wishlist());
+  // Map each card's preview link to a real room id so clicks open a live
+  // detail page instead of 404-ing on a demo id. Live rooms are round-robined.
+  const [liveIds, setLiveIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/houses")
+      .then((r) => r.json())
+      .then((d) => {
+        const ids = (d.houses ?? []).map((h: { id: string }) => h.id);
+        if (ids.length > 0) setLiveIds(ids);
+      })
+      .catch(() => {});
+  }, []);
+
+  const linkFor = (index: number, fallbackId: string) =>
+    liveIds.length > 0 ? `/homes/${liveIds[index % liveIds.length]}` : `/homes/${fallbackId}`;
 
   return (
     <div>
@@ -25,7 +41,7 @@ export default function Wishlist() {
       )}
 
       <div className="reco-grid">
-        {items.map((h) => (
+        {items.map((h, i) => (
           <div key={h.id} className="card hover-card" style={{ overflow: "hidden", position: "relative" }}>
             {/* remove from wishlist */}
             <button
@@ -40,7 +56,7 @@ export default function Wishlist() {
             >
               ♥
             </button>
-            <Link href={`/homes/${h.id}`}>
+            <Link href={linkFor(i, h.id)}>
               <Thumbnail src={h.photo} color={h.color} height={160}>
                 <div style={{ padding: 12, height: "100%", display: "flex", alignItems: "flex-start" }}>
                   <span className="chip glass" style={{ border: "none", color: "var(--text)", fontWeight: 600 }}>

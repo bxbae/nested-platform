@@ -2,12 +2,26 @@ import Link from "next/link";
 import { won } from "@/lib/format";
 import { ROOM_TYPE_LABELS } from "@/lib/types";
 import { myListings } from "@/lib/host";
+import { loadHouses } from "@/lib/houses-source";
 import { Thumbnail } from "@/components/Thumbnail";
+import type { House } from "@/lib/types";
 
 export const metadata = { title: "숙소 관리 · Nested 호스트" };
+export const dynamic = "force-dynamic";
 
-export default function HostListings() {
-  const listings = myListings();
+// Live DB rooms when enabled (so 미리보기 links resolve), else demo seed.
+async function loadListings(): Promise<House[]> {
+  try {
+    const all = await loadHouses();
+    if (all.length > 0) return all;
+  } catch {
+    // fall through to demo seed
+  }
+  return myListings();
+}
+
+export default async function HostListings() {
+  const listings = await loadListings();
 
   return (
     <div>
