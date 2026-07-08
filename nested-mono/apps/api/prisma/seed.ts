@@ -157,7 +157,19 @@ async function main() {
 
   for (const r of rooms) {
     // Idempotent: clear any prior room with the same name first.
-    await prisma.room.deleteMany({ where: { name: r.name } });
+    // Idempotent: clear a prior room with the same name, removing its
+    // dependent rows first so foreign-key RESTRICT constraints don't block it.
+    const existing = await prisma.room.findMany({
+      where: { name: r.name },
+      select: { id: true },
+    });
+    const existingIds = existing.map((e) => e.id);
+    if (existingIds.length > 0) {
+      await prisma.review.deleteMany({ where: { roomId: { in: existingIds } } });
+      await prisma.image.deleteMany({ where: { roomId: { in: existingIds } } });
+      await prisma.roomAmenity.deleteMany({ where: { roomId: { in: existingIds } } });
+      await prisma.room.deleteMany({ where: { id: { in: existingIds } } });
+    }
 
     const photos = PHOTOS[r.name] ?? [];
     const amenityKeys = ROOM_AMENITIES[r.name] ?? [];
