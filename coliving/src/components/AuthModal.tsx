@@ -67,8 +67,8 @@ export function AuthModal({
         display: "flex",
         alignItems: "flex-start",
         justifyContent: "center",
-        padding: 20,
         overflowY: "auto",
+        padding: "40px 20px",
       }}
     >
       <div
@@ -76,7 +76,8 @@ export function AuthModal({
         style={{
           width: "100%",
           maxWidth: 400,
-          margin: "auto",
+          marginTop: "auto",
+          marginBottom: "auto",
           background: "var(--surface, #ffffff)",
           border: "1px solid var(--border, #ebebeb)",
           borderRadius: 20,
