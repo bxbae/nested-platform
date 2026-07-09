@@ -40,6 +40,10 @@ export function AuthModal({
       setError("이메일과 비밀번호를 입력해주세요.");
       return;
     }
+    if (mode === "register" && password.length < 8) {
+      setError("비밀번호는 8자 이상이어야 합니다.");
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "login") await login(email, password);
@@ -137,7 +141,7 @@ export function AuthModal({
           />
           <input
             type="password"
-            placeholder="비밀번호"
+            placeholder={mode === "register" ? "비밀번호 (8자 이상)" : "비밀번호"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -153,7 +157,7 @@ export function AuthModal({
           onClick={submit}
           disabled={busy}
           className="btn btn-primary press"
-          style={{ width: "100%", marginTop: 18, padding: "11px 0", opacity: busy ? 0.6 : 1 }}
+          style={{ width: "100%", justifyContent: "center", marginTop: 18, padding: "11px 0", opacity: busy ? 0.6 : 1 }}
         >
           {busy ? "처리 중…" : mode === "login" ? "로그인" : "회원가입"}
         </button>
