@@ -4,27 +4,44 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { won } from "@/lib/format";
 import { ROOM_TYPE_LABELS } from "@/lib/types";
-import { wishlist } from "@/lib/me";
+import type { House } from "@/lib/types";
+import { wishlist as demoWishlist } from "@/lib/me";
+import { listFavorites, removeFavorite } from "@/lib/api/favorites";
+import { USE_REAL_API } from "@/lib/api/config";
 import { Thumbnail } from "@/components/Thumbnail";
 
 export default function Wishlist() {
-  const [items, setItems] = useState(() => wishlist());
-  // Map each card's preview link to a real room id so clicks open a live
-  // detail page instead of 404-ing on a demo id. Live rooms are round-robined.
-  const [liveIds, setLiveIds] = useState<string[]>([]);
+  const [items, setItems] = useState<House[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Real favorites when logged in; demo list otherwise.
   useEffect(() => {
-    fetch("/api/houses")
-      .then((r) => r.json())
-      .then((d) => {
-        const ids = (d.houses ?? []).map((h: { id: string }) => h.id);
-        if (ids.length > 0) setLiveIds(ids);
-      })
-      .catch(() => {});
+    let alive = true;
+    (async () => {
+      try {
+        const rows = USE_REAL_API ? await listFavorites() : demoWishlist();
+        if (alive) setItems(rows);
+      } catch {
+        if (alive) setItems([]);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const linkFor = (index: number, fallbackId: string) =>
-    liveIds.length > 0 ? `/homes/${liveIds[index % liveIds.length]}` : `/homes/${fallbackId}`;
+  const unsave = async (id: string) => {
+    setItems((prev) => prev.filter((x) => x.id !== id)); // optimistic
+    if (USE_REAL_API) {
+      try {
+        await removeFavorite(id);
+      } catch {
+        /* keep optimistic removal; list re-syncs on next visit */
+      }
+    }
+  };
 
   return (
     <div>
@@ -33,7 +50,7 @@ export default function Wishlist() {
         저장한 숙소 {items.length}곳
       </p>
 
-      {items.length === 0 && (
+      {!loading && items.length === 0 && (
         <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)", border: "1px dashed var(--border)", background: "transparent" }}>
           <p style={{ marginBottom: 16 }}>아직 찜한 숙소가 없어요.</p>
           <Link href="/search" className="btn btn-primary press">숙소 둘러보기</Link>
@@ -41,11 +58,11 @@ export default function Wishlist() {
       )}
 
       <div className="reco-grid">
-        {items.map((h, i) => (
+        {items.map((h) => (
           <div key={h.id} className="card hover-card" style={{ overflow: "hidden", position: "relative" }}>
             {/* remove from wishlist */}
             <button
-              onClick={() => setItems((prev) => prev.filter((x) => x.id !== h.id))}
+              onClick={() => unsave(h.id)}
               aria-label="찜 해제"
               style={{
                 position: "absolute", top: 10, right: 10, zIndex: 2,
@@ -56,7 +73,7 @@ export default function Wishlist() {
             >
               ♥
             </button>
-            <Link href={linkFor(i, h.id)}>
+            <Link href={`/homes/${h.id}`}>
               <Thumbnail src={h.photo} color={h.color} height={160}>
                 <div style={{ padding: 12, height: "100%", display: "flex", alignItems: "flex-start" }}>
                   <span className="chip glass" style={{ border: "none", color: "var(--text)", fontWeight: 600 }}>

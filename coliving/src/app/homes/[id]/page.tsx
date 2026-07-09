@@ -139,7 +139,7 @@ export default async function HomeDetail({
             <span style={{ color: "var(--text-2)" }}>· {house.region}, {house.city}</span>
           </div>
         </div>
-        <DetailActions title={house.name.trim()} />
+        <DetailActions title={house.name.trim()} roomId={house.id} />
       </div>
 
       {/* ── Gallery ── */}
