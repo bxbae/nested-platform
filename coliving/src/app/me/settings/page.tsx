@@ -1,14 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { currentUser } from "@/lib/me";
+import { useAuth } from "@/lib/api/useAuth";
 
 export default function Settings() {
+  const { user } = useAuth();
+  // Seed name/email from the real logged-in account when available, falling
+  // back to demo data. phone/bio aren't stored server-side, so they stay demo.
   const [name, setName] = useState(currentUser.name);
   const [email, setEmail] = useState(currentUser.email);
   const [phone, setPhone] = useState(currentUser.phone);
   const [bio, setBio] = useState(currentUser.bio);
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (user?.name) setName(user.name);
+    if (user?.email) setEmail(user.email);
+  }, [user]);
 
   const [notifPush, setNotifPush] = useState(true);
   const [notifEmail, setNotifEmail] = useState(true);
