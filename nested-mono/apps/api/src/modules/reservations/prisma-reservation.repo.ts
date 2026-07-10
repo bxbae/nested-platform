@@ -40,7 +40,7 @@ export class PrismaReservationRepo implements ReservationRepo {
   }
 
   async findCouponByCode(code: string): Promise<CouponRecord | null> {
-    return this.prisma.coupon.findUnique({ where: { code } });
+    return this.prisma.coupon.findUnique({ where: { code } }) as Promise<CouponRecord | null>;
   }
 
   async findOverlapping(roomId: string, checkIn: Date, checkOut: Date): Promise<ReservationRecord[]> {
