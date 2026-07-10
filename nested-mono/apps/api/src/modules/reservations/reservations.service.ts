@@ -6,6 +6,7 @@ import {
   ConflictException,
   UnprocessableEntityException,
   BadRequestException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { computePrice, couponDiscount, type PriceBreakdown } from "./pricing";
 import type {
@@ -84,21 +85,34 @@ export class ReservationsService {
     });
 
     // Price is computed server-side only; client never supplies the total.
-    return this.repo.createHold({
-      roomId: room.id,
-      guestId,
-      checkIn: dto.checkIn,
-      checkOut,
-      months: dto.months,
-      status: "PENDING_PAYMENT",
-      monthlyRent: price.monthlyRent,
-      deposit: price.deposit,
-      cleaningFee: price.cleaningFee,
-      maintenanceFee: price.maintenanceFee,
-      serviceFee: price.serviceFee,
-      discount: price.discount,
-      totalDueNow: price.dueNow,
-    });
+    try {
+      return await this.repo.createHold({
+        roomId: room.id,
+        guestId,
+        checkIn: dto.checkIn,
+        checkOut,
+        months: dto.months,
+        status: "PENDING_PAYMENT",
+        monthlyRent: price.monthlyRent,
+        deposit: price.deposit,
+        cleaningFee: price.cleaningFee,
+        maintenanceFee: price.maintenanceFee,
+        serviceFee: price.serviceFee,
+        discount: price.discount,
+        totalDueNow: price.dueNow,
+      });
+    } catch (e) {
+      // P2003 = foreign key violation: the guest id in the token no longer
+      // maps to a User row (e.g. account removed). Ask them to sign in again
+      // rather than surfacing a raw 500.
+      if (e && typeof e === "object" && (e as { code?: string }).code === "P2003") {
+        throw new UnauthorizedException({
+          code: "ACCOUNT_NOT_FOUND",
+          message: "세션이 만료되었어요. 다시 로그인한 뒤 예약해주세요.",
+        });
+      }
+      throw e;
+    }
   }
 
   // ── CONFIRM PAYMENT ── verify with PSP that `dueNow` was actually paid.

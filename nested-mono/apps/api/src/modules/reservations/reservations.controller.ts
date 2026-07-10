@@ -6,11 +6,14 @@ import {
   Body,
   Param,
   HttpCode,
+  UseGuards,
+  UnauthorizedException,
   createParamDecorator,
   ExecutionContext,
 } from "@nestjs/common";
 import { ReservationsService } from "./reservations.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { JwtAuthGuard } from "../auth/guards/auth.guards";
 import {
   quoteSchema,
   createReservationSchema,
@@ -20,16 +23,19 @@ import {
   type ConfirmPaymentDto,
 } from "./dto/reservation.dto";
 
-// Placeholder param decorator — replaced by the real @CurrentUser (JWT) in app.
+// Pulls the authenticated user's id off req.user (populated by JwtAuthGuard).
+// Throws if missing so we never fall back to a non-existent guest id.
 export const CurrentGuest = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): string => {
     const req = ctx.switchToHttp().getRequest();
-    return req.user?.id ?? req.headers["x-user-id"] ?? "anonymous";
+    const id = req.user?.id;
+    if (!id) throw new UnauthorizedException({ code: "UNAUTHENTICATED", message: "로그인이 필요합니다." });
+    return id;
   }
 );
 
-// Routes per ARCHITECTURE.md §7.3. Auth guard + @CurrentUser are applied
-// globally in the real app; here guestId is threaded explicitly for clarity.
+// Routes per ARCHITECTURE.md §7.3. quote is a public price preview; the
+// write/read-mine routes below each require a logged-in guest (JwtAuthGuard).
 @Controller()
 export class ReservationsController {
   constructor(private readonly service: ReservationsService) {}
@@ -43,6 +49,7 @@ export class ReservationsController {
 
   // POST /reservations — create PENDING_PAYMENT hold
   @Post("reservations")
+  @UseGuards(JwtAuthGuard)
   create(
     @Body(new ZodValidationPipe(createReservationSchema)) dto: CreateReservationDto,
     @CurrentGuest() guestId: string
@@ -52,6 +59,7 @@ export class ReservationsController {
 
   // POST /payments/confirm — verify + confirm
   @Post("payments/confirm")
+  @UseGuards(JwtAuthGuard)
   @HttpCode(200)
   confirm(
     @Body(new ZodValidationPipe(confirmPaymentSchema)) dto: ConfirmPaymentDto,
@@ -63,6 +71,7 @@ export class ReservationsController {
   // GET /reservations — the logged-in guest's own reservations (my trips).
   // Declared before the :id route so "reservations" isn't captured as an id.
   @Get("reservations")
+  @UseGuards(JwtAuthGuard)
   listMine(@CurrentGuest() guestId: string) {
     return this.service.listMine(guestId);
   }
@@ -74,6 +83,7 @@ export class ReservationsController {
 
   // PATCH /reservations/:id/cancel — guest cancels their reservation (CRUD: update/delete)
   @Patch("reservations/:id/cancel")
+  @UseGuards(JwtAuthGuard)
   @HttpCode(200)
   cancel(@Param("id") id: string, @CurrentGuest() guestId: string) {
     return this.service.cancel(id, guestId);
