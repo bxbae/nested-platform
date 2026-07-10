@@ -4,16 +4,21 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Booking } from "@/lib/types";
 import { won } from "@/lib/format";
+import { listMyBookings, cancelBooking } from "@/lib/api/reservations";
 
 export function TripsList({ bare = false }: { bare?: boolean }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    const res = await fetch("/api/bookings");
-    const data = await res.json();
-    setBookings(data.bookings);
-    setLoading(false);
+    try {
+      const data = await listMyBookings();
+      setBookings(data);
+    } catch {
+      setBookings([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -21,11 +26,13 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
   }, []);
 
   async function cancel(id: string) {
-    await fetch("/api/bookings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
+    // optimistic: mark cancelled locally, then persist
+    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status: "cancelled" } : b)));
+    try {
+      await cancelBooking(id);
+    } catch {
+      /* revert by reloading the authoritative list */
+    }
     load();
   }
 

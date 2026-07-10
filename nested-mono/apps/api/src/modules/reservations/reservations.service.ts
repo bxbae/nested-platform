@@ -155,6 +155,11 @@ export class ReservationsService {
     return this.repo.updateStatus(id, "CANCELLED_BY_GUEST");
   }
 
+  // All reservations for the logged-in guest (my trips).
+  async listMine(guestId: string) {
+    return this.repo.listByGuest(guestId);
+  }
+
   private async resolveDiscount(code: string | undefined, spend: number): Promise<number> {
     if (!code) return 0;
     const coupon = await this.repo.findCouponByCode(code);

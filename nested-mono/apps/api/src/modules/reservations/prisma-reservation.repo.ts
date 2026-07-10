@@ -40,16 +40,10 @@ export class PrismaReservationRepo implements ReservationRepo {
   }
 
   async findCouponByCode(code: string): Promise<CouponRecord | null> {
-    return this.prisma.coupon.findUnique({
-      where: { code },
-    }) as Promise<CouponRecord | null>;
+    return this.prisma.coupon.findUnique({ where: { code } });
   }
 
-  async findOverlapping(
-    roomId: string,
-    checkIn: Date,
-    checkOut: Date,
-  ): Promise<ReservationRecord[]> {
+  async findOverlapping(roomId: string, checkIn: Date, checkOut: Date): Promise<ReservationRecord[]> {
     return this.prisma.reservation.findMany({
       where: {
         roomId,
@@ -62,7 +56,7 @@ export class PrismaReservationRepo implements ReservationRepo {
   }
 
   async createHold(
-    data: Omit<ReservationRecord, "id" | "createdAt">,
+    data: Omit<ReservationRecord, "id" | "createdAt">
   ): Promise<ReservationRecord> {
     // Serializable transaction: re-check overlap under lock, then insert.
     return this.prisma.$transaction(
@@ -84,7 +78,7 @@ export class PrismaReservationRepo implements ReservationRepo {
         }
         return tx.reservation.create({ data });
       },
-      { isolationLevel: "Serializable" },
+      { isolationLevel: "Serializable" }
     );
   }
 
@@ -92,10 +86,33 @@ export class PrismaReservationRepo implements ReservationRepo {
     return this.prisma.reservation.findUnique({ where: { id } });
   }
 
-  async updateStatus(
-    id: string,
-    status: ReservationStatus,
-  ): Promise<ReservationRecord> {
+  async listByGuest(guestId: string) {
+    const rows = await this.prisma.reservation.findMany({
+      where: { guestId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        room: {
+          select: {
+            id: true,
+            name: true,
+            region: true,
+            images: { orderBy: { order: "asc" }, take: 1, select: { url: true } },
+          },
+        },
+      },
+    });
+    return rows.map((r: (typeof rows)[number]) => ({
+      ...r,
+      room: {
+        id: r.room.id,
+        name: r.room.name,
+        region: r.room.region,
+        image: r.room.images[0]?.url ?? null,
+      },
+    }));
+  }
+
+  async updateStatus(id: string, status: ReservationStatus): Promise<ReservationRecord> {
     return this.prisma.reservation.update({ where: { id }, data: { status } });
   }
 

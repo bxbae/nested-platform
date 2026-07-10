@@ -60,6 +60,13 @@ export class ReservationsController {
     return this.service.confirmPayment(dto, guestId);
   }
 
+  // GET /reservations — the logged-in guest's own reservations (my trips).
+  // Declared before the :id route so "reservations" isn't captured as an id.
+  @Get("reservations")
+  listMine(@CurrentGuest() guestId: string) {
+    return this.service.listMine(guestId);
+  }
+
   @Get("reservations/:id")
   get(@Param("id") id: string) {
     return this.service.getById(id);

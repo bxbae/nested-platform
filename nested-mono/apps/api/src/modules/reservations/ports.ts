@@ -59,8 +59,15 @@ export interface ReservationRepo {
   /** Insert inside a serializable transaction; the impl re-checks overlap under lock. */
   createHold(data: Omit<ReservationRecord, "id" | "createdAt">): Promise<ReservationRecord>;
   findById(id: string): Promise<ReservationRecord | null>;
+  /** All reservations for a guest, newest first, with room name + first image. */
+  listByGuest(guestId: string): Promise<ReservationWithRoom[]>;
   updateStatus(id: string, status: ReservationStatus): Promise<ReservationRecord>;
   markCouponUsed(couponId: string): Promise<void>;
+}
+
+// Reservation joined with a little room context, for the "my trips" list.
+export interface ReservationWithRoom extends ReservationRecord {
+  room: { id: string; name: string; region: string; image: string | null };
 }
 
 // Payment gateway port — one method: verify a payment really happened for `amount`.

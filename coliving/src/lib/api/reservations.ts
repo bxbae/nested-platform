@@ -140,3 +140,58 @@ export async function cancelBooking(reservationId: string): Promise<void> {
   }
   await api.patch(`/reservations/${reservationId}/cancel`);
 }
+
+// ── My trips (예약 내역) ── GET /reservations, adapted to the Booking shape
+// the TripsList UI expects. Demo mode reads the in-repo /api/bookings route.
+import type { Booking } from "@/lib/types";
+
+interface ApiReservation {
+  id: string;
+  months: number;
+  checkIn: string;
+  monthlyRent: number;
+  deposit: number;
+  cleaningFee: number;
+  maintenanceFee: number;
+  serviceFee: number;
+  totalDueNow: number;
+  status: string;
+  createdAt: string;
+  room: { id: string; name: string; region: string; image: string | null };
+}
+
+function mapStatus(s: string): Booking["status"] {
+  if (s === "CONFIRMED") return "paid";
+  if (s === "PENDING_PAYMENT") return "hold";
+  return "cancelled";
+}
+
+export async function listMyBookings(): Promise<Booking[]> {
+  if (!USE_REAL_API) {
+    const res = await fetch("/api/bookings");
+    if (!res.ok) return [];
+    return res.json();
+  }
+  try {
+    const rows = await api.get<ApiReservation[]>("/reservations");
+    return rows.map((r) => ({
+      id: r.id,
+      houseId: r.room.id,
+      houseName: r.room.name,
+      guestName: "",
+      moveIn: r.checkIn.slice(0, 10),
+      months: r.months,
+      monthlyRent: r.monthlyRent,
+      deposit: r.deposit,
+      cleaningFee: r.cleaningFee,
+      maintenanceFee: r.maintenanceFee,
+      serviceFee: r.serviceFee,
+      totalDueNow: r.totalDueNow,
+      serviceFeeRate: 0.05,
+      status: mapStatus(r.status),
+      createdAt: r.createdAt,
+    }));
+  } catch {
+    return [];
+  }
+}

@@ -57,6 +57,11 @@ class FakeRepo implements ReservationRepo {
   async findById(id: string) {
     return this.reservations.find((r) => r.id === id) ?? null;
   }
+  async listByGuest(guestId: string) {
+    return this.reservations
+      .filter((r) => r.guestId === guestId)
+      .map((r) => ({ ...r, room: { id: r.roomId, name: "Test Room", region: "Test", image: null } }));
+  }
   async updateStatus(id: string, status: ReservationRecord["status"]) {
     const r = this.reservations.find((x) => x.id === id)!;
     r.status = status;
