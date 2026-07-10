@@ -14,6 +14,9 @@ export function ProfileHeader() {
   const role =
     user?.role === "HOST" ? "호스트" : user ? "게스트" : currentUser.role;
   const initial = name.trim()[0] ?? "N";
+  const joinYear = user?.createdAt
+    ? new Date(user.createdAt).getFullYear()
+    : currentUser.joined;
 
   return (
     <div className="card" style={{ padding: 26, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
@@ -33,7 +36,7 @@ export function ProfileHeader() {
           <span className="chip" style={{ fontSize: 12 }}>{role}</span>
         </div>
         <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
-          {currentUser.joined}년 가입 · {email}
+          {joinYear}년 가입 · {email}
         </div>
         <p style={{ fontSize: 14, color: "var(--text)", marginTop: 10 }}>{currentUser.bio}</p>
       </div>

@@ -25,7 +25,7 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: { email, passwordHash, name },
     });
-    return this.issueTokens(user.id, user.email, user.role, user.name);
+    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
   }
 
   // ── Email/password login ──
@@ -35,7 +35,7 @@ export class AuthService {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException("이메일 또는 비밀번호가 올바르지 않습니다.");
     if (user.suspended) throw new UnauthorizedException("정지된 계정입니다.");
-    return this.issueTokens(user.id, user.email, user.role, user.name);
+    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
   }
 
   // ── OAuth (Google) — find-or-create then issue tokens ──
@@ -67,7 +67,7 @@ export class AuthService {
         });
       }
     }
-    return this.issueTokens(user.id, user.email, user.role, user.name);
+    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
   }
 
   // ── Refresh-token rotation (DB-backed) ──
@@ -94,7 +94,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) throw new UnauthorizedException();
-    return this.issueTokens(user.id, user.email, user.role, user.name);
+    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
   }
 
   // Revoke all sessions for a user (logout everywhere).
@@ -106,7 +106,13 @@ export class AuthService {
     return createHash("sha256").update(token).digest("hex");
   }
 
-  private async issueTokens(sub: string, email: string, role: string, name?: string | null) {
+  private async issueTokens(
+    sub: string,
+    email: string,
+    role: string,
+    name?: string | null,
+    createdAt?: Date | null,
+  ) {
     const payload: JwtPayload = { sub, email, role };
     const accessToken = await this.jwt.signAsync(payload, {
       secret: process.env.JWT_ACCESS_SECRET,
@@ -126,6 +132,16 @@ export class AuthService {
       },
     });
 
-    return { accessToken, refreshToken, user: { id: sub, email, role, name: name ?? null } };
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: sub,
+        email,
+        role,
+        name: name ?? null,
+        createdAt: createdAt ? createdAt.toISOString() : null,
+      },
+    };
   }
 }

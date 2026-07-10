@@ -12,6 +12,7 @@ export interface AuthUser {
   email: string;
   role: string;
   name?: string;
+  createdAt?: string | null;
 }
 
 export interface AuthTokens {
