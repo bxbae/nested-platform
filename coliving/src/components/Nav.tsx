@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Rings } from "./Rings";
 import { ThemeToggle } from "./ThemeToggle";
 import { AuthModal } from "./AuthModal";
@@ -20,8 +20,22 @@ const links = [
 
 export function Nav() {
   const path = usePathname();
+  const router = useRouter();
   const { user, isAuthenticated, logout } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
+
+  // Opened via ?auth=1 (e.g. redirected here from a guarded page while logged
+  // out). Read the query straight off the URL so we don't need a Suspense
+  // boundary around useSearchParams for the global nav.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hasAuthFlag = new URLSearchParams(window.location.search).get("auth") === "1";
+    if (hasAuthFlag && !isAuthenticated) {
+      setAuthOpen(true);
+      router.replace(path); // strip the query so it doesn't re-trigger
+    }
+  }, [isAuthenticated, router, path]);
+
   return (
     <header
       style={{

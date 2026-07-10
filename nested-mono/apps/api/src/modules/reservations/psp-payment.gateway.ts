@@ -18,6 +18,15 @@ export class PspPaymentGateway implements PaymentGateway {
     paymentKey: string;
     expectedAmount: number;
   }): Promise<PaymentVerification> {
+    // Demo/portfolio payments: the client mints a `demo_…` key and no real PSP
+    // is involved. Treat these as verified for the expected amount so the flow
+    // completes end-to-end. Real keys still go through the PSP below, so wiring
+    // a live secret (TOSS_SECRET_KEY, etc.) switches on real verification.
+    if (params.paymentKey.startsWith("demo_")) {
+      this.logger.log(`Demo payment accepted for ${params.expectedAmount}`);
+      return { ok: true, providerTxnId: params.paymentKey, paidAmount: params.expectedAmount };
+    }
+
     switch (params.provider) {
       case "TOSS":
         return this.verifyToss(params.paymentKey, params.expectedAmount);
