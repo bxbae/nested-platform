@@ -53,11 +53,20 @@ export function logout() {
 export async function fetchMe(): Promise<AuthUser | null> {
   if (!USE_REAL_API || !authStore.isAuthenticated()) return authStore.getUser();
   try {
-    const me = await api.get<{ sub?: string; id?: string; email: string; role: string }>("/auth/me");
+    const me = await api.get<{
+      sub?: string;
+      id?: string;
+      email: string;
+      role: string;
+      name?: string | null;
+      createdAt?: string | null;
+    }>("/auth/me");
     const user: AuthUser = {
       id: me.id ?? me.sub ?? "",
       email: me.email,
       role: me.role,
+      name: me.name ?? undefined,
+      createdAt: me.createdAt ?? null,
     };
     const current = authStore.get();
     if (current) authStore.set({ ...current, user });

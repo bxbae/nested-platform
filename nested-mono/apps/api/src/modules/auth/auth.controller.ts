@@ -55,7 +55,7 @@ export class AuthController {
   @Get("me")
   @UseGuards(JwtAuthGuard)
   me(@Req() req: any) {
-    return req.user;
+    return this.auth.getMe(req.user.id);
   }
 
   // ── Google OAuth ──
