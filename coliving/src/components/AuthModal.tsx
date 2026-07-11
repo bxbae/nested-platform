@@ -4,6 +4,23 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useAuth } from "@/lib/api/useAuth";
+import { API_BASE_URL } from "@/lib/api/config";
+
+// Kicks off a provider OAuth flow. The backend handles the handshake and
+// redirects back to /auth/callback with tokens.
+function social(provider: "google" | "kakao" | "naver") {
+  window.location.href = `${API_BASE_URL}/auth/${provider}`;
+}
+
+const socialBtn: React.CSSProperties = {
+  width: "100%",
+  justifyContent: "center",
+  gap: 8,
+  padding: "10px 0",
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
+  fontWeight: 600,
+};
 
 // Login / sign-up modal. Uses the existing useAuth() hook, so it works in both
 // demo mode (fabricated local session) and real-API mode (NestJS /auth).
@@ -161,6 +178,24 @@ export function AuthModal({
         >
           {busy ? "처리 중…" : mode === "login" ? "로그인" : "회원가입"}
         </button>
+
+        {/* social logins — redirect to backend OAuth start routes */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 14px" }}>
+          <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+          <span style={{ fontSize: 12, color: "var(--text-2)" }}>또는</span>
+          <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button className="btn press" onClick={() => social("google")} style={socialBtn}>
+            <span style={{ fontWeight: 700, color: "#4285F4" }}>G</span> Google로 계속하기
+          </button>
+          <button className="btn press" onClick={() => social("kakao")} style={{ ...socialBtn, background: "#FEE500", borderColor: "#FEE500", color: "#191600" }}>
+            <span style={{ fontWeight: 700 }}>K</span> 카카오로 계속하기
+          </button>
+          <button className="btn press" onClick={() => social("naver")} style={{ ...socialBtn, background: "#03C75A", borderColor: "#03C75A", color: "#fff" }}>
+            <span style={{ fontWeight: 800 }}>N</span> 네이버로 계속하기
+          </button>
+        </div>
 
         <p style={{ textAlign: "center", fontSize: 13.5, color: "var(--text-2)", marginTop: 16 }}>
           {mode === "login" ? "계정이 없으신가요? " : "이미 계정이 있으신가요? "}

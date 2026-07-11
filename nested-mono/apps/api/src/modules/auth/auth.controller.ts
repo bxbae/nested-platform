@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Body, UseGuards, Req, HttpCode } from "@nestjs/common";
+import { Controller, Post, Get, Body, UseGuards, Req, Res, HttpCode } from "@nestjs/common";
+import type { Response } from "express";
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
@@ -66,8 +67,8 @@ export class AuthController {
 
   @Get("google/callback")
   @UseGuards(GoogleAuthGuard)
-  googleCallback(@Req() req: any) {
-    return req.user; // { accessToken, refreshToken, user }
+  googleCallback(@Req() req: any, @Res() res: Response) {
+    return this.redirectWithTokens(res, req.user);
   }
 
   // ── Kakao OAuth ──
@@ -77,8 +78,8 @@ export class AuthController {
 
   @Get("kakao/callback")
   @UseGuards(KakaoAuthGuard)
-  kakaoCallback(@Req() req: any) {
-    return req.user;
+  kakaoCallback(@Req() req: any, @Res() res: Response) {
+    return this.redirectWithTokens(res, req.user);
   }
 
   // ── Naver OAuth ──
@@ -88,8 +89,23 @@ export class AuthController {
 
   @Get("naver/callback")
   @UseGuards(NaverAuthGuard)
-  naverCallback(@Req() req: any) {
-    return req.user;
+  naverCallback(@Req() req: any, @Res() res: Response) {
+    return this.redirectWithTokens(res, req.user);
+  }
+
+  // Sends the browser back to the SPA's callback route with the freshly issued
+  // tokens in the URL fragment (never logged by servers/proxies). The frontend
+  // reads them, stores the session, and redirects into the app.
+  private redirectWithTokens(
+    res: Response,
+    payload: { accessToken: string; refreshToken: string },
+  ) {
+    const base = process.env.FRONTEND_URL ?? "http://localhost:3000";
+    const params = new URLSearchParams({
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken,
+    });
+    res.redirect(`${base}/auth/callback#${params.toString()}`);
   }
 
   // ── Apple OAuth (Sign in with Apple) ──
