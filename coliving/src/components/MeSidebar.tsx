@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { currentUser } from "@/lib/me";
+import { useAuth } from "@/lib/api/useAuth";
 
 const items = [
   { href: "/me", label: "프로필", icon: "👤", exact: true },
@@ -17,6 +18,12 @@ const items = [
 
 export function MeSidebar() {
   const path = usePathname();
+  const { user } = useAuth();
+
+  // Real session when signed in; the demo persona otherwise (offline demo mode).
+  const name = user?.name ?? user?.email ?? currentUser.name;
+  const role = user?.role === "HOST" ? "호스트" : user ? "게스트" : currentUser.role;
+
   return (
     <aside className="host-sidebar">
       {/* profile mini-header */}
@@ -29,11 +36,11 @@ export function MeSidebar() {
             display: "grid", placeItems: "center", color: "#fff", fontWeight: 700,
           }}
         >
-          {currentUser.name[0]}
+          {name.trim()[0] ?? "N"}
         </span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{currentUser.name}</div>
-          <div style={{ fontSize: 12, color: "var(--text-2)" }}>{currentUser.role}</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{name}</div>
+          <div style={{ fontSize: 12, color: "var(--text-2)" }}>{role}</div>
         </div>
       </div>
 

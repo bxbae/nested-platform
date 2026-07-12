@@ -17,6 +17,8 @@ export function ProfileHeader() {
   const joinYear = user?.createdAt
     ? new Date(user.createdAt).getFullYear()
     : currentUser.joined;
+  // The API doesn't expose a bio field yet, so real accounts have none.
+  const bio: string | null = null;
 
   return (
     <div className="card" style={{ padding: 26, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
@@ -38,7 +40,17 @@ export function ProfileHeader() {
         <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
           {joinYear}년 가입 · {email}
         </div>
-        <p style={{ fontSize: 14, color: "var(--text)", marginTop: 10 }}>{currentUser.bio}</p>
+        <p
+          style={{
+            fontSize: 14,
+            color: user && !bio ? "var(--text-2)" : "var(--text)",
+            marginTop: 10,
+          }}
+        >
+          {/* There's no bio field on the server yet, so a real account starts empty
+              rather than borrowing the demo persona's blurb. */}
+          {user ? (bio ?? "아직 자기소개가 없어요. 프로필 수정에서 추가해보세요.") : currentUser.bio}
+        </p>
       </div>
       <Link href="/me/settings" className="btn btn-ghost press">프로필 수정</Link>
     </div>
