@@ -22,6 +22,7 @@ export interface ApiChatRoom {
   hostId: string;
   createdAt: string;
   room: { name: string };
+  guest?: { id: string; name: string; avatarColor: string | null };
   messages: ApiMessage[]; // last message only (take: 1)
 }
 

@@ -14,6 +14,8 @@ export class MessagesService {
       where: { OR: [{ guestId: userId }, { hostId: userId }] },
       include: {
         room: { select: { name: true } },
+        // Host-side views (문의함) need to show who's asking, not just an id.
+        guest: { select: { id: true, name: true, avatarColor: true } },
         messages: { orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
