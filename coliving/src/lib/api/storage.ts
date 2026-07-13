@@ -1,21 +1,30 @@
 // ── Storage service ──────────────────────────────────────────────────
-// Direct-to-S3 upload via a presigned URL: ask the API for a short-lived
-// upload URL, PUT the file straight to S3, then keep the CDN URL. The file
-// never passes through our API, which keeps large uploads off the server.
+// Signed direct-to-Cloudinary upload:
+//   1. ask our API to sign the upload (the API secret stays server-side)
+//   2. POST the file straight to Cloudinary with that signature
+//   3. keep the returned secure_url and store it on the listing
 //
-// Requires AWS to be configured on the API (bucket + credentials + CloudFront).
-// Until then presign returns an error and the caller should fall back to
-// pasting an image URL.
+// The file never passes through our API, which keeps large uploads off the
+// server. If storage isn't configured yet the API says so and the caller falls
+// back to pasting an image URL.
 
 import { api } from "./client";
 
-interface PresignResponse {
-  uploadUrl: string; // short-lived S3 PUT URL
-  key: string; // object key in the bucket
-  cdnUrl: string; // public CloudFront URL to store on the room
+interface CloudinarySignature {
+  signature: string;
+  timestamp: number;
+  apiKey: string;
+  cloudName: string;
+  folder: string;
+  uploadUrl: string;
 }
 
-const MAX_BYTES = 10 * 1024 * 1024; // API rejects anything larger
+interface CloudinaryUploadResponse {
+  secure_url: string;
+  public_id: string;
+}
+
+const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
 export async function uploadImage(file: File): Promise<string> {
@@ -26,21 +35,24 @@ export async function uploadImage(file: File): Promise<string> {
     throw new Error("이미지는 10MB 이하여야 해요.");
   }
 
-  const { uploadUrl, cdnUrl } = await api.post<PresignResponse>("/storage/presign", {
-    contentType: file.type,
-    sizeBytes: file.size,
-    prefix: "rooms",
+  const sig = await api.post<CloudinarySignature>("/storage/cloudinary-signature", {
+    folder: "rooms",
   });
 
-  // Straight to S3 — no auth header here; the signature is in the URL.
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    body: file,
-    headers: { "Content-Type": file.type },
-  });
+  // Only the params that were signed may be sent — Cloudinary rejects the
+  // upload otherwise.
+  const form = new FormData();
+  form.append("file", file);
+  form.append("api_key", sig.apiKey);
+  form.append("timestamp", String(sig.timestamp));
+  form.append("folder", sig.folder);
+  form.append("signature", sig.signature);
+
+  const res = await fetch(sig.uploadUrl, { method: "POST", body: form });
   if (!res.ok) {
     throw new Error("이미지 업로드에 실패했어요.");
   }
 
-  return cdnUrl;
+  const data = (await res.json()) as CloudinaryUploadResponse;
+  return data.secure_url;
 }
