@@ -39,14 +39,16 @@ export class GeocodingService {
       });
     }
 
-    if (!rows.length) {
+    // Index access can be undefined under noUncheckedIndexedAccess, so narrow
+    // it explicitly rather than relying on a length check.
+    const hit = rows[0];
+    if (!hit) {
       throw new BadRequestException({
         code: "ADDRESS_NOT_FOUND",
         message: "주소를 찾을 수 없어요. 도로명 주소를 정확히 입력해주세요.",
       });
     }
 
-    const hit = rows[0];
     return {
       lat: Number(hit.lat),
       lng: Number(hit.lon),
