@@ -172,8 +172,11 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--te
   transition: all 0.15s ease;
 }
 .chip[data-active="true"] {
+  /* Background is var(--text), so the label must be its opposite. `color: #fff`
+     worked in light mode by luck; in dark mode --text is near-white, giving a
+     white chip with white text. --bg is the correct inverse in both themes. */
   background: var(--text);
-  color: #fff;
+  color: var(--bg);
   border-color: var(--text);
 }
 .chip:hover { border-color: var(--text); }
