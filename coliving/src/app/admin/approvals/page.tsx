@@ -1,60 +1,122 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { won } from "@/lib/format";
-import { pendingListings } from "@/lib/admin";
+import { ROOM_TYPE_LABELS } from "@/lib/types";
+import { Thumbnail } from "@/components/Thumbnail";
+import { listPendingRooms, publishRoom, type PendingListing } from "@/lib/api/admin";
 
-export default function AdminApprovals() {
-  const [list, setList] = useState(() => pendingListings());
-  const [done, setDone] = useState<Record<string, "승인" | "반려">>({});
+// 승인 대기 — the queue that gates a new listing into search. Rooms land here
+// on creation (published=false) and only become visible to guests once approved.
+export default function Approvals() {
+  const [pending, setPending] = useState<PendingListing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const pending = list.filter((p) => !done[p.id]);
+  useEffect(() => {
+    (async () => {
+      try {
+        setPending(await listPendingRooms());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "승인 대기 목록을 불러오지 못했어요.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function approve(id: string) {
+    if (busy) return;
+    setBusy(id);
+    setError(null);
+    try {
+      await publishRoom(id, true);
+      setPending((prev) => prev.filter((p) => p.id !== id)); // drops out of the queue
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "승인하지 못했어요.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div>
-      <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>숙소 승인</h1>
-      <p style={{ color: "var(--text-2)", marginBottom: 20 }}>승인 대기 {pending.length}건</p>
+      <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>승인 대기</h1>
+      <p style={{ color: "var(--text-2)", marginBottom: 20 }}>
+        호스트가 등록한 매물을 검토하고 게시를 승인하세요.
+      </p>
 
-      {pending.length === 0 && (
-        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)", border: "1px dashed var(--border)", background: "transparent" }}>
-          모든 숙소를 검토했습니다.
+      {error && <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 12 }}>{error}</p>}
+
+      {loading ? (
+        <p style={{ color: "var(--text-2)" }}>불러오는 중…</p>
+      ) : pending.length === 0 ? (
+        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}>
+          승인 대기 중인 매물이 없어요.
         </div>
-      )}
-
-      <div style={{ display: "grid", gap: 12 }}>
-        {list.map((p) => {
-          const status = done[p.id];
-          return (
-            <div key={p.id} className="card" style={{ padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", opacity: status ? 0.6 : 1 }}>
-              <div style={{ display: "flex", gap: 14, alignItems: "center", minWidth: 0 }}>
-                <span style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, background: `linear-gradient(135deg, ${p.color}44, ${p.color}88)` }} />
-                <div style={{ minWidth: 0 }}>
-                  <Link href={`/homes/${p.id}`}><strong style={{ fontSize: 15 }}>{p.name}</strong></Link>
-                  <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 2 }}>
-                    {p.host} · {p.region} · {won(p.monthlyRent)}/월
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          {pending.map((h) => (
+            <div key={h.id} className="card" style={{ overflow: "hidden", display: "flex", flexWrap: "wrap" }}>
+              <div style={{ width: 180, minWidth: 140, flex: "1 1 140px", maxWidth: 220 }}>
+                <Thumbnail src={h.photo} color={h.color} height="100%">
+                  <div />
+                </Thumbnail>
+              </div>
+              <div style={{ flex: "3 1 320px", padding: 18, display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ minWidth: 200 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <strong style={{ fontSize: 16 }}>{h.name.trim()}</strong>
+                    <span className="chip" style={{ fontSize: 11 }}>{ROOM_TYPE_LABELS[h.roomType]}</span>
+                    {h.verifiedByHost && (
+                      <span
+                        className="chip"
+                        style={{ fontSize: 11, background: "var(--secondary)", color: "#fff", border: "none" }}
+                      >
+                        실매물 확인됨
+                      </span>
+                    )}
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--text-2)" }}>제출일 {p.submitted}</div>
+
+                  <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 6 }}>
+                    호스트 {h.hostName} · 사진 {h.gallery?.length ?? 0}장
+                  </div>
+
+                  {/* The street address is the whole point of review — an admin
+                      checks it against the listing before letting it go live. */}
+                  {h.address && (
+                    <div style={{ fontSize: 13, marginTop: 8, padding: "8px 12px", background: "var(--bg-2)", borderRadius: "var(--r-md)" }}>
+                      <span style={{ color: "var(--text-2)" }}>주소 </span>
+                      {h.address}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 13, color: "var(--text-2)", flexWrap: "wrap" }}>
+                    <span>월세 {won(h.monthlyRent)}</span>
+                    <span>보증금 {won(h.deposit)}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
+                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 14px" }}>
+                    미리보기
+                  </Link>
+                  <button
+                    className="btn btn-primary press"
+                    style={{ fontSize: 13, padding: "8px 14px" }}
+                    onClick={() => approve(h.id)}
+                    disabled={busy === h.id}
+                  >
+                    {busy === h.id ? "승인 중…" : "승인"}
+                  </button>
                 </div>
               </div>
-              {status ? (
-                <span className="chip" style={{ fontSize: 12, background: status === "승인" ? "var(--secondary)" : "var(--border)", color: status === "승인" ? "#fff" : "var(--text-2)", border: "none" }}>
-                  {status}됨
-                </span>
-              ) : (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => setDone((d) => ({ ...d, [p.id]: "승인" }))}>
-                    승인
-                  </button>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => setDone((d) => ({ ...d, [p.id]: "반려" }))}>
-                    반려
-                  </button>
-                </div>
-              )}
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

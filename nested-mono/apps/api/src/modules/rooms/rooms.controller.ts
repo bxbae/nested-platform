@@ -53,6 +53,16 @@ export class RoomsController {
     });
   }
 
+  // Declared before GET /:id so "mine" isn't captured as a room id.
+  // Unlike search, this includes unpublished rooms — a host must be able to see
+  // a listing they just submitted while it's still awaiting approval.
+  @Get("mine")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("HOST", "ADMIN")
+  mine(@Req() req: any) {
+    return this.rooms.listForHost(req.user.id);
+  }
+
   @Get(":id")
   findOne(@Param("id") id: string) {
     return this.rooms.findOne(id);

@@ -129,6 +129,18 @@ export class RoomsService {
     return result;
   }
 
+  // Every room I host, published or not, newest first. Powers 숙소 관리.
+  async listForHost(hostId: string) {
+    return this.prisma.room.findMany({
+      where: { hostId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        images: { orderBy: { order: "asc" } },
+        _count: { select: { reservations: true } },
+      },
+    });
+  }
+
   // ── Create (host) ──
   // `images` is a relation, not a column — spreading it into `data` makes
   // Prisma throw, which is why listings were saving with no photos.

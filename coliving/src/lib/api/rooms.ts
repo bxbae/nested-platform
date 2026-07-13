@@ -85,6 +85,25 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
   });
 }
 
+// GET /rooms/mine — my listings, including ones still awaiting approval.
+// Search only ever returns published rooms, so this is the only way a host can
+// see a listing they just submitted.
+export interface HostListing extends House {
+  published: boolean;
+  reservationCount: number;
+}
+
+export async function listMyRooms(): Promise<HostListing[]> {
+  const rows = await api.get<(ApiRoom & { published: boolean; _count?: { reservations: number } })[]>(
+    "/rooms/mine",
+  );
+  return rows.map((r) => ({
+    ...apiRoomToHouse(r),
+    published: r.published,
+    reservationCount: r._count?.reservations ?? 0,
+  }));
+}
+
 export async function getRoom(id: string): Promise<House> {
   if (USE_REAL_API) {
     const r = await api.get<ApiRoom>(`/rooms/${id}`, { auth: false });

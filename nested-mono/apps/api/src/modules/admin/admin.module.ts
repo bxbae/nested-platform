@@ -23,7 +23,16 @@ export class AdminService {
 
   // listing approvals (숙소 승인)
   pendingRooms() {
-    return this.prisma.room.findMany({ where: { published: false }, include: { host: { select: { name: true } } } });
+    return this.prisma.room.findMany({
+      where: { published: false },
+      orderBy: { createdAt: "desc" },
+      // Images matter here: an admin approving a listing needs to see the
+      // photos, not just its name.
+      include: {
+        host: { select: { name: true } },
+        images: { orderBy: { order: "asc" } },
+      },
+    });
   }
   setPublished(id: string, published: boolean) {
     return this.prisma.room.update({ where: { id }, data: { published } });
