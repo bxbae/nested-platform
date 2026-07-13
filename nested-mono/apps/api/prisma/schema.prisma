@@ -71,6 +71,8 @@ model User {
   reportsMade  Report[]       @relation("Reporter")
   chatRooms    ChatRoom[]     @relation("GuestChatRooms")
   settlements  Settlement[]
+  posts        Post[]
+  comments     Comment[]
 
   @@index([provider, providerId])
 }
@@ -115,6 +117,7 @@ model Room {
   calendar       CalendarBlock[]
   chatRooms      ChatRoom[]
   favorites      Favorite[]
+  posts          Post[]
   createdAt      DateTime     @default(now())
 
   @@index([region])
@@ -384,4 +387,45 @@ model Settlement {
   createdAt     DateTime         @default(now())
 
   @@index([hostId, status])
+}
+
+// ── Community board ──────────────────────────────────────────────────
+// Posts live on a house's board (houseId → Room). Comments are the replies
+// the UI shows as "💬 N replies".
+
+enum PostCategory {
+  NOTICE
+  EVENT
+  CHORE
+  MARKET
+  CHAT
+}
+
+model Post {
+  id        String       @id @default(cuid())
+  roomId    String
+  room      Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category  PostCategory @default(CHAT)
+  title     String
+  body      String
+  pinned    Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  comments  Comment[]
+
+  @@index([roomId, createdAt])
+  @@index([category])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
 }

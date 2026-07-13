@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import type { Post } from "@/lib/types";
+import { useAuth } from "@/lib/api/useAuth";
+import { listPosts, createPost } from "@/lib/api/community";
+import { searchRooms } from "@/lib/api/rooms";
 
 const categories = [
   { id: "all", label: "All" },
@@ -26,12 +30,14 @@ export default function Community() {
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [draft, setDraft] = useState({ title: "", body: "", category: "chat" });
+  const { isAuthenticated } = useAuth();
+  // Posts hang off a room's board. The UI has no house picker yet, so we post
+  // to the first available room — enough to exercise the real relation.
+  const [roomId, setRoomId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/posts?category=${cat}`);
-    const data = await res.json();
-    setPosts(data.posts);
+    setPosts(await listPosts(cat));
     setLoading(false);
   }, [cat]);
 
@@ -39,13 +45,19 @@ export default function Community() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    searchRooms({})
+      .then((res) => setRoomId(res.items[0]?.id ?? null))
+      .catch(() => setRoomId(null));
+  }, []);
+
   async function submit() {
-    if (!draft.title.trim()) return;
-    await fetch("/api/posts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...draft, author: "You" }),
-    });
+    if (!draft.title.trim() || !roomId) return;
+    try {
+      await createPost({ roomId, ...draft });
+    } catch {
+      return; // guard rejects when signed out; the button is hidden then anyway
+    }
     setDraft({ title: "", body: "", category: "chat" });
     setShowNew(false);
     setCat("all");
@@ -61,9 +73,15 @@ export default function Community() {
             Community
           </h1>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowNew((s) => !s)}>
-          {showNew ? "Close" : "New post"}
-        </button>
+        {isAuthenticated ? (
+          <button className="btn btn-primary" onClick={() => setShowNew((s) => !s)}>
+            {showNew ? "Close" : "New post"}
+          </button>
+        ) : (
+          <Link href="/?auth=1" className="btn btn-ghost press">
+            로그인하고 글쓰기
+          </Link>
+        )}
       </div>
 
       {showNew && (
@@ -120,10 +138,12 @@ export default function Community() {
       <div style={{ display: "grid", gap: 12 }}>
         {loading && <div style={{ color: "var(--text-2)" }}>Loading feed…</div>}
         {posts.map((p) => (
-          <article
+          <Link
             key={p.id}
-            className="card"
+            href={`/community/${p.id}`}
+            className="card hover-card"
             style={{
+              display: "block",
               padding: 18,
               borderLeft: `3px solid ${catColor[p.category]}`,
             }}
@@ -156,7 +176,7 @@ export default function Community() {
               <span>by {p.author}</span>
               <span>💬 {p.replies} replies</span>
             </div>
-          </article>
+          </Link>
         ))}
       </div>
     </div>

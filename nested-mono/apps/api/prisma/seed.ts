@@ -224,7 +224,54 @@ async function main() {
     },
   });
 
-  console.log("Seed complete: 1 host, 1 guest, 2 rooms (with photos/amenities/reviews), 1 coupon.");
+  // ── Community board ──────────────────────────────────────────────
+  // A few posts (with replies) so the feed isn't empty on a fresh database.
+  const firstRoom = await prisma.room.findFirst({ orderBy: { createdAt: "asc" } });
+  if (firstRoom) {
+    await prisma.post.deleteMany({});
+
+    const notice = await prisma.post.create({
+      data: {
+        roomId: firstRoom.id,
+        authorId: host.id,
+        category: "NOTICE",
+        title: "이번 주 토요일 정기 점검 안내",
+        body: "오전 10시부터 12시까지 보일러 점검이 있습니다. 잠시 온수 사용이 어려울 수 있어요.",
+        pinned: true,
+      },
+    });
+    await prisma.comment.createMany({
+      data: [
+        { postId: notice.id, authorId: guest.id, body: "알려주셔서 감사합니다! 그 시간엔 외출할게요." },
+        { postId: notice.id, authorId: host.id, body: "네, 점검 끝나면 다시 공지드리겠습니다." },
+      ],
+    });
+
+    const market = await prisma.post.create({
+      data: {
+        roomId: firstRoom.id,
+        authorId: guest.id,
+        category: "MARKET",
+        title: "책상 나눔합니다 (무료)",
+        body: "이사하면서 책상을 나눔합니다. 상태 좋아요. 관심 있으신 분 댓글 남겨주세요.",
+      },
+    });
+    await prisma.comment.create({
+      data: { postId: market.id, authorId: host.id, body: "혹시 아직 남아있나요?" },
+    });
+
+    await prisma.post.create({
+      data: {
+        roomId: firstRoom.id,
+        authorId: guest.id,
+        category: "CHAT",
+        title: "근처 괜찮은 카페 추천받아요",
+        body: "재택근무할 만한 조용한 카페 있을까요? 노트북 작업하기 좋은 곳이면 좋겠어요.",
+      },
+    });
+  }
+
+  console.log(`Seed complete: 1 host, 1 guest, ${rooms.length} rooms (with photos/amenities/reviews), 1 coupon, 3 posts.`);
 }
 
 main()

@@ -15,6 +15,7 @@ import { RoomsModule } from "./modules/rooms/rooms.resolver";
 import { StorageModule } from "./modules/storage/storage.controller";
 import { ReviewsModule } from "./modules/reviews/reviews.module";
 import { FavoritesModule } from "./modules/favorites/favorites.module";
+import { CommunityModule } from "./modules/community/community.module";
 import { NotificationsApiModule } from "./modules/notifications-api/notifications-api.module";
 import { MessagesModule } from "./modules/messages/messages.module";
 import { AdminModule } from "./modules/admin/admin.module";
@@ -48,6 +49,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     StorageModule,
     ReviewsModule,
     FavoritesModule,
+    CommunityModule,
     NotificationsApiModule,
     MessagesModule,
     AdminModule,
