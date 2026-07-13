@@ -7,8 +7,14 @@ import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
 const createRoomSchema = z.object({
   name: z.string().min(2),
   region: z.string().min(1),
-  lat: z.number(),
-  lng: z.number(),
+  // The host types a real street address; the server geocodes it. Coordinates
+  // are never taken from the client — otherwise a listing could be pinned
+  // anywhere regardless of its actual address.
+  address: z.string().min(5, "도로명 주소를 입력해주세요."),
+  // Explicit attestation. Refused unless true.
+  verifiedByHost: z.literal(true, {
+    errorMap: () => ({ message: "실제 매물임을 확인해주세요." }),
+  }),
   roomType: z.enum(["ONE_ROOM", "SHARE_ROOM", "WHOLE_HOUSE", "APARTMENT"]),
   monthlyRent: z.number().int().positive(),
   deposit: z.number().int().nonnegative(),

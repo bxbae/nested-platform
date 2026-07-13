@@ -54,6 +54,8 @@ export const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
 export interface CreateRoomInput {
   name: string;
   region: string;
+  address: string; // real street address — server geocodes it
+  verifiedByHost: true; // attestation; the API refuses anything else
   roomType: RoomType;
   monthlyRent: number;
   deposit: number;
@@ -64,14 +66,14 @@ export interface CreateRoomInput {
   images: string[];
 }
 
-// POST /rooms — host only. Returns the created room (with its images).
+// POST /rooms — host only. The listing is created unpublished and only becomes
+// searchable once an admin approves it.
 export async function createRoom(input: CreateRoomInput): Promise<{ id: string }> {
-  const coords = REGION_COORDS[input.region] ?? { lat: 37.5665, lng: 126.978 }; // Seoul fallback
   return api.post<{ id: string }>("/rooms", {
     name: input.name,
     region: input.region,
-    lat: coords.lat,
-    lng: coords.lng,
+    address: input.address,
+    verifiedByHost: input.verifiedByHost,
     roomType: input.roomType.toUpperCase(),
     monthlyRent: input.monthlyRent,
     deposit: input.deposit,

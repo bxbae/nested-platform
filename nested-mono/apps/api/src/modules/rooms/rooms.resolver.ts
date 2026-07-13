@@ -4,6 +4,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.module";
 import { RoomsController } from "./rooms.controller";
 import { RoomsService } from "./rooms.service";
+import { GeocodingService } from "./geocoding.service";
 
 // ── GraphQL types (code-first) ──
 @ObjectType()
@@ -52,6 +53,6 @@ export class RoomsResolver {
 
 @Module({
   controllers: [RoomsController],
-  providers: [RoomsResolver, RoomsService],
+  providers: [RoomsResolver, RoomsService, GeocodingService],
 })
 export class RoomsModule {}

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.module";
+import { GeocodingService } from "./geocoding.service";
 
 export interface RoomSearchQuery {
   region?: string;
@@ -24,7 +25,8 @@ export interface RoomSearchQuery {
 export class RoomsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redis: RedisService
+    private readonly redis: RedisService,
+    private readonly geocoding: GeocodingService
   ) {}
 
   // ── Search / list (검색 API) — cursor pagination + filters ──
@@ -118,7 +120,11 @@ export class RoomsService {
             (room.reviews.reduce((s: number, rv: { rating: number }) => s + rv.rating, 0) / reviewCount) * 10,
           ) / 10
         : 0;
-    const result = { ...room, rating, reviewCount, reviewList: room.reviews };
+    // `address` is the exact street address the host attested to. It must not
+    // leave the server for a public listing view — guests only ever see the
+    // approximate lat/lng (rendered as a privacy circle on the map).
+    const { address: _address, ...publicRoom } = room;
+    const result = { ...publicRoom, rating, reviewCount, reviewList: room.reviews };
     await this.redis.cacheSet(cacheKey, result, 60);
     return result;
   }
@@ -126,12 +132,23 @@ export class RoomsService {
   // ── Create (host) ──
   // `images` is a relation, not a column — spreading it into `data` makes
   // Prisma throw, which is why listings were saving with no photos.
+  //
+  // The room is created unpublished (schema default) and stays invisible to
+  // search until an admin approves it via PATCH /admin/rooms/:id/publish.
   async create(hostId: string, data: any) {
-    const { images = [], ...rest } = data;
+    const { images = [], address, ...rest } = data;
+
+    // Coordinates come from geocoding the attested address, never from the
+    // client.
+    const { lat, lng } = await this.geocoding.geocode(address);
+
     return this.prisma.room.create({
       data: {
         ...rest,
         hostId,
+        address,
+        lat,
+        lng,
         availableFrom: new Date(data.availableFrom),
         images: {
           create: (images as string[]).map((url, order) => ({ url, order })),

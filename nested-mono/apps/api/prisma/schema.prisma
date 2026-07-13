@@ -96,8 +96,13 @@ model Room {
   property       Property?    @relation(fields: [propertyId], references: [id])
   name           String
   region         String
+  // Street address the host attests to. Kept private (never returned by the
+  // public search) — only the approximate lat/lng is exposed to guests.
+  address        String?
   lat            Float
   lng            Float
+  // Host attested this is a real listing they're authorised to rent.
+  verifiedByHost Boolean      @default(false)
   roomType       RoomType
   genderPolicy   GenderPolicy @default(ANY)
   monthlyRent    Int

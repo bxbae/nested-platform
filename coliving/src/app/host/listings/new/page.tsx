@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,6 +9,7 @@ import { won } from "@/lib/format";
 import { computePrice } from "@/lib/pricing";
 import { ROOM_TYPE_LABELS, GENDER_LABELS, type RoomType, type GenderPolicy } from "@/lib/types";
 import { createRoom, REGION_COORDS } from "@/lib/api/rooms";
+import { uploadImage } from "@/lib/api/storage";
 import { USE_REAL_API } from "@/lib/api/config";
 
 const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
@@ -27,6 +28,10 @@ const listingSchema = z.object({
   maintenanceFee: z.coerce.number().min(0),
   minStay: z.coerce.number().min(1).max(12),
   availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
+  address: z.string().min(5, "도로명 주소를 입력하세요."),
+  verifiedByHost: z.literal(true, {
+    errorMap: () => ({ message: "실제 매물임을 확인해주세요." }),
+  }),
 });
 type ListingForm = z.infer<typeof listingSchema>;
 
@@ -36,7 +41,9 @@ export default function NewListing() {
   const [amenities, setAmenities] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
   const {
@@ -52,6 +59,8 @@ export default function NewListing() {
       name: "", region: "", roomType: "one_room", gender: "any",
       monthlyRent: 700000, deposit: 3000000, cleaningFee: 70000, maintenanceFee: 50000, minStay: 3,
       availableFrom: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
+      address: "",
+      verifiedByHost: false as unknown as true,
     },
   });
 
@@ -81,6 +90,29 @@ export default function NewListing() {
     setPhotoUrl("");
   }
 
+  // Files go straight to S3 via a presigned URL. If storage isn't configured
+  // on the API yet this fails cleanly and the host can paste a URL instead.
+  async function onFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const room = 8 - photos.length;
+      const picked = Array.from(files).slice(0, room);
+      const urls = await Promise.all(picked.map(uploadImage));
+      setPhotos((prev) => [...prev, ...urls].slice(0, 8));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? `${e.message} 이미지 URL 붙여넣기로 추가할 수도 있어요.`
+          : "이미지 업로드에 실패했어요.",
+      );
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
   async function submit(form: ListingForm) {
     if (saving) return;
     setSaving(true);
@@ -97,6 +129,8 @@ export default function NewListing() {
           maintenanceFee: Number(form.maintenanceFee),
           minStayMonths: Number(form.minStay),
           availableFrom: form.availableFrom,
+          address: form.address,
+          verifiedByHost: true,
           images: photos,
         });
       }
@@ -119,8 +153,10 @@ export default function NewListing() {
           <circle cx="25" cy="20" r="11" stroke="var(--primary)" strokeWidth="2.5" fill="none" />
           <path d="M14 20 l4 4 l8 -9" stroke="var(--text)" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <strong style={{ fontSize: 18 }}>숙소가 등록되었습니다</strong>
-        <p style={{ color: "var(--text-2)", marginTop: 8 }}>검토 후 게시되며, 승인 결과를 알림으로 보내드립니다.</p>
+        <strong style={{ fontSize: 18 }}>등록 신청이 접수되었습니다</strong>
+        <p style={{ color: "var(--text-2)", marginTop: 8 }}>
+          관리자 검토 후 게시됩니다. 승인 전까지는 검색 결과에 노출되지 않습니다.
+        </p>
         <button className="btn btn-primary press" style={{ marginTop: 18 }} onClick={() => window.location.assign("/host/listings")}>
           숙소 관리로 이동
         </button>
@@ -154,6 +190,24 @@ export default function NewListing() {
             추가
           </button>
         </div>
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            className="btn btn-ghost press"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || photos.length >= 8}
+          >
+            {uploading ? "업로드 중…" : "＋ 파일 선택"}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/avif"
+            multiple
+            hidden
+            onChange={(e) => onFiles(e.target.files)}
+          />
+        </div>
         <div className="photo-grid">
           {photos.map((src, i) => (
             <div key={i} style={{ position: "relative", height: 120, borderRadius: "var(--r-md)", overflow: "hidden" }}>
@@ -180,6 +234,12 @@ export default function NewListing() {
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
+          </Field>
+          <Field label="도로명 주소" error={errors.address?.message}>
+            <input {...register("address")} placeholder="예) 서울시 성동구 아차산로 100" />
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>
+              게스트에게는 정확한 주소가 공개되지 않고, 지도에 대략적인 위치만 표시됩니다.
+            </p>
           </Field>
           <Field label="입주 가능일" error={errors.availableFrom?.message}>
             <input type="date" {...register("availableFrom")} />
@@ -238,6 +298,29 @@ export default function NewListing() {
           ))}
         </div>
       </Section>
+
+      {/* attestation — the API refuses the listing without it */}
+      <label
+        style={{
+          display: "flex", gap: 10, alignItems: "flex-start",
+          padding: 16, marginBottom: 14,
+          border: "1px solid var(--border)", borderRadius: "var(--r-md)",
+          background: "var(--bg-2)", cursor: "pointer",
+        }}
+      >
+        <input type="checkbox" {...register("verifiedByHost")} style={{ marginTop: 3 }} />
+        <span style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+          <strong>실제 매물임을 확인합니다.</strong>
+          <br />
+          입력한 주소에 실재하는 숙소이며, 본인에게 임대 권한이 있음을 확인합니다.
+          허위 매물은 등록이 취소되고 계정이 정지될 수 있습니다.
+        </span>
+      </label>
+      {errors.verifiedByHost && (
+        <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 10 }}>
+          {errors.verifiedByHost.message}
+        </p>
+      )}
 
       {error && (
         <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 10 }}>{error}</p>
