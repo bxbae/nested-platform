@@ -191,7 +191,7 @@ export default function NewListing() {
             추가
           </button>
         </div>
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 12, position: "relative" }}>
           <button
             type="button"
             className="btn btn-ghost press"
@@ -205,7 +205,18 @@ export default function NewListing() {
             type="file"
             accept="image/jpeg,image/png,image/webp,image/avif"
             multiple
-            hidden
+            // `hidden` sets display:none, and a display:none input opened via
+            // .click() doesn't reliably fire `change` in some browsers — the
+            // picker opens but the selection never comes back. Keep it
+            // rendered and push it off-screen instead.
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              opacity: 0,
+              pointerEvents: "none",
+            }}
+            tabIndex={-1}
             onChange={(e) => onFiles(e.target.files)}
           />
           {/* Show failures right here — the submit-button error sits far below
