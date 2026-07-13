@@ -78,6 +78,7 @@ interface ApiHostProfile {
 }
 export interface ApiRoom {
   id: string;
+  hostId?: string; // scalar FK — present even when `host` isn't included
   name: string;
   region: string;
   city?: string;
@@ -153,16 +154,20 @@ export function apiRoomToHouse(r: ApiRoom): House {
     gallery,
     blurb: r.blurb ?? "",
     description: r.description,
-    host: r.host
-      ? {
-          id: r.host.id,
-          name: r.host.name ?? "호스트",
-          since: r.host.createdAt ? new Date(r.host.createdAt).getFullYear().toString() : "",
-          superhost: r.host.superhost ?? false,
-          responseRate: r.host.responseRate ?? 100,
-          avatarColor: r.host.avatarColor ?? "#FF5A5F",
-        }
-      : undefined,
+    // Keep a host object whenever we know *who* the host is, even if the
+    // endpoint didn't include the full profile — the contact button only needs
+    // the id, and losing the whole block would hide the host section entirely.
+    host:
+      r.host || r.hostId
+        ? {
+            id: r.host?.id ?? r.hostId,
+            name: r.host?.name ?? "호스트",
+            since: r.host?.createdAt ? new Date(r.host.createdAt).getFullYear().toString() : "",
+            superhost: r.host?.superhost ?? false,
+            responseRate: r.host?.responseRate ?? 100,
+            avatarColor: r.host?.avatarColor ?? "#FF5A5F",
+          }
+        : undefined,
     availableFrom:
       typeof r.availableFrom === "string"
         ? r.availableFrom.slice(0, 10)

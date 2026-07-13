@@ -12,6 +12,7 @@ export function ContactHostButton({ roomId, hostId }: { roomId: string; hostId?:
   const { isAuthenticated } = useAuth();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Demo data has no real host account to message.
   if (!hostId) return null;
@@ -23,22 +24,24 @@ export function ContactHostButton({ roomId, hostId }: { roomId: string; hostId?:
     }
     if (busy || !hostId) return;
     setBusy(true);
+    setError(null);
     try {
       await openChatRoom(roomId, hostId);
       router.push("/me/messages");
-    } catch {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "대화를 열지 못했어요. 잠시 후 다시 시도해주세요.");
       setBusy(false);
     }
   }
 
   return (
-    <button
-      className="btn btn-ghost press"
-      onClick={contact}
-      disabled={busy}
-      style={{ marginTop: 14 }}
-    >
-      {busy ? "여는 중…" : "호스트에게 문의"}
-    </button>
+    <div style={{ marginTop: 14 }}>
+      <button className="btn btn-ghost press" onClick={contact} disabled={busy}>
+        {busy ? "여는 중…" : "호스트에게 문의"}
+      </button>
+      {error && (
+        <p style={{ fontSize: 13, color: "var(--primary)", marginTop: 8 }}>{error}</p>
+      )}
+    </div>
   );
 }

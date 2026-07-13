@@ -21,6 +21,7 @@ export default function Messages() {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -43,12 +44,15 @@ export default function Messages() {
     const body = draft.trim();
     if (!body || !active || sending) return;
     setSending(true);
+    setError(null);
     try {
       const created = await sendMessage(active.id, body);
       setMsgs((prev) => [...prev, created]);
       setDraft("");
-    } catch {
-      /* keep the draft so nothing is lost */
+    } catch (e) {
+      // Surface it — a silently dropped message looks like it sent, then
+      // vanishes on reload.
+      setError(e instanceof Error ? e.message : "메시지를 보내지 못했어요.");
     } finally {
       setSending(false);
     }
@@ -187,6 +191,9 @@ export default function Messages() {
                 {sending ? "전송 중…" : "보내기"}
               </button>
             </div>
+            {error && (
+              <p style={{ fontSize: 13, color: "var(--primary)", marginTop: 8 }}>{error}</p>
+            )}
           </div>
         )}
       </div>
