@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { won } from "@/lib/format";
 import { computePrice } from "@/lib/pricing";
 import { ROOM_TYPE_LABELS, GENDER_LABELS, type RoomType, type GenderPolicy } from "@/lib/types";
+import { createRoom, REGION_COORDS } from "@/lib/api/rooms";
+import { USE_REAL_API } from "@/lib/api/config";
 
 const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
@@ -23,14 +26,18 @@ const listingSchema = z.object({
   cleaningFee: z.coerce.number().min(0),
   maintenanceFee: z.coerce.number().min(0),
   minStay: z.coerce.number().min(1).max(12),
+  availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
 });
 type ListingForm = z.infer<typeof listingSchema>;
 
 export default function NewListing() {
   const [photos, setPhotos] = useState<string[]>([]);
+  const [photoUrl, setPhotoUrl] = useState("");
   const [amenities, setAmenities] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const {
     register,
@@ -44,6 +51,7 @@ export default function NewListing() {
     defaultValues: {
       name: "", region: "", roomType: "one_room", gender: "any",
       monthlyRent: 700000, deposit: 3000000, cleaningFee: 70000, maintenanceFee: 50000, minStay: 3,
+      availableFrom: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
     },
   });
 
@@ -56,13 +64,48 @@ export default function NewListing() {
     months: Number(v.minStay) || 1,
   });
 
-  function onFiles(files: FileList | null) {
-    if (!files) return;
-    Array.from(files).slice(0, 8).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => setPhotos((prev) => [...prev, reader.result as string].slice(0, 8));
-      reader.readAsDataURL(file);
-    });
+  // Photos are stored as URLs. A file picker would need real object storage
+  // (the API has an S3 presign flow, but no bucket is configured), so hosts
+  // paste image links for now — those persist and render like any other room.
+  function addPhoto() {
+    const url = photoUrl.trim();
+    if (!url) return;
+    try {
+      new URL(url); // reject anything the API's z.string().url() would refuse
+    } catch {
+      setError("올바른 이미지 URL이 아니에요.");
+      return;
+    }
+    setError(null);
+    setPhotos((prev) => [...prev, url].slice(0, 8));
+    setPhotoUrl("");
+  }
+
+  async function submit(form: ListingForm) {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      if (USE_REAL_API) {
+        await createRoom({
+          name: form.name,
+          region: form.region,
+          roomType: form.roomType,
+          monthlyRent: Number(form.monthlyRent),
+          deposit: Number(form.deposit),
+          cleaningFee: Number(form.cleaningFee),
+          maintenanceFee: Number(form.maintenanceFee),
+          minStayMonths: Number(form.minStay),
+          availableFrom: form.availableFrom,
+          images: photos,
+        });
+      }
+      setSubmitted(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "숙소를 등록하지 못했어요.");
+    } finally {
+      setSaving(false);
+    }
   }
   function toggleAmenity(a: string) {
     setAmenities((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
@@ -86,19 +129,32 @@ export default function NewListing() {
   }
 
   return (
-    <form onSubmit={handleSubmit(() => setSubmitted(true))} style={{ maxWidth: 720 }}>
+    <form onSubmit={handleSubmit(submit)} style={{ maxWidth: 720 }}>
       <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>숙소 등록</h1>
       <p style={{ color: "var(--text-2)", marginBottom: 26 }}>
         사진과 정보를 입력하면 게스트에게 보여질 숙소가 만들어집니다.
       </p>
 
       {/* 사진 업로드 */}
-      <Section title="사진 업로드" hint="최대 8장 · 첫 번째 사진이 대표 이미지가 됩니다">
-        <div className="photo-grid">
-          <button type="button" onClick={() => fileRef.current?.click()} className="press"
-            style={{ border: "2px dashed var(--border)", borderRadius: "var(--r-md)", height: 120, display: "grid", placeItems: "center", background: "var(--bg-2)", color: "var(--text-2)", fontSize: 14 }}>
-            <div style={{ textAlign: "center" }}><div style={{ fontSize: 24 }}>＋</div>사진 추가</div>
+      <Section title="사진" hint="최대 8장 · 첫 번째 사진이 대표 이미지가 됩니다">
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <input
+            value={photoUrl}
+            onChange={(e) => setPhotoUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addPhoto();
+              }
+            }}
+            placeholder="이미지 URL을 붙여넣으세요 (https://…)"
+            style={{ flex: 1 }}
+          />
+          <button type="button" className="btn btn-ghost press" onClick={addPhoto} disabled={photos.length >= 8}>
+            추가
           </button>
+        </div>
+        <div className="photo-grid">
           {photos.map((src, i) => (
             <div key={i} style={{ position: "relative", height: 120, borderRadius: "var(--r-md)", overflow: "hidden" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -109,7 +165,6 @@ export default function NewListing() {
             </div>
           ))}
         </div>
-        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
       </Section>
 
       {/* 기본 정보 (RHF register + Zod errors) */}
@@ -119,7 +174,15 @@ export default function NewListing() {
             <input {...register("name")} placeholder="예) 성수 루프탑 하우스" />
           </Field>
           <Field label="위치 (동네)" error={errors.region?.message}>
-            <input {...register("region")} placeholder="예) Seongsu-dong" />
+            <select {...register("region")}>
+              <option value="">동네를 선택하세요</option>
+              {Object.keys(REGION_COORDS).map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="입주 가능일" error={errors.availableFrom?.message}>
+            <input type="date" {...register("availableFrom")} />
           </Field>
           <Field label="방 종류">
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -176,8 +239,11 @@ export default function NewListing() {
         </div>
       </Section>
 
-      <button type="submit" className="btn btn-primary press" style={{ width: "100%", justifyContent: "center", opacity: isValid ? 1 : 0.6 }} disabled={!isValid}>
-        숙소 등록하기
+      {error && (
+        <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 10 }}>{error}</p>
+      )}
+      <button type="submit" className="btn btn-primary press" style={{ width: "100%", justifyContent: "center", opacity: isValid && !saving ? 1 : 0.6 }} disabled={!isValid || saving}>
+        {saving ? "등록 중…" : "숙소 등록하기"}
       </button>
       {!isValid && <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 8, textAlign: "center" }}>필수 항목을 올바르게 입력하면 등록할 수 있어요.</p>}
     </form>

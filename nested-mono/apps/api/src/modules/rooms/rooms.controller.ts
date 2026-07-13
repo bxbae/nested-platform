@@ -16,6 +16,9 @@ const createRoomSchema = z.object({
   maintenanceFee: z.number().int().nonnegative(),
   minStayMonths: z.number().int().min(1).default(3),
   availableFrom: z.string(),
+  // Gallery image URLs, in display order. Without this the photos never reach
+  // the service — Zod strips unknown keys.
+  images: z.array(z.string().url()).max(8).optional().default([]),
 });
 const updateRoomSchema = createRoomSchema.partial();
 

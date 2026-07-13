@@ -124,9 +124,20 @@ export class RoomsService {
   }
 
   // ── Create (host) ──
+  // `images` is a relation, not a column — spreading it into `data` makes
+  // Prisma throw, which is why listings were saving with no photos.
   async create(hostId: string, data: any) {
+    const { images = [], ...rest } = data;
     return this.prisma.room.create({
-      data: { ...data, hostId, availableFrom: new Date(data.availableFrom) },
+      data: {
+        ...rest,
+        hostId,
+        availableFrom: new Date(data.availableFrom),
+        images: {
+          create: (images as string[]).map((url, order) => ({ url, order })),
+        },
+      },
+      include: { images: { orderBy: { order: "asc" } } },
     });
   }
 
@@ -136,7 +147,25 @@ export class RoomsService {
     if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
     if (room.hostId !== hostId) throw new ForbiddenException("본인 숙소만 수정할 수 있습니다.");
     await this.redis.cacheSet(`room:${id}`, null, 1); // invalidate
-    return this.prisma.room.update({ where: { id }, data });
+
+    const { images, ...rest } = data;
+    return this.prisma.room.update({
+      where: { id },
+      data: {
+        ...rest,
+        ...(data.availableFrom ? { availableFrom: new Date(data.availableFrom) } : {}),
+        // When a gallery is supplied, replace it wholesale.
+        ...(images
+          ? {
+              images: {
+                deleteMany: {},
+                create: (images as string[]).map((url, order) => ({ url, order })),
+              },
+            }
+          : {}),
+      },
+      include: { images: { orderBy: { order: "asc" } } },
+    });
   }
 
   // ── Delete (host-scoped) ──

@@ -29,6 +29,27 @@ export function Gallery({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, images.length]);
 
+  // A listing created without photos would otherwise render an empty, clickable
+  // box. Show a tinted placeholder instead of nothing.
+  if (pics.length === 0) {
+    return (
+      <div
+        className="gallery-main"
+        style={{
+          background: `linear-gradient(135deg, ${color}22, ${color}0a)`,
+          display: "grid",
+          placeItems: "center",
+          color: "var(--text-2)",
+          fontSize: 14,
+          minHeight: 280,
+          borderRadius: "var(--r-md)",
+        }}
+      >
+        아직 등록된 사진이 없어요
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="gallery">

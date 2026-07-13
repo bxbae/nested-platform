@@ -12,6 +12,7 @@ import {
   type ApiRoom,
   type ApiSearchResponse,
 } from "./adapters";
+import type { RoomType } from "@/lib/types";
 import { filtersToParams } from "@/features/search/schema";
 import type { SearchParams, PaginatedRooms, House } from "@/lib/types";
 
@@ -34,6 +35,52 @@ export async function searchRooms(
   const r = await fetch(`/api/search?${params.toString()}`);
   if (!r.ok) throw new Error("search failed");
   return r.json();
+}
+
+// Rooms live at fixed neighborhoods; the API requires lat/lng but asking a host
+// to type coordinates is absurd. Map the region they pick to a known point.
+// (A real build would geocode the address instead.)
+export const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
+  "Seongsu-dong": { lat: 37.5446, lng: 127.0559 },
+  "Yeonnam-dong": { lat: 37.5636, lng: 126.9256 },
+  "Mangwon-dong": { lat: 37.5556, lng: 126.9018 },
+  "Seogyo-dong": { lat: 37.5561, lng: 126.9236 },
+  "Pangyo": { lat: 37.3948, lng: 127.1112 },
+  "Yeoksam-dong": { lat: 37.5006, lng: 127.0366 },
+  "Hyehwa-dong": { lat: 37.5822, lng: 127.0018 },
+  "Sinchon": { lat: 37.5551, lng: 126.9368 },
+};
+
+export interface CreateRoomInput {
+  name: string;
+  region: string;
+  roomType: RoomType;
+  monthlyRent: number;
+  deposit: number;
+  cleaningFee: number;
+  maintenanceFee: number;
+  minStayMonths: number;
+  availableFrom: string; // ISO date
+  images: string[];
+}
+
+// POST /rooms — host only. Returns the created room (with its images).
+export async function createRoom(input: CreateRoomInput): Promise<{ id: string }> {
+  const coords = REGION_COORDS[input.region] ?? { lat: 37.5665, lng: 126.978 }; // Seoul fallback
+  return api.post<{ id: string }>("/rooms", {
+    name: input.name,
+    region: input.region,
+    lat: coords.lat,
+    lng: coords.lng,
+    roomType: input.roomType.toUpperCase(),
+    monthlyRent: input.monthlyRent,
+    deposit: input.deposit,
+    cleaningFee: input.cleaningFee,
+    maintenanceFee: input.maintenanceFee,
+    minStayMonths: input.minStayMonths,
+    availableFrom: input.availableFrom,
+    images: input.images,
+  });
 }
 
 export async function getRoom(id: string): Promise<House> {
