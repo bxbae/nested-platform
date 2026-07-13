@@ -90,8 +90,8 @@ export default function NewListing() {
     setPhotoUrl("");
   }
 
-  // Files go straight to S3 via a presigned URL. If storage isn't configured
-  // on the API yet this fails cleanly and the host can paste a URL instead.
+  // Files go straight to Cloudinary via a signed upload. If storage isn't
+  // configured on the API this fails cleanly and the host can paste a URL.
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
     setUploading(true);
@@ -99,7 +99,8 @@ export default function NewListing() {
     try {
       const room = 8 - photos.length;
       const picked = Array.from(files).slice(0, room);
-      const urls = await Promise.all(picked.map(uploadImage));
+      // map() passes (value, index, array) — call with just the file.
+      const urls = await Promise.all(picked.map((file) => uploadImage(file)));
       setPhotos((prev) => [...prev, ...urls].slice(0, 8));
     } catch (e) {
       setError(
@@ -207,6 +208,11 @@ export default function NewListing() {
             hidden
             onChange={(e) => onFiles(e.target.files)}
           />
+          {/* Show failures right here — the submit-button error sits far below
+              the fold, so an upload error there goes unseen. */}
+          {error && (
+            <p style={{ fontSize: 13, color: "var(--primary)", marginTop: 8 }}>{error}</p>
+          )}
         </div>
         <div className="photo-grid">
           {photos.map((src, i) => (
