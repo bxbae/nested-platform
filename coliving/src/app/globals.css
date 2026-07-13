@@ -152,7 +152,9 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--te
 .btn-primary:hover { background: var(--primary-press); box-shadow: var(--shadow-md); }
 .btn-secondary { background: var(--secondary); color: #fff; }
 .btn-secondary:hover { background: #008f84; box-shadow: var(--shadow-md); }
-.btn-ghost { background: #fff; color: var(--text); border: 1px solid var(--border); }
+/* `background: #fff` here made the label invisible in dark mode — the text
+   colour follows the theme (near-white) but the button stayed white. */
+.btn-ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 .btn-ghost:hover { border-color: var(--text); box-shadow: var(--shadow-sm); }
 
 /* ── Chips ──────────────────────────────────────────────────── */
@@ -164,7 +166,7 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--te
   font-weight: 500;
   padding: 7px 13px;
   border-radius: var(--r-pill);
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-2);
   transition: all 0.15s ease;
@@ -200,7 +202,8 @@ input, select, textarea { font-family: inherit; font-size: 15px; color: var(--te
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  background: #fff;
+  background: var(--surface);
+  color: var(--text);
   outline: none;
   transition: border 0.15s ease, box-shadow 0.15s ease;
 }
