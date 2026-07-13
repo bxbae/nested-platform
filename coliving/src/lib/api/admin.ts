@@ -37,3 +37,8 @@ export async function listPendingRooms(): Promise<PendingListing[]> {
 export async function publishRoom(id: string, published = true): Promise<void> {
   await api.patch(`/admin/rooms/${id}/publish`, { published });
 }
+
+// DELETE /admin/rooms/:id — reject the submission outright
+export async function rejectRoom(id: string): Promise<void> {
+  await api.delete(`/admin/rooms/${id}`);
+}

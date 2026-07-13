@@ -5,7 +5,7 @@ import Link from "next/link";
 import { won } from "@/lib/format";
 import { ROOM_TYPE_LABELS } from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
-import { listPendingRooms, publishRoom, type PendingListing } from "@/lib/api/admin";
+import { listPendingRooms, publishRoom, rejectRoom, type PendingListing } from "@/lib/api/admin";
 
 // 승인 대기 — the queue that gates a new listing into search. Rooms land here
 // on creation (published=false) and only become visible to guests once approved.
@@ -14,6 +14,7 @@ export default function Approvals() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -36,6 +37,27 @@ export default function Approvals() {
       setPending((prev) => prev.filter((p) => p.id !== id)); // drops out of the queue
     } catch (e) {
       setError(e instanceof Error ? e.message : "승인하지 못했어요.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Rejecting deletes the listing for good, so make the admin confirm rather
+  // than firing on a single stray click.
+  async function reject(id: string) {
+    if (busy) return;
+    if (confirmId !== id) {
+      setConfirmId(id);
+      return;
+    }
+    setBusy(id);
+    setError(null);
+    try {
+      await rejectRoom(id);
+      setPending((prev) => prev.filter((p) => p.id !== id));
+      setConfirmId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "삭제하지 못했어요.");
     } finally {
       setBusy(null);
     }
@@ -109,7 +131,21 @@ export default function Approvals() {
                     onClick={() => approve(h.id)}
                     disabled={busy === h.id}
                   >
-                    {busy === h.id ? "승인 중…" : "승인"}
+                    {busy === h.id ? "처리 중…" : "승인"}
+                  </button>
+                  <button
+                    className="btn btn-ghost press"
+                    style={{
+                      fontSize: 13,
+                      padding: "8px 14px",
+                      color: confirmId === h.id ? "#fff" : "var(--primary)",
+                      background: confirmId === h.id ? "var(--primary)" : undefined,
+                      borderColor: "var(--primary)",
+                    }}
+                    onClick={() => reject(h.id)}
+                    disabled={busy === h.id}
+                  >
+                    {confirmId === h.id ? "정말 삭제할까요?" : "거부"}
                   </button>
                 </div>
               </div>

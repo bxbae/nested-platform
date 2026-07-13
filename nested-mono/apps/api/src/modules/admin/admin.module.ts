@@ -1,4 +1,7 @@
-import { Controller, Get, Patch, Param, Query, Body, UseGuards, Injectable, Module } from "@nestjs/common";
+import {
+  Controller, Get, Patch, Delete, Param, Query, Body, UseGuards, Injectable, Module,
+  NotFoundException, BadRequestException,
+} from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -36,6 +39,36 @@ export class AdminService {
   }
   setPublished(id: string, published: boolean) {
     return this.prisma.room.update({ where: { id }, data: { published } });
+  }
+
+  // Reject a submission outright. Unlike RoomsService.remove this isn't scoped
+  // to the owner — an admin is by definition acting on someone else's listing.
+  // Only unpublished rooms may be rejected, so this can't be used to nuke a
+  // live listing out from under a host.
+  async rejectRoom(id: string) {
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      include: { _count: { select: { reservations: true } } },
+    });
+    if (!room) {
+      throw new NotFoundException({ code: "ROOM_NOT_FOUND", message: "숙소를 찾을 수 없습니다." });
+    }
+    if (room.published) {
+      throw new BadRequestException({
+        code: "ALREADY_PUBLISHED",
+        message: "이미 게시된 숙소는 거부할 수 없습니다. 먼저 게시를 취소해주세요.",
+      });
+    }
+    // Reservations have an FK RESTRICT, so the delete would fail at the DB
+    // level with an opaque error. Say so plainly instead.
+    if (room._count.reservations > 0) {
+      throw new BadRequestException({
+        code: "HAS_RESERVATIONS",
+        message: "예약이 있는 숙소는 삭제할 수 없습니다.",
+      });
+    }
+    await this.prisma.room.delete({ where: { id } });
+    return { ok: true };
   }
 
   // reports (신고 관리)
@@ -96,6 +129,12 @@ export class AdminController {
   @Patch("rooms/:id/publish")
   publish(@Param("id") id: string, @Body(new ZodValidationPipe(publishSchema)) dto: any) {
     return this.admin.setPublished(id, dto.published);
+  }
+
+  // DELETE /admin/rooms/:id — reject a pending submission
+  @Delete("rooms/:id")
+  reject(@Param("id") id: string) {
+    return this.admin.rejectRoom(id);
   }
 
   @Get("reports")
