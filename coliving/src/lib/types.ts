@@ -43,6 +43,7 @@ export interface House {
   blurb: string;
   description?: string; // long-form 숙소 소개
   host?: {
+    id?: string; // needed to open a chat thread with them
     name: string;
     since: string; // e.g. "2023"
     superhost: boolean;

@@ -69,6 +69,7 @@ interface ApiImage {
   order?: number;
 }
 interface ApiHostProfile {
+  id?: string;
   name?: string;
   superhost?: boolean;
   responseRate?: number;
@@ -154,6 +155,7 @@ export function apiRoomToHouse(r: ApiRoom): House {
     description: r.description,
     host: r.host
       ? {
+          id: r.host.id,
           name: r.host.name ?? "호스트",
           since: r.host.createdAt ? new Date(r.host.createdAt).getFullYear().toString() : "",
           superhost: r.host.superhost ?? false,

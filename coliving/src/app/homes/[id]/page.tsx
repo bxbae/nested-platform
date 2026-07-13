@@ -7,6 +7,7 @@ import type { House } from "@/lib/types";
 import { jobHubs, estimateCommute, commuteBand } from "@/lib/commute";
 import { enrichHouse } from "@/lib/detail";
 import { BookingWidget } from "@/components/BookingWidget";
+import { ContactHostButton } from "@/components/ContactHostButton";
 import { Gallery } from "@/components/Gallery";
 import { DetailActions } from "@/components/DetailActions";
 import { LocationMap } from "@/components/LocationMap";
@@ -200,6 +201,7 @@ export default async function HomeDetail({
                 </div>
               </div>
             </div>
+            <ContactHostButton roomId={house.id} hostId={house.host.id} />
           </Section>
 
           {/* ── 방 소개 ── */}
