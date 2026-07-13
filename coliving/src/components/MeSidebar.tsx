@@ -10,7 +10,7 @@ const items = [
   { href: "/me/trips", label: "예약 내역", icon: "📋" },
   { href: "/me/wishlist", label: "찜 목록", icon: "♥" },
   { href: "/me/payments", label: "결제 내역", icon: "💳" },
-  { href: "/me/chat", label: "메시지", icon: "💬" },
+  { href: "/me/messages", label: "메시지", icon: "💬" },
   { href: "/me/notifications", label: "알림", icon: "🔔" },
   { href: "/me/reviews", label: "리뷰 관리", icon: "⭐" },
   { href: "/me/settings", label: "설정", icon: "⚙️" },

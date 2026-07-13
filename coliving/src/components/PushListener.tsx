@@ -49,7 +49,7 @@ export function PushListener() {
       {toasts.map((t) => (
         <Link
           key={t.id}
-          href="/me/chat"
+          href="/me/messages"
           onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
           className="card"
           style={{
