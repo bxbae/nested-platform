@@ -53,27 +53,63 @@ export function logout() {
 export async function fetchMe(): Promise<AuthUser | null> {
   if (!USE_REAL_API || !authStore.isAuthenticated()) return authStore.getUser();
   try {
-    const me = await api.get<{
-      sub?: string;
-      id?: string;
-      email: string;
-      role: string;
-      name?: string | null;
-      createdAt?: string | null;
-    }>("/auth/me");
-    const user: AuthUser = {
-      id: me.id ?? me.sub ?? "",
-      email: me.email,
-      role: me.role,
-      name: me.name ?? undefined,
-      createdAt: me.createdAt ?? null,
-    };
+    const me = await api.get<ApiMe>("/auth/me");
+    const user = toAuthUser(me);
     const current = authStore.get();
     if (current) authStore.set({ ...current, user });
     return user;
   } catch {
     return null;
   }
+}
+
+interface ApiMe {
+  sub?: string;
+  id?: string;
+  email: string;
+  role: string;
+  name?: string | null;
+  bio?: string | null;
+  avatarColor?: string;
+  hasPassword?: boolean;
+  createdAt?: string | null;
+}
+
+function toAuthUser(me: ApiMe): AuthUser {
+  return {
+    id: me.id ?? me.sub ?? "",
+    email: me.email,
+    role: me.role,
+    name: me.name ?? undefined,
+    bio: me.bio ?? null,
+    avatarColor: me.avatarColor,
+    hasPassword: me.hasPassword,
+    createdAt: me.createdAt ?? null,
+  };
+}
+
+// PATCH /auth/me — update own profile. Email and role are not accepted by the
+// API, so they can't be changed here.
+export async function updateProfile(data: {
+  name?: string;
+  bio?: string;
+  avatarColor?: string;
+}): Promise<AuthUser> {
+  const me = await api.patch<ApiMe>("/auth/me", data);
+  const user = toAuthUser(me);
+  // Keep the store in sync so the header/sidebar update immediately.
+  const current = authStore.get();
+  if (current) authStore.set({ ...current, user });
+  return user;
+}
+
+// POST /auth/change-password — the API verifies the current password and
+// revokes existing refresh tokens on success.
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await api.post("/auth/change-password", { currentPassword, newPassword });
 }
 
 export type OAuthProvider = "google" | "kakao" | "naver" | "apple";

@@ -12,6 +12,10 @@ export interface AuthUser {
   email: string;
   role: string;
   name?: string;
+  bio?: string | null;
+  avatarColor?: string;
+  // false for social-login accounts, which have no password to change.
+  hasPassword?: boolean;
   createdAt?: string | null;
 }
 

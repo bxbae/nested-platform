@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Req, Res, HttpCode } from "@nestjs/common";
+import { Controller, Post, Get, Patch, Body, UseGuards, Req, Res, HttpCode } from "@nestjs/common";
 import type { Response } from "express";
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
@@ -30,6 +30,19 @@ const loginSchema = z.object({
 });
 const refreshSchema = z.object({ refreshToken: z.string().min(1) });
 
+// Only these three are writable. `email` and `role` are deliberately absent:
+// Zod strips unknown keys, so a client can't sneak `role: "ADMIN"` through.
+const updateMeSchema = z.object({
+  name: z.string().min(1, "이름을 입력해주세요.").max(40).optional(),
+  bio: z.string().max(500, "자기소개는 500자 이내로 입력해주세요.").optional(),
+  avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요.").optional(),
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "현재 비밀번호를 입력해주세요."),
+  newPassword: z.string().min(8, "새 비밀번호는 8자 이상이어야 합니다."),
+});
+
 @Controller("auth")
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
@@ -56,6 +69,28 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   me(@Req() req: any) {
     return this.auth.getMe(req.user.id);
+  }
+
+  // PATCH /auth/me — update own profile (name, bio, avatar colour).
+  @Patch("me")
+  @UseGuards(JwtAuthGuard)
+  updateMe(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(updateMeSchema)) dto: z.infer<typeof updateMeSchema>,
+  ) {
+    return this.auth.updateMe(req.user.id, dto);
+  }
+
+  // POST /auth/change-password — verifies the current password first.
+  // Rejects OAuth-only accounts, which have no password to change.
+  @Post("change-password")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  changePassword(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(changePasswordSchema)) dto: z.infer<typeof changePasswordSchema>,
+  ) {
+    return this.auth.changePassword(req.user.id, dto.currentPassword, dto.newPassword);
   }
 
   // ── Google OAuth ──

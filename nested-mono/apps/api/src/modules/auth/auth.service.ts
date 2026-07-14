@@ -1,4 +1,7 @@
-import { Injectable, UnauthorizedException, ConflictException } from "@nestjs/common";
+import {
+  Injectable, UnauthorizedException, ConflictException,
+  NotFoundException, BadRequestException,
+} from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { createHash } from "crypto";
@@ -22,7 +25,13 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, role: true, createdAt: true },
+      select: {
+        id: true, email: true, name: true, role: true, createdAt: true,
+        bio: true, avatarColor: true,
+        // Lets the client hide "change password" for OAuth-only accounts,
+        // which have no password to change.
+        passwordHash: true,
+      },
     });
     if (!user) return null;
     return {
@@ -30,8 +39,73 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      bio: user.bio,
+      avatarColor: user.avatarColor,
+      hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
     };
+  }
+
+  // ── Profile update ──
+  // Only name/bio/avatarColor are writable. Email and role are deliberately
+  // NOT accepted: letting a client set its own role would make anyone an admin,
+  // and email changes need a verification flow we don't have.
+  async updateMe(userId: string, data: { name?: string; bio?: string; avatarColor?: string }) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.bio !== undefined ? { bio: data.bio } : {}),
+        ...(data.avatarColor !== undefined ? { avatarColor: data.avatarColor } : {}),
+      },
+      select: {
+        id: true, email: true, name: true, role: true, createdAt: true,
+        bio: true, avatarColor: true, passwordHash: true,
+      },
+    });
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      bio: user.bio,
+      avatarColor: user.avatarColor,
+      hasPassword: user.passwordHash !== null,
+      createdAt: user.createdAt.toISOString(),
+    };
+  }
+
+  // ── Password change ──
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+    if (!user) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+    }
+    // Social-login accounts have no password. Offering a "change" here would be
+    // meaningless — they'd need a "set password" flow instead.
+    if (!user.passwordHash) {
+      throw new BadRequestException({
+        code: "NO_PASSWORD",
+        message: "소셜 로그인 계정은 비밀번호를 변경할 수 없어요.",
+      });
+    }
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) {
+      throw new BadRequestException({
+        code: "WRONG_PASSWORD",
+        message: "현재 비밀번호가 올바르지 않습니다.",
+      });
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+
+    // Existing refresh tokens stay valid, which means a stolen session survives
+    // a password change. Revoke them so "change password" actually locks others out.
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
+    return { ok: true };
   }
 
   // ── Email/password registration ──
