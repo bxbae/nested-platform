@@ -63,6 +63,7 @@ model User {
   reviews      Review[]
   messages     Message[]
   sessions     RefreshToken[]
+  resetTokens  PasswordResetToken[]
   hostProfile  HostProfile?
   properties   Property[]     @relation("HostProperties")
   notifications Notification[]
@@ -83,6 +84,22 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash String
   expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// One-time password-reset tokens.
+//
+// Only the SHA-256 hash is stored: a leaked database must not hand an attacker
+// working reset links. The raw token exists only in the email we send.
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime? // set on use, so a link can't be replayed
   createdAt DateTime @default(now())
 
   @@index([userId])

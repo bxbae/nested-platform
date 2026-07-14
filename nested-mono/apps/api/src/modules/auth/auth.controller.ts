@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
 import { AuthService } from "./auth.service";
+import { MailService } from "./mail.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { GoogleStrategy } from "./strategies/google.strategy";
 import { KakaoStrategy } from "./strategies/kakao.strategy";
@@ -36,6 +37,15 @@ const updateMeSchema = z.object({
   name: z.string().min(1, "이름을 입력해주세요.").max(40).optional(),
   bio: z.string().max(500, "자기소개는 500자 이내로 입력해주세요.").optional(),
   avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요.").optional(),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email("올바른 이메일을 입력해주세요."),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(8, "비밀번호는 8자 이상이어야 합니다."),
 });
 
 const changePasswordSchema = z.object({
@@ -91,6 +101,27 @@ export class AuthController {
     @Body(new ZodValidationPipe(changePasswordSchema)) dto: z.infer<typeof changePasswordSchema>,
   ) {
     return this.auth.changePassword(req.user.id, dto.currentPassword, dto.newPassword);
+  }
+
+  // POST /auth/forgot-password — emails a reset link.
+  // Deliberately unauthenticated, and always returns { ok: true } even for an
+  // unknown address: a different response would reveal which emails have
+  // accounts.
+  @Post("forgot-password")
+  @HttpCode(200)
+  forgotPassword(
+    @Body(new ZodValidationPipe(forgotPasswordSchema)) dto: z.infer<typeof forgotPasswordSchema>,
+  ) {
+    return this.auth.forgotPassword(dto.email);
+  }
+
+  // POST /auth/reset-password — consumes the emailed token.
+  @Post("reset-password")
+  @HttpCode(200)
+  resetPassword(
+    @Body(new ZodValidationPipe(resetPasswordSchema)) dto: z.infer<typeof resetPasswordSchema>,
+  ) {
+    return this.auth.resetPassword(dto.token, dto.newPassword);
   }
 
   // ── Google OAuth ──
@@ -161,7 +192,7 @@ export class AuthController {
     JwtModule.register({}), // secrets passed per-sign call
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, KakaoStrategy, NaverStrategy, AppleStrategy],
+  providers: [AuthService, MailService, JwtStrategy, GoogleStrategy, KakaoStrategy, NaverStrategy, AppleStrategy],
   exports: [AuthService],
 })
 export class AuthModule {}

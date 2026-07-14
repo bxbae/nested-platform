@@ -103,6 +103,17 @@ export async function updateProfile(data: {
   return user;
 }
 
+// POST /auth/forgot-password — always resolves, even for an unknown address.
+// The API deliberately gives no signal about whether the email is registered.
+export async function forgotPassword(email: string): Promise<void> {
+  await api.post("/auth/forgot-password", { email }, { auth: false });
+}
+
+// POST /auth/reset-password — consumes the token from the emailed link.
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  await api.post("/auth/reset-password", { token, newPassword }, { auth: false });
+}
+
 // POST /auth/change-password — the API verifies the current password and
 // revokes existing refresh tokens on success.
 export async function changePassword(
