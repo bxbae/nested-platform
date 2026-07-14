@@ -29,7 +29,15 @@ describe("AuthService — JWT refresh rotation", () => {
     },
   };
 
-  const svc = new AuthService(prisma as any, jwt as any);
+  // AuthService now takes a MailService. These tests never exercise the reset
+  // flow, so a no-op double keeps the constructor happy without sending mail.
+  const mail = {
+    sendPasswordReset: jest.fn(async () => {}),
+    send: jest.fn(async () => {}),
+    configured: false,
+  };
+
+  const svc = new AuthService(prisma as any, jwt as any, mail as any);
 
   beforeEach(() => { store.length = 0; jest.clearAllMocks(); });
 
