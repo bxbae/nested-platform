@@ -1,8 +1,12 @@
-import { Injectable, UnauthorizedException, ConflictException } from "@nestjs/common";
+import {
+  Injectable, UnauthorizedException, ConflictException,
+  NotFoundException, BadRequestException,
+} from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
+import { MailService } from "./mail.service";
 
 export interface JwtPayload {
   sub: string;
@@ -14,7 +18,8 @@ export interface JwtPayload {
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwt: JwtService
+    private readonly jwt: JwtService,
+    private readonly mail: MailService
   ) {}
 
   // Current user, read fresh from the DB so name/createdAt reflect reality
@@ -22,7 +27,13 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, role: true, createdAt: true },
+      select: {
+        id: true, email: true, name: true, role: true, createdAt: true,
+        bio: true, avatarColor: true,
+        // Lets the client hide "change password" for OAuth-only accounts,
+        // which have no password to change.
+        passwordHash: true,
+      },
     });
     if (!user) return null;
     return {
@@ -30,8 +41,73 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      bio: user.bio,
+      avatarColor: user.avatarColor,
+      hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
     };
+  }
+
+  // ── Profile update ──
+  // Only name/bio/avatarColor are writable. Email and role are deliberately
+  // NOT accepted: letting a client set its own role would make anyone an admin,
+  // and email changes need a verification flow we don't have.
+  async updateMe(userId: string, data: { name?: string; bio?: string; avatarColor?: string }) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.bio !== undefined ? { bio: data.bio } : {}),
+        ...(data.avatarColor !== undefined ? { avatarColor: data.avatarColor } : {}),
+      },
+      select: {
+        id: true, email: true, name: true, role: true, createdAt: true,
+        bio: true, avatarColor: true, passwordHash: true,
+      },
+    });
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      bio: user.bio,
+      avatarColor: user.avatarColor,
+      hasPassword: user.passwordHash !== null,
+      createdAt: user.createdAt.toISOString(),
+    };
+  }
+
+  // ── Password change ──
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+    if (!user) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+    }
+    // Social-login accounts have no password. Offering a "change" here would be
+    // meaningless — they'd need a "set password" flow instead.
+    if (!user.passwordHash) {
+      throw new BadRequestException({
+        code: "NO_PASSWORD",
+        message: "소셜 로그인 계정은 비밀번호를 변경할 수 없어요.",
+      });
+    }
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) {
+      throw new BadRequestException({
+        code: "WRONG_PASSWORD",
+        message: "현재 비밀번호가 올바르지 않습니다.",
+      });
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+
+    // Existing refresh tokens stay valid, which means a stolen session survives
+    // a password change. Revoke them so "change password" actually locks others out.
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
+    return { ok: true };
   }
 
   // ── Email/password registration ──
@@ -117,6 +193,70 @@ export class AuthService {
   // Revoke all sessions for a user (logout everywhere).
   async logoutAll(userId: string) {
     await this.prisma.refreshToken.deleteMany({ where: { userId } });
+  }
+
+  // ── Forgot password ──
+  // Always resolves the same way, whether or not the address is registered.
+  // Reporting "no such user" would turn this into a membership oracle — an
+  // attacker could enumerate which emails have accounts.
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, passwordHash: true },
+    });
+
+    // Social-only accounts have no password to reset. Same silent no-op:
+    // saying so would leak that the account exists and how it signs in.
+    if (user?.passwordHash) {
+      // Invalidate outstanding links so only the newest one works.
+      await this.prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+
+      const token = randomBytes(32).toString("hex");
+      await this.prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: this.hashToken(token),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+        },
+      });
+
+      const base = process.env.FRONTEND_URL ?? "http://localhost:3000";
+      await this.mail.sendPasswordReset(email, `${base}/auth/reset?token=${token}`);
+    }
+
+    return { ok: true };
+  }
+
+  // ── Reset password ──
+  async resetPassword(token: string, newPassword: string) {
+    const row = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash: this.hashToken(token) },
+      select: { id: true, userId: true, expiresAt: true, usedAt: true },
+    });
+
+    // One message for every failure mode (unknown / expired / already used).
+    // Distinguishing them only helps someone probing tokens.
+    if (!row || row.usedAt || row.expiresAt < new Date()) {
+      throw new BadRequestException({
+        code: "INVALID_RESET_TOKEN",
+        message: "링크가 만료되었거나 이미 사용되었어요. 다시 요청해주세요.",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: row.userId }, data: { passwordHash } }),
+      // Burn the token so the link can't be replayed.
+      this.prisma.passwordResetToken.update({
+        where: { id: row.id },
+        data: { usedAt: new Date() },
+      }),
+      // Whoever forced the reset must not keep an old session alive.
+      this.prisma.refreshToken.deleteMany({ where: { userId: row.userId } }),
+    ]);
+
+    return { ok: true };
   }
 
   private hashToken(token: string): string {

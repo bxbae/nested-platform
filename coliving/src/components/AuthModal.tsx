@@ -179,6 +179,18 @@ export function AuthModal({
           {busy ? "처리 중…" : mode === "login" ? "로그인" : "회원가입"}
         </button>
 
+        {/* Only on login — offering this during signup makes no sense. */}
+        {mode === "login" && (
+          <div style={{ textAlign: "center", marginTop: 12 }}>
+            <a
+              href="/auth/forgot"
+              style={{ fontSize: 13, color: "var(--text-2)", textDecoration: "underline" }}
+            >
+              비밀번호를 잊으셨나요?
+            </a>
+          </div>
+        )}
+
         {/* social logins — redirect to backend OAuth start routes */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 14px" }}>
           <span style={{ flex: 1, height: 1, background: "var(--border)" }} />

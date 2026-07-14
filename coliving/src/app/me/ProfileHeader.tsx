@@ -17,8 +17,8 @@ export function ProfileHeader() {
   const joinYear = user?.createdAt
     ? new Date(user.createdAt).getFullYear()
     : currentUser.joined;
-  // The API doesn't expose a bio field yet, so real accounts have none.
-  const bio: string | null = null;
+  // The API now returns `bio` (editable at /me/settings).
+  const bio: string | null = user?.bio ?? null;
 
   return (
     <div className="card" style={{ padding: 26, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
