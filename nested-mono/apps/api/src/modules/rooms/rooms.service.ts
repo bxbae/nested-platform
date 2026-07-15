@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.module";
 import { GeocodingService } from "./geocoding.service";
@@ -63,7 +64,16 @@ export class RoomsService {
       if (query.maxRent) where.monthlyRent.lte = query.maxRent;
     }
 
-    // ── sort ── recommended is default (createdAt desc as proxy)
+    // ── sort ──
+    // "rating" is not a column: it's the average of a room's reviews. Prisma's
+    // orderBy can't sort by a relation aggregate, so we handle it on a separate
+    // path (see searchByRating) that reuses this same `where` filter. Every
+    // other sort maps to a plain column and keeps id-based cursor pagination.
+    if (query.sort === "rating") {
+      return this.searchByRating(where, take, query.cursor);
+    }
+
+    // recommended is default (createdAt desc as proxy)
     const orderBy: any =
       query.sort === "price_asc"
         ? { monthlyRent: "asc" }
@@ -89,6 +99,52 @@ export class RoomsService {
     return {
       items: page,
       nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+      ...(total !== undefined ? { total } : {}),
+    };
+  }
+
+  // ── Sort by average review rating ──
+  // Rating is a relation aggregate, so id-cursor pagination doesn't apply here.
+  // The cursor is instead an offset ("cursor:<n>"), keeping the public response
+  // shape identical to the column-sorted path. Rooms with no reviews sort last.
+  private async searchByRating(where: any, take: number, cursor?: string) {
+    // 1) Resolve the filtered set with the SAME Prisma `where` — no filter drift.
+    const filtered = await this.prisma.room.findMany({ where, select: { id: true } });
+    const ids = filtered.map((r) => r.id);
+    const total = cursor ? undefined : ids.length;
+    if (ids.length === 0) {
+      return { items: [], nextCursor: null, ...(total !== undefined ? { total } : {}) };
+    }
+
+    // 2) Rank those ids by average rating (desc), then newest as a tiebreak.
+    //    NULLS LAST puts review-less rooms at the bottom. Parameterised via
+    //    Prisma.join to stay injection-safe.
+    const ranked = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT r."id"
+      FROM "Room" r
+      LEFT JOIN "Review" rv ON rv."roomId" = r."id"
+      WHERE r."id" IN (${Prisma.join(ids)})
+      GROUP BY r."id", r."createdAt"
+      ORDER BY AVG(rv."rating") DESC NULLS LAST, r."createdAt" DESC
+    `;
+
+    // 3) Offset slice (+1 to detect a next page), decoding the offset cursor.
+    const offset = cursor ? Number(cursor) || 0 : 0;
+    const window = ranked.slice(offset, offset + take + 1);
+    const hasMore = window.length > take;
+    const pageIds = (hasMore ? window.slice(0, take) : window).map((r) => r.id);
+
+    // 4) Fetch the page rows, then restore the ranked order (findMany won't keep it).
+    const rows = await this.prisma.room.findMany({
+      where: { id: { in: pageIds } },
+      include: { images: { orderBy: { order: "asc" }, take: 1 } },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const items = pageIds.map((id) => byId.get(id)).filter(Boolean);
+
+    return {
+      items,
+      nextCursor: hasMore ? String(offset + take) : null,
       ...(total !== undefined ? { total } : {}),
     };
   }
