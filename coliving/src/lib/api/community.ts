@@ -6,7 +6,7 @@ import { USE_REAL_API } from "./config";
 import { api } from "./client";
 import type { Post } from "@/lib/types";
 
-export type ApiCategory = "NOTICE" | "EVENT" | "CHORE" | "MARKET" | "CHAT";
+export type ApiCategory = "NOTICE" | "EVENT" | "CHORE" | "MARKET" | "CHAT" | "SEEKING";
 
 interface ApiAuthor {
   id: string;
@@ -55,16 +55,28 @@ function adapt(p: ApiPost): Post {
   };
 }
 
-// GET /posts?category=…
-export async function listPosts(category = "all"): Promise<Post[]> {
+// GET /posts?category=…&q=…
+// `q` is an optional keyword (title/body) — hosts use it to search 방 구함 posts.
+export async function listPosts(category = "all", q = ""): Promise<Post[]> {
+  const keyword = q.trim();
   if (!USE_REAL_API) {
     const res = await fetch(`/api/posts?category=${category}`);
     if (!res.ok) return [];
     const data = await res.json();
-    return data.posts ?? [];
+    let posts: Post[] = data.posts ?? [];
+    // Demo mode has no server-side search, so filter client-side.
+    if (keyword) {
+      const kw = keyword.toLowerCase();
+      posts = posts.filter(
+        (p) => p.title.toLowerCase().includes(kw) || p.body.toLowerCase().includes(kw),
+      );
+    }
+    return posts;
   }
   try {
-    const rows = await api.get<ApiPost[]>(`/posts?category=${encodeURIComponent(category)}`, {
+    const params = new URLSearchParams({ category });
+    if (keyword) params.set("q", keyword);
+    const rows = await api.get<ApiPost[]>(`/posts?${params.toString()}`, {
       auth: false,
     });
     return rows.map(adapt);

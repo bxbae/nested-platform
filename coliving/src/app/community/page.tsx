@@ -14,6 +14,7 @@ const categories = [
   { id: "chore", label: "Chores" },
   { id: "market", label: "Market" },
   { id: "chat", label: "Chat" },
+  { id: "seeking", label: "방 구함" },
 ];
 
 const catColor: Record<string, string> = {
@@ -22,6 +23,7 @@ const catColor: Record<string, string> = {
   chore: "#3E9BC4",
   market: "#7C6FE0",
   chat: "#717171",
+  seeking: "#E8833A",
 };
 
 export default function Community() {
