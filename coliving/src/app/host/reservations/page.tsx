@@ -2,25 +2,35 @@
 
 import { useEffect, useState } from "react";
 import { won } from "@/lib/format";
-import type { Booking } from "@/lib/types";
-import { MY_HOUSE_IDS } from "@/lib/host";
+import {
+  listHostReservations,
+  setHostReservationStatus,
+  type HostReservation,
+  type HostReservationStatus,
+} from "@/lib/api/reservations";
 
-const STATUS = {
-  hold: { label: "결제 대기", color: "var(--warning)" },
-  paid: { label: "예약 확정", color: "var(--secondary)" },
-  cancelled: { label: "취소됨", color: "var(--text-2)" },
-} as const;
+// Full lifecycle labels/colors. Guest-side cancellations and host actions are
+// shown distinctly so the host can tell what happened.
+const STATUS: Record<HostReservationStatus, { label: string; color: string; muted?: boolean }> = {
+  PENDING_PAYMENT: { label: "결제 대기", color: "var(--warning)" },
+  CONFIRMED: { label: "예약 확정", color: "var(--secondary)" },
+  COMPLETED: { label: "이용 완료", color: "var(--text-2)", muted: true },
+  NO_SHOW: { label: "노쇼", color: "var(--text-2)", muted: true },
+  CANCELLED_BY_GUEST: { label: "게스트 취소", color: "var(--text-2)", muted: true },
+  CANCELLED_BY_HOST: { label: "거절/취소", color: "var(--text-2)", muted: true },
+};
+
+type Filter = "all" | "PENDING_PAYMENT" | "CONFIRMED" | "done";
 
 export default function HostReservations() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [rows, setRows] = useState<HostReservation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "hold" | "paid" | "cancelled">("all");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
 
   async function load() {
-    const res = await fetch("/api/bookings");
-    const data = await res.json();
-    // only reservations for my listings
-    setBookings(data.bookings.filter((b: Booking) => MY_HOUSE_IDS.includes(b.houseId)));
+    setLoading(true);
+    setRows(await listHostReservations());
     setLoading(false);
   }
 
@@ -28,26 +38,42 @@ export default function HostReservations() {
     load();
   }, []);
 
-  async function act(id: string, status: "paid" | "cancelled") {
-    await fetch("/api/bookings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status }),
-    });
-    load();
+  async function act(
+    id: string,
+    status: "CONFIRMED" | "CANCELLED_BY_HOST" | "COMPLETED" | "NO_SHOW"
+  ) {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      await setHostReservationStatus(id, status);
+      await load();
+    } finally {
+      setBusyId(null);
+    }
   }
 
-  const shown = filter === "all" ? bookings : bookings.filter((b) => b.status === filter);
+  const shown = rows.filter((r) => {
+    if (filter === "all") return true;
+    if (filter === "done") return ["COMPLETED", "NO_SHOW", "CANCELLED_BY_GUEST", "CANCELLED_BY_HOST"].includes(r.status);
+    return r.status === filter;
+  });
+
+  const FILTERS: { key: Filter; label: string }[] = [
+    { key: "all", label: "전체" },
+    { key: "PENDING_PAYMENT", label: "결제 대기" },
+    { key: "CONFIRMED", label: "예약 확정" },
+    { key: "done", label: "종료" },
+  ];
 
   return (
     <div>
       <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>예약 관리</h1>
-      <p style={{ color: "var(--text-2)", marginBottom: 20 }}>들어온 예약을 확인하고 승인하세요.</p>
+      <p style={{ color: "var(--text-2)", marginBottom: 20 }}>내 숙소로 들어온 예약을 확인하고 처리하세요.</p>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-        {(["all", "hold", "paid", "cancelled"] as const).map((f) => (
-          <button key={f} className="chip" data-active={filter === f} onClick={() => setFilter(f)}>
-            {f === "all" ? "전체" : STATUS[f].label}
+        {FILTERS.map((f) => (
+          <button key={f.key} className="chip" data-active={filter === f.key} onClick={() => setFilter(f.key)}>
+            {f.label}
           </button>
         ))}
       </div>
@@ -69,7 +95,7 @@ export default function HostReservations() {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <strong style={{ fontSize: 16 }}>{b.houseName.trim()}</strong>
-                    <span className="chip" style={{ fontSize: 11, background: st.color, color: b.status === "cancelled" ? "var(--text-2)" : "#fff", border: "none" }}>
+                    <span className="chip" style={{ fontSize: 11, background: st.color, color: st.muted ? "var(--text-2)" : "#fff", border: "none" }}>
                       {st.label}
                     </span>
                   </div>
@@ -83,13 +109,26 @@ export default function HostReservations() {
                 </div>
               </div>
 
-              {b.status === "hold" && (
+              {/* Pending → approve / reject */}
+              {b.status === "PENDING_PAYMENT" && (
                 <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => act(b.id, "paid")}>
+                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "CONFIRMED")}>
                     예약 승인
                   </button>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => act(b.id, "cancelled")}>
+                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "CANCELLED_BY_HOST")}>
                     거절
+                  </button>
+                </div>
+              )}
+
+              {/* Confirmed → complete / no-show */}
+              {b.status === "CONFIRMED" && (
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "COMPLETED")}>
+                    이용 완료 처리
+                  </button>
+                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "NO_SHOW")}>
+                    노쇼 처리
                   </button>
                 </div>
               )}

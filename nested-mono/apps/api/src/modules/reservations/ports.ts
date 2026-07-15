@@ -61,6 +61,10 @@ export interface ReservationRepo {
   findById(id: string): Promise<ReservationRecord | null>;
   /** All reservations for a guest, newest first, with room name + first image. */
   listByGuest(guestId: string): Promise<ReservationWithRoom[]>;
+  /** All reservations across every room a host owns, newest first, with room + guest context. */
+  listByHost(hostId: string): Promise<ReservationForHost[]>;
+  /** The host that owns the room this reservation is for (ownership checks). */
+  findRoomHostId(reservationId: string): Promise<string | null>;
   updateStatus(id: string, status: ReservationStatus): Promise<ReservationRecord>;
   markCouponUsed(couponId: string): Promise<void>;
 }
@@ -68,6 +72,13 @@ export interface ReservationRepo {
 // Reservation joined with a little room context, for the "my trips" list.
 export interface ReservationWithRoom extends ReservationRecord {
   room: { id: string; name: string; region: string; image: string | null };
+}
+
+// Reservation joined with room + guest context, for the host's "received
+// reservations" inbox. The host needs to know which listing and which guest.
+export interface ReservationForHost extends ReservationRecord {
+  room: { id: string; name: string; region: string; image: string | null };
+  guest: { id: string; name: string; avatarColor: string };
 }
 
 // Payment gateway port — one method: verify a payment really happened for `amount`.

@@ -13,6 +13,7 @@ import type {
   ReservationRepo,
   PaymentGateway,
   ReservationRecord,
+  ReservationStatus,
   CouponRecord,
 } from "./ports";
 import type { QuoteDto, CreateReservationDto, ConfirmPaymentDto } from "./dto/reservation.dto";
@@ -172,6 +173,44 @@ export class ReservationsService {
   // All reservations for the logged-in guest (my trips).
   async listMine(guestId: string) {
     return this.repo.listByGuest(guestId);
+  }
+
+  // All reservations across every room this host owns (host 예약 관리 inbox).
+  async listForHost(hostId: string) {
+    return this.repo.listByHost(hostId);
+  }
+
+  // Host changes a reservation's status. Only the host that owns the room may
+  // do this, and only to a status a host is allowed to set — a guest-cancel or
+  // an arbitrary value must not be settable here.
+  async updateStatusAsHost(
+    id: string,
+    hostId: string,
+    status: ReservationStatus
+  ): Promise<ReservationRecord> {
+    const allowed: ReservationStatus[] = [
+      "CONFIRMED",
+      "CANCELLED_BY_HOST",
+      "COMPLETED",
+      "NO_SHOW",
+    ];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException({
+        code: "INVALID_STATUS",
+        message: "호스트가 설정할 수 없는 상태입니다.",
+      });
+    }
+    const ownerId = await this.repo.findRoomHostId(id);
+    if (ownerId === null) {
+      throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+    }
+    if (ownerId !== hostId) {
+      throw new ForbiddenException({
+        code: "NOT_HOST",
+        message: "본인 숙소의 예약만 처리할 수 있습니다.",
+      });
+    }
+    return this.repo.updateStatus(id, status);
   }
 
   private async resolveDiscount(code: string | undefined, spend: number): Promise<number> {

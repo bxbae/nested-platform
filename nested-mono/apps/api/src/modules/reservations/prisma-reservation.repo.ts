@@ -112,6 +112,49 @@ export class PrismaReservationRepo implements ReservationRepo {
     }));
   }
 
+  // Every reservation across the listings this host owns (the 예약 관리 inbox).
+  // Filters by the room's hostId — the same pattern as `GET /rooms/mine`.
+  async listByHost(hostId: string) {
+    const rows = await this.prisma.reservation.findMany({
+      where: { room: { hostId } },
+      orderBy: { createdAt: "desc" },
+      include: {
+        room: {
+          select: {
+            id: true,
+            name: true,
+            region: true,
+            images: { orderBy: { order: "asc" }, take: 1, select: { url: true } },
+          },
+        },
+        guest: { select: { id: true, name: true, avatarColor: true } },
+      },
+    });
+    return rows.map((r: (typeof rows)[number]) => ({
+      ...r,
+      room: {
+        id: r.room.id,
+        name: r.room.name,
+        region: r.room.region,
+        image: r.room.images[0]?.url ?? null,
+      },
+      guest: {
+        id: r.guest.id,
+        name: r.guest.name,
+        avatarColor: r.guest.avatarColor,
+      },
+    }));
+  }
+
+  // Resolve the host that owns a reservation's room, for ownership checks.
+  async findRoomHostId(reservationId: string): Promise<string | null> {
+    const row = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      select: { room: { select: { hostId: true } } },
+    });
+    return row?.room.hostId ?? null;
+  }
+
   async updateStatus(id: string, status: ReservationStatus): Promise<ReservationRecord> {
     return this.prisma.reservation.update({ where: { id }, data: { status } });
   }

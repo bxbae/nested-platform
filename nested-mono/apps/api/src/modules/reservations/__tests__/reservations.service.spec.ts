@@ -62,6 +62,22 @@ class FakeRepo implements ReservationRepo {
       .filter((r) => r.guestId === guestId)
       .map((r) => ({ ...r, room: { id: r.roomId, name: "Test Room", region: "Test", image: null } }));
   }
+  // Test seam: which host owns which room. Defaults to "host1" for room1.
+  roomHosts = new Map<string, string>([["room1", "host1"]]);
+  async listByHost(hostId: string) {
+    return this.reservations
+      .filter((r) => this.roomHosts.get(r.roomId) === hostId)
+      .map((r) => ({
+        ...r,
+        room: { id: r.roomId, name: "Test Room", region: "Test", image: null },
+        guest: { id: r.guestId, name: "Guest", avatarColor: "#FF5A5F" },
+      }));
+  }
+  async findRoomHostId(reservationId: string) {
+    const r = this.reservations.find((x) => x.id === reservationId);
+    if (!r) return null;
+    return this.roomHosts.get(r.roomId) ?? null;
+  }
   async updateStatus(id: string, status: ReservationRecord["status"]) {
     const r = this.reservations.find((x) => x.id === id)!;
     r.status = status;
