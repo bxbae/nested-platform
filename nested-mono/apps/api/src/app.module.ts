@@ -22,6 +22,7 @@ import { AdminModule } from "./modules/admin/admin.module";
 import { HostModule } from "./modules/host/host.module";
 import { HostCalendarModule } from "./modules/host/host-calendar.module";
 import { HostExportModule } from "./modules/host/host-export.module";
+import { HostOverdueModule } from "./modules/host/host-overdue.module";
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { HostExportModule } from "./modules/host/host-export.module";
     HostModule,
     HostCalendarModule,
     HostExportModule,
+    HostOverdueModule,
   ],
 })
 export class AppModule {}
