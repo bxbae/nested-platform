@@ -173,7 +173,6 @@ async function main() {
 
     const photos = PHOTOS[r.name] ?? [];
     const amenityKeys = ROOM_AMENITIES[r.name] ?? [];
-    const reviews = REVIEWS[r.name] ?? [];
 
     await prisma.room.create({
       data: {
@@ -198,14 +197,10 @@ async function main() {
             amenity: { connect: { id: amenityByKey[k] } },
           })),
         },
-        reviews: {
-          create: reviews.map((rv) => ({
-            authorId: guest.id,
-            rating: rv.rating,
-            body: rv.body,
-            hostReply: rv.hostReply ?? null,
-          })),
-        },
+        // Reviews are no longer seeded: ratings must come from real reviews
+        // posted through the app (POST /reviews). A freshly seeded room shows
+        // ★0 · 후기 0개 until guests review it. (See REVIEWS below — kept only
+        // as sample copy for demos, intentionally unused.)
       },
     });
   }
@@ -271,7 +266,7 @@ async function main() {
     });
   }
 
-  console.log(`Seed complete: 1 host, 1 guest, ${rooms.length} rooms (with photos/amenities/reviews), 1 coupon, 3 posts.`);
+  console.log(`Seed complete: 1 host, 1 guest, ${rooms.length} rooms (with photos/amenities, no seeded reviews), 1 coupon, 3 posts.`);
 }
 
 main()
