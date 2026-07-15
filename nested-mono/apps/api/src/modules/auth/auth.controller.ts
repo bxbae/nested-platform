@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Body, UseGuards, Req, Res, HttpCode } from "@nestjs/common";
+import { Controller, Post, Get, Patch, Delete, Body, UseGuards, Req, Res, HttpCode } from "@nestjs/common";
 import type { Response } from "express";
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
@@ -122,6 +122,14 @@ export class AuthController {
     @Body(new ZodValidationPipe(resetPasswordSchema)) dto: z.infer<typeof resetPasswordSchema>,
   ) {
     return this.auth.resetPassword(dto.token, dto.newPassword);
+  }
+
+  // DELETE /auth/me — soft-delete own account (anonymise + block login).
+  @Delete("me")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  deleteAccount(@Req() req: any) {
+    return this.auth.deleteAccount(req.user.id);
   }
 
   // ── Google OAuth ──

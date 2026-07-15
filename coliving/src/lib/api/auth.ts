@@ -114,6 +114,13 @@ export async function resetPassword(token: string, newPassword: string): Promise
   await api.post("/auth/reset-password", { token, newPassword }, { auth: false });
 }
 
+// DELETE /auth/me — soft-delete own account. Clears local auth on success so
+// the app drops to a logged-out state.
+export async function deleteAccount(): Promise<void> {
+  await api.delete("/auth/me");
+  logout();
+}
+
 // POST /auth/change-password — the API verifies the current password and
 // revokes existing refresh tokens on success.
 export async function changePassword(

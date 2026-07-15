@@ -56,6 +56,10 @@ model User {
   avatarColor  String        @default("#FF5A5F")
   bio          String?
   suspended    Boolean       @default(false)
+  // Set when the user deletes their own account. Distinct from `suspended`,
+  // which is an admin action. Non-null means the account is gone: login is
+  // blocked and the personal fields above have been anonymised.
+  deletedAt    DateTime?
   createdAt    DateTime      @default(now())
 
   listings     Room[]        @relation("HostRooms")

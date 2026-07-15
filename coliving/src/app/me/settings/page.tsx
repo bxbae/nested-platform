@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/api/useAuth";
-import { updateProfile, changePassword } from "@/lib/api/auth";
+import { updateProfile, changePassword, deleteAccount } from "@/lib/api/auth";
 
 // 설정 — profile edit + password change, wired to the API.
 //
@@ -104,7 +105,106 @@ export default function Settings() {
       >
         {saving ? "저장 중…" : saved ? "저장되었습니다 ✓" : "변경사항 저장"}
       </button>
+
+      <DangerZone />
     </div>
+  );
+}
+
+// ── Account deletion ──
+// Two-step confirm plus a typed phrase: deletion is irreversible, so a single
+// stray click must not trigger it.
+function DangerZone() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const CONFIRM = "탈퇴";
+
+  async function remove() {
+    if (busy || confirmText !== CONFIRM) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteAccount();
+      // Account is gone and local auth is cleared — send them home.
+      router.push("/");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "탈퇴 처리에 실패했어요.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section
+      className="card"
+      style={{ padding: 22, marginTop: 28, border: "1px solid var(--primary)" }}
+    >
+      <strong style={{ fontSize: 16, display: "block", marginBottom: 8, color: "var(--primary)" }}>
+        회원 탈퇴
+      </strong>
+      <p style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--text-2)", marginBottom: 16 }}>
+        탈퇴하면 계정 정보가 삭제되고 다시 로그인할 수 없습니다. 작성하신 리뷰와 예약 기록은
+        익명으로 남을 수 있습니다. 이 작업은 되돌릴 수 없어요.
+      </p>
+
+      {!open ? (
+        <button
+          className="btn btn-ghost press"
+          style={{ color: "var(--primary)", borderColor: "var(--primary)" }}
+          onClick={() => setOpen(true)}
+        >
+          회원 탈퇴
+        </button>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "block" }}>
+            <div style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 6 }}>
+              계속하려면 <strong style={{ color: "var(--text)" }}>{CONFIRM}</strong> 를 입력하세요.
+            </div>
+            <input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={CONFIRM}
+              style={{
+                width: "100%", padding: "11px 14px", border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)", background: "var(--surface)", color: "var(--text)",
+              }}
+            />
+          </label>
+
+          {error && <p style={{ fontSize: 13, color: "var(--primary)" }}>{error}</p>}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btn press"
+              style={{
+                flex: 1, justifyContent: "center",
+                background: "var(--primary)", color: "#fff",
+                opacity: confirmText === CONFIRM && !busy ? 1 : 0.5,
+              }}
+              onClick={remove}
+              disabled={busy || confirmText !== CONFIRM}
+            >
+              {busy ? "처리 중…" : "영구 탈퇴"}
+            </button>
+            <button
+              className="btn btn-ghost press"
+              onClick={() => {
+                setOpen(false);
+                setConfirmText("");
+                setError(null);
+              }}
+              disabled={busy}
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

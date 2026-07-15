@@ -127,6 +127,7 @@ export class AuthService {
     if (!user || !user.passwordHash) throw new UnauthorizedException("이메일 또는 비밀번호가 올바르지 않습니다.");
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException("이메일 또는 비밀번호가 올바르지 않습니다.");
+    if (user.deletedAt) throw new UnauthorizedException("탈퇴한 계정입니다.");
     if (user.suspended) throw new UnauthorizedException("정지된 계정입니다.");
     return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
   }
@@ -254,6 +255,48 @@ export class AuthService {
       }),
       // Whoever forced the reset must not keep an old session alive.
       this.prisma.refreshToken.deleteMany({ where: { userId: row.userId } }),
+    ]);
+
+    return { ok: true };
+  }
+
+  // ── Account deletion (soft) ──
+  // We don't hard-delete: reservations, reviews and messages reference the user
+  // (some via RESTRICT), and other people's history shouldn't break because
+  // someone left. Instead we anonymise the personal fields and mark the row
+  // deleted. The account's contributions survive as "탈퇴한 사용자".
+  async deleteAccount(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true },
+    });
+    if (!user) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+    }
+    if (user.deletedAt) {
+      throw new BadRequestException({ code: "ALREADY_DELETED", message: "이미 탈퇴한 계정입니다." });
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: new Date(),
+          name: "탈퇴한 사용자",
+          bio: null,
+          // Free the address for re-signup while keeping the row unique. The
+          // id suffix avoids collisions if several accounts are deleted.
+          email: `deleted+${userId}@nested.invalid`,
+          // Kill both login paths.
+          passwordHash: null,
+          provider: null,
+          providerId: null,
+        },
+      }),
+      // Drop every active session so the just-deleted account can't keep using
+      // a token it already holds.
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+      this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
     ]);
 
     return { ok: true };
