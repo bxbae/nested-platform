@@ -20,6 +20,8 @@ import { NotificationsApiModule } from "./modules/notifications-api/notification
 import { MessagesModule } from "./modules/messages/messages.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { HostModule } from "./modules/host/host.module";
+import { HostCalendarModule } from "./modules/host/host-calendar.module";
+import { HostExportModule } from "./modules/host/host-export.module";
 
 @Module({
   imports: [
@@ -55,6 +57,8 @@ import { HostModule } from "./modules/host/host.module";
     MessagesModule,
     AdminModule,
     HostModule,
+    HostCalendarModule,
+    HostExportModule,
   ],
 })
 export class AppModule {}

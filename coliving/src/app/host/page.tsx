@@ -1,140 +1,138 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { won } from "@/lib/format";
+import { myListings } from "@/lib/host";
 import {
-  listHostReservations,
-  setHostReservationStatus,
-  type HostReservation,
-  type HostReservationStatus,
-} from "@/lib/api/reservations";
+  getHostDashboard,
+  downloadRevenueCsv,
+  downloadTenantsCsv,
+  type HostDashboard,
+} from "@/lib/api/host";
 
-// Full lifecycle labels/colors. Guest-side cancellations and host actions are
-// shown distinctly so the host can tell what happened.
-const STATUS: Record<HostReservationStatus, { label: string; color: string; muted?: boolean }> = {
-  PENDING_PAYMENT: { label: "결제 대기", color: "var(--warning)" },
-  CONFIRMED: { label: "예약 확정", color: "var(--secondary)" },
-  COMPLETED: { label: "이용 완료", color: "var(--text-2)", muted: true },
-  NO_SHOW: { label: "노쇼", color: "var(--text-2)", muted: true },
-  CANCELLED_BY_GUEST: { label: "게스트 취소", color: "var(--text-2)", muted: true },
-  CANCELLED_BY_HOST: { label: "거절/취소", color: "var(--text-2)", muted: true },
-};
-
-type Filter = "all" | "PENDING_PAYMENT" | "CONFIRMED" | "done";
-
-export default function HostReservations() {
-  const [rows, setRows] = useState<HostReservation[]>([]);
+export default function HostDashboardPage() {
+  const [data, setData] = useState<HostDashboard | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
-
-  async function load() {
-    setLoading(true);
-    setRows(await listHostReservations());
-    setLoading(false);
-  }
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const listings = myListings();
 
   useEffect(() => {
-    load();
+    getHostDashboard()
+      .then(setData)
+      .finally(() => setLoading(false));
   }, []);
 
-  async function act(
-    id: string,
-    status: "CONFIRMED" | "CANCELLED_BY_HOST" | "COMPLETED" | "NO_SHOW"
-  ) {
-    if (busyId) return;
-    setBusyId(id);
+  async function download(kind: "revenue" | "tenants") {
+    if (downloading) return;
+    setDownloading(kind);
     try {
-      await setHostReservationStatus(id, status);
-      await load();
+      if (kind === "revenue") await downloadRevenueCsv();
+      else await downloadTenantsCsv();
+    } catch {
+      // Non-fatal — the browser just won't get a file.
     } finally {
-      setBusyId(null);
+      setDownloading(null);
     }
   }
 
-  const shown = rows.filter((r) => {
-    if (filter === "all") return true;
-    if (filter === "done") return ["COMPLETED", "NO_SHOW", "CANCELLED_BY_GUEST", "CANCELLED_BY_HOST"].includes(r.status);
-    return r.status === filter;
-  });
-
-  const FILTERS: { key: Filter; label: string }[] = [
-    { key: "all", label: "전체" },
-    { key: "PENDING_PAYMENT", label: "결제 대기" },
-    { key: "CONFIRMED", label: "예약 확정" },
-    { key: "done", label: "종료" },
-  ];
+  const trend = data?.trend ?? [];
+  const max = trend.length ? Math.max(...trend.map((t) => t.value), 1) : 1;
 
   return (
     <div>
-      <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>예약 관리</h1>
-      <p style={{ color: "var(--text-2)", marginBottom: 20 }}>내 숙소로 들어온 예약을 확인하고 처리하세요.</p>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-        {FILTERS.map((f) => (
-          <button key={f.key} className="chip" data-active={filter === f.key} onClick={() => setFilter(f.key)}>
-            {f.label}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
+        <h1 className="display" style={{ fontSize: 30 }}>수익 대시보드</h1>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 14px" }} disabled={downloading !== null} onClick={() => download("revenue")}>
+            {downloading === "revenue" ? "내보내는 중…" : "⬇ 수익내역 CSV"}
           </button>
-        ))}
+          <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 14px" }} disabled={downloading !== null} onClick={() => download("tenants")}>
+            {downloading === "tenants" ? "내보내는 중…" : "⬇ 입주자내역 CSV"}
+          </button>
+        </div>
+      </div>
+      <p style={{ color: "var(--text-2)", marginBottom: 24 }}>
+        이번 달 운영 현황을 한눈에 확인하세요.
+      </p>
+
+      <div style={{ background: "linear-gradient(135deg, var(--primary), var(--secondary))", borderRadius: "var(--r-lg)", padding: 26, color: "#fff", marginBottom: 20 }}>
+        <div style={{ fontSize: 13, opacity: 0.9 }}>이번 달 예상 수익</div>
+        <div className="display" style={{ fontSize: 40, fontWeight: 700, marginTop: 4 }}>
+          {loading ? "…" : won(data?.thisMonth ?? 0)}
+        </div>
+        <div style={{ fontSize: 13, opacity: 0.9, marginTop: 4 }}>
+          {data?.changePct == null
+            ? "지난달 데이터 없음"
+            : `지난달 대비 ${data.changePct >= 0 ? "▲" : "▼"} ${Math.abs(data.changePct)}%`}
+        </div>
       </div>
 
-      {loading && <div style={{ color: "var(--text-2)" }}>불러오는 중…</div>}
+      <div className="stat-row">
+        <Stat label="등록 숙소" value={loading ? "…" : `${data?.listingCount ?? 0}`} />
+        <Stat label="총 예약" value={loading ? "…" : `${data?.reservationCount ?? 0}`} />
+        <Stat label="입주율" value={loading ? "…" : `${data?.occupancy ?? 0}%`} />
+        <Stat label="새 문의" value={loading ? "…" : `${data?.newInquiries ?? 0}`} accent />
+      </div>
 
-      {!loading && shown.length === 0 && (
-        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)", border: "1px dashed var(--border)", background: "transparent" }}>
-          해당하는 예약이 없습니다. 게스트가 예약하면 여기에 표시됩니다.
+      <div className="card" style={{ padding: 22, marginTop: 20 }}>
+        <strong style={{ fontSize: 15 }}>최근 6개월 수익 추이</strong>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 14, height: 160, marginTop: 20 }}>
+          {trend.map((t) => (
+            <div key={t.month} style={{ flex: 1, textAlign: "center" }}>
+              <div
+                style={{
+                  height: `${(t.value / max) * 130}px`,
+                  background: t.value === max && t.value > 0 ? "var(--primary)" : "var(--secondary)",
+                  borderRadius: "8px 8px 0 0",
+                  opacity: t.value === max ? 1 : 0.55,
+                  transition: "height .3s var(--ease-out)",
+                }}
+                title={won(t.value)}
+              />
+              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 8 }}>{t.month}</div>
+            </div>
+          ))}
+          {!loading && trend.length === 0 && (
+            <div style={{ color: "var(--text-2)", fontSize: 13 }}>수익 데이터가 아직 없습니다.</div>
+          )}
         </div>
-      )}
+      </div>
 
-      <div style={{ display: "grid", gap: 12 }}>
-        {shown.map((b) => {
-          const st = STATUS[b.status];
-          return (
-            <div key={b.id} className="card" style={{ padding: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <strong style={{ fontSize: 16 }}>{b.houseName.trim()}</strong>
-                    <span className="chip" style={{ fontSize: 11, background: st.color, color: st.muted ? "var(--text-2)" : "#fff", border: "none" }}>
-                      {st.label}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
-                    {b.guestName} · 입주 {b.moveIn} · {b.months}개월
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <strong style={{ fontSize: 17 }}>{won(b.totalDueNow)}</strong>
-                  <div style={{ fontSize: 12, color: "var(--text-2)" }}>입주 시 결제</div>
+      <div className="card" style={{ padding: 22, marginTop: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+          <strong style={{ fontSize: 15 }}>내 숙소</strong>
+          <Link href="/host/listings" style={{ color: "var(--secondary)", fontSize: 13.5, fontWeight: 600 }}>
+            전체 보기 →
+          </Link>
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {listings.map((h) => (
+            <Link key={h.id} href={`/host/listings`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderRadius: "var(--r-sm)", border: "1px solid var(--border)" }}>
+              <div>
+                <strong style={{ fontSize: 14.5 }}>{h.name.trim()}</strong>
+                <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                  {h.region} · {h.residents}/{h.capacity}명 입주
                 </div>
               </div>
+              <div style={{ textAlign: "right", fontSize: 14 }}>
+                <strong>{won(h.monthlyRent)}</strong>
+                <span style={{ color: "var(--text-2)", fontSize: 12 }}> / 월</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-              {/* Pending → approve / reject */}
-              {b.status === "PENDING_PAYMENT" && (
-                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "CONFIRMED")}>
-                    예약 승인
-                  </button>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "CANCELLED_BY_HOST")}>
-                    거절
-                  </button>
-                </div>
-              )}
-
-              {/* Confirmed → complete / no-show */}
-              {b.status === "CONFIRMED" && (
-                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "COMPLETED")}>
-                    이용 완료 처리
-                  </button>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "NO_SHOW")}>
-                    노쇼 처리
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="card" style={{ padding: 18 }}>
+      <div style={{ fontSize: 13, color: "var(--text-2)" }}>{label}</div>
+      <div className="display" style={{ fontSize: 26, fontWeight: 700, marginTop: 4, color: accent ? "var(--primary)" : "var(--text)" }}>
+        {value}
       </div>
     </div>
   );
