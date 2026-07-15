@@ -39,6 +39,20 @@ export async function listPendingRooms(): Promise<PendingListing[]> {
 // function per endpoint that calls `api`, (3) the page calling these in an
 // effect. Copy this shape for reports, stats, etc.
 
+// ── Dashboard stats ──
+export interface AdminStats {
+  users: number;
+  rooms: number;
+  reservations: number;
+  gmv: number;        // gross merchandise value, in KRW
+  commission: number; // platform cut (5% of gmv)
+}
+
+// GET /admin/stats — platform totals (not a time series).
+export async function getStats(): Promise<AdminStats> {
+  return api.get<AdminStats>("/admin/stats");
+}
+
 // ── Reports (신고 관리) ──
 
 export type ReportStatus = "RECEIVED" | "IN_REVIEW" | "RESOLVED";
