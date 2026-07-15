@@ -24,6 +24,14 @@ export const confirmPaymentSchema = z.object({
 });
 export type ConfirmPaymentDto = z.infer<typeof confirmPaymentSchema>;
 
+// ── Host status change ── the four statuses a host may set on a reservation
+// for their own listing. Guest-cancel and PENDING_PAYMENT are intentionally
+// excluded (the service double-checks this too).
+export const hostStatusSchema = z.object({
+  status: z.enum(["CONFIRMED", "CANCELLED_BY_HOST", "COMPLETED", "NO_SHOW"]),
+});
+export type HostStatusDto = z.infer<typeof hostStatusSchema>;
+
 function startOfToday(): number {
   const d = new Date();
   d.setHours(0, 0, 0, 0);

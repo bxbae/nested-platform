@@ -18,9 +18,11 @@ import {
   quoteSchema,
   createReservationSchema,
   confirmPaymentSchema,
+  hostStatusSchema,
   type QuoteDto,
   type CreateReservationDto,
   type ConfirmPaymentDto,
+  type HostStatusDto,
 } from "./dto/reservation.dto";
 
 // Pulls the authenticated user's id off req.user (populated by JwtAuthGuard).
@@ -74,6 +76,27 @@ export class ReservationsController {
   @UseGuards(JwtAuthGuard)
   listMine(@CurrentGuest() guestId: string) {
     return this.service.listMine(guestId);
+  }
+
+  // GET /reservations/host — every reservation across the listings I host.
+  // Declared before the :id route so "host" isn't captured as an id.
+  @Get("reservations/host")
+  @UseGuards(JwtAuthGuard)
+  listForHost(@CurrentGuest() hostId: string) {
+    return this.service.listForHost(hostId);
+  }
+
+  // PATCH /reservations/:id/host-status — host approves/rejects/completes a
+  // reservation on their own listing. Body: { status }.
+  @Patch("reservations/:id/host-status")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  hostStatus(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(hostStatusSchema)) dto: HostStatusDto,
+    @CurrentGuest() hostId: string
+  ) {
+    return this.service.updateStatusAsHost(id, hostId, dto.status);
   }
 
   @Get("reservations/:id")

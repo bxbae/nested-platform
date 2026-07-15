@@ -166,6 +166,104 @@ function mapStatus(s: string): Booking["status"] {
   return "cancelled";
 }
 
+// ── Host: reservations received on my listings ──
+// The four statuses a host can act on, plus the raw server status so the UI can
+// show "completed" / "no-show" distinctly (Booking's 3-state map is guest-side).
+export type HostReservationStatus =
+  | "PENDING_PAYMENT"
+  | "CONFIRMED"
+  | "CANCELLED_BY_GUEST"
+  | "CANCELLED_BY_HOST"
+  | "COMPLETED"
+  | "NO_SHOW";
+
+export interface HostReservation {
+  id: string;
+  houseId: string;
+  houseName: string;
+  region: string;
+  image: string | null;
+  guestName: string;
+  guestAvatarColor: string;
+  moveIn: string; // YYYY-MM-DD
+  months: number;
+  monthlyRent: number;
+  totalDueNow: number;
+  status: HostReservationStatus;
+  createdAt: string;
+}
+
+interface ApiHostReservation extends ApiReservation {
+  guest: { id: string; name: string; avatarColor: string };
+}
+
+// GET /reservations/host — every reservation across the listings I host.
+export async function listHostReservations(): Promise<HostReservation[]> {
+  if (!USE_REAL_API) {
+    // Demo mode: reuse the local bookings endpoint, filtered to my listings.
+    try {
+      const res = await fetch("/api/bookings");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const list: Booking[] = Array.isArray(data) ? data : (data.bookings ?? []);
+      return list.map((b) => ({
+        id: b.id,
+        houseId: b.houseId,
+        houseName: b.houseName,
+        region: "",
+        image: null,
+        guestName: b.guestName || "게스트",
+        guestAvatarColor: "#FF5A5F",
+        moveIn: b.moveIn,
+        months: b.months,
+        monthlyRent: b.monthlyRent,
+        totalDueNow: b.totalDueNow,
+        status:
+          b.status === "paid" ? "CONFIRMED" : b.status === "cancelled" ? "CANCELLED_BY_HOST" : "PENDING_PAYMENT",
+        createdAt: b.createdAt,
+      }));
+    } catch {
+      return [];
+    }
+  }
+  try {
+    const rows = await api.get<ApiHostReservation[]>("/reservations/host");
+    return rows.map((r) => ({
+      id: r.id,
+      houseId: r.room.id,
+      houseName: r.room.name,
+      region: r.room.region,
+      image: r.room.image,
+      guestName: r.guest?.name ?? "게스트",
+      guestAvatarColor: r.guest?.avatarColor ?? "#FF5A5F",
+      moveIn: r.checkIn.slice(0, 10),
+      months: r.months,
+      monthlyRent: r.monthlyRent,
+      totalDueNow: r.totalDueNow,
+      status: r.status as HostReservationStatus,
+      createdAt: r.createdAt,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// PATCH /reservations/:id/host-status — approve / reject / complete / no-show.
+export async function setHostReservationStatus(
+  id: string,
+  status: "CONFIRMED" | "CANCELLED_BY_HOST" | "COMPLETED" | "NO_SHOW"
+): Promise<void> {
+  if (!USE_REAL_API) {
+    await fetch("/api/bookings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: status === "CONFIRMED" ? "paid" : "cancelled" }),
+    });
+    return;
+  }
+  await api.patch(`/reservations/${id}/host-status`, { status });
+}
+
 export async function listMyBookings(): Promise<Booking[]> {
   if (!USE_REAL_API) {
     const res = await fetch("/api/bookings");
