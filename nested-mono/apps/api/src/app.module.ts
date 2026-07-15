@@ -19,6 +19,7 @@ import { CommunityModule } from "./modules/community/community.module";
 import { NotificationsApiModule } from "./modules/notifications-api/notifications-api.module";
 import { MessagesModule } from "./modules/messages/messages.module";
 import { AdminModule } from "./modules/admin/admin.module";
+import { HostModule } from "./modules/host/host.module";
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     NotificationsApiModule,
     MessagesModule,
     AdminModule,
+    HostModule,
   ],
 })
 export class AppModule {}
