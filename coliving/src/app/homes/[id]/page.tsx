@@ -10,6 +10,7 @@ import { BookingWidget } from "@/components/BookingWidget";
 import { ContactHostButton } from "@/components/ContactHostButton";
 import { Gallery } from "@/components/Gallery";
 import { DetailActions } from "@/components/DetailActions";
+import { ReviewForm } from "@/components/ReviewForm";
 import { LocationMap } from "@/components/LocationMap";
 import { USE_REAL_API } from "@/lib/api/config";
 import { getRoom } from "@/lib/api/rooms";
@@ -238,6 +239,7 @@ export default async function HomeDetail({
 
           {/* ── 리뷰 / 평점 ── */}
           <Section title={`후기 ${house.reviews}개 · ★ ${avgRating}`}>
+            <ReviewForm roomId={house.id} />
             <div className="review-grid">
               {house.houseReviews.map((r, i) => (
                 <div key={i} className="card" style={{ padding: 18 }}>

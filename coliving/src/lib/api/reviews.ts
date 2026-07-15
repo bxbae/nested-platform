@@ -72,3 +72,14 @@ export async function listHostReviews(): Promise<HostReview[]> {
 export async function replyToReview(id: string, hostReply: string): Promise<void> {
   await api.patch(`/reviews/${id}/reply`, { hostReply });
 }
+
+// POST /reviews — a signed-in guest leaves a rating + body on a room.
+// The server attaches authorId from the JWT, so we only send the content.
+// rating must be an integer 1–5; body must be non-empty (validated server-side).
+export async function createReview(input: {
+  roomId: string;
+  rating: number;
+  body: string;
+}): Promise<void> {
+  await api.post("/reviews", input);
+}
