@@ -5,6 +5,7 @@ import { won } from "@/lib/format";
 import {
   listHostReservations,
   setHostReservationStatus,
+  sendOverdueNotice,
   type HostReservation,
   type HostReservationStatus,
 } from "@/lib/api/reservations";
@@ -26,6 +27,7 @@ export default function HostReservations() {
   const [rows, setRows] = useState<HostReservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [noticed, setNoticed] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<Filter>("all");
 
   async function load() {
@@ -47,6 +49,18 @@ export default function HostReservations() {
     try {
       await setHostReservationStatus(id, status);
       await load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Send an overdue-payment notice to this reservation's guest (in-app notification).
+  async function notifyOverdue(id: string) {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      await sendOverdueNotice(id);
+      setNoticed((prev) => new Set(prev).add(id));
     } finally {
       setBusyId(null);
     }
@@ -121,14 +135,23 @@ export default function HostReservations() {
                 </div>
               )}
 
-              {/* Confirmed → complete / no-show */}
+              {/* Confirmed → complete / no-show / overdue notice */}
               {b.status === "CONFIRMED" && (
-                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
                   <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "COMPLETED")}>
                     이용 완료 처리
                   </button>
                   <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "NO_SHOW")}>
                     노쇼 처리
+                  </button>
+                  <button
+                    className="btn btn-ghost press"
+                    style={{ fontSize: 13, padding: "8px 16px", color: "var(--warning)" }}
+                    disabled={busyId === b.id || noticed.has(b.id)}
+                    onClick={() => notifyOverdue(b.id)}
+                    title="입주자에게 연체 안내 알림을 보냅니다"
+                  >
+                    {noticed.has(b.id) ? "✓ 안내 발송됨" : "🔔 연체 안내"}
                   </button>
                 </div>
               )}

@@ -293,3 +293,11 @@ export async function listMyBookings(): Promise<Booking[]> {
     return [];
   }
 }
+
+// POST /host/overdue/:reservationId — send an overdue-payment notice to the
+// reservation's guest (delivered as an in-app notification). Optional custom
+// message; the server fills a default if omitted.
+export async function sendOverdueNotice(reservationId: string, message?: string): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.post(`/host/overdue/${reservationId}`, message ? { message } : {});
+}
