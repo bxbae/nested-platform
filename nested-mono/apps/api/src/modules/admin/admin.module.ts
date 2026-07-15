@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Patch, Delete, Param, Query, Body, UseGuards, Injectable, Module,
+  Controller, Get, Patch, Delete, Param, Query, Body, Req, UseGuards, Injectable, Module,
   NotFoundException, BadRequestException,
 } from "@nestjs/common";
 import { z } from "zod";
@@ -14,13 +14,26 @@ export class AdminService {
   // members (검색 + 정지 토글)
   members(q?: string) {
     return this.prisma.user.findMany({
-      where: q ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] } : {},
+      where: {
+        // Hide accounts that have deleted themselves — they're anonymised and
+        // shouldn't clutter the admin list.
+        deletedAt: null,
+        ...(q ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] } : {}),
+      },
       select: { id: true, name: true, email: true, role: true, suspended: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
       take: 100,
     });
   }
 
-  setSuspended(userId: string, suspended: boolean) {
+  setSuspended(adminId: string, userId: string, suspended: boolean) {
+    // An admin locking themselves out would be an easy footgun — block it.
+    if (adminId === userId) {
+      throw new BadRequestException({
+        code: "CANNOT_SUSPEND_SELF",
+        message: "본인 계정은 정지할 수 없어요.",
+      });
+    }
     return this.prisma.user.update({ where: { id: userId }, data: { suspended } });
   }
 
@@ -117,8 +130,12 @@ export class AdminController {
   }
 
   @Patch("members/:id/suspend")
-  suspend(@Param("id") id: string, @Body(new ZodValidationPipe(suspendSchema)) dto: any) {
-    return this.admin.setSuspended(id, dto.suspended);
+  suspend(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(suspendSchema)) dto: any,
+  ) {
+    return this.admin.setSuspended(req.user.id, id, dto.suspended);
   }
 
   @Get("rooms/pending")

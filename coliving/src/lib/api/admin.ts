@@ -34,6 +34,32 @@ export async function listPendingRooms(): Promise<PendingListing[]> {
 }
 
 // PATCH /admin/rooms/:id/publish — makes the listing searchable
+// ── Members (reference pattern for the admin section) ──
+// A page becomes "real" by: (1) a typed shape for the API response, (2) a
+// function per endpoint that calls `api`, (3) the page calling these in an
+// effect. Copy this shape for reports, stats, etc.
+
+export interface AdminMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  suspended: boolean;
+  createdAt: string;
+}
+
+// GET /admin/members?q= — search by name/email (omit q for all).
+export async function listMembers(q?: string): Promise<AdminMember[]> {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return api.get<AdminMember[]>(`/admin/members${query}`);
+}
+
+// PATCH /admin/members/:id/suspend — toggle a member's suspension.
+// The API rejects suspending your own account.
+export async function suspendMember(id: string, suspended: boolean): Promise<void> {
+  await api.patch(`/admin/members/${id}/suspend`, { suspended });
+}
+
 export async function publishRoom(id: string, published = true): Promise<void> {
   await api.patch(`/admin/rooms/${id}/publish`, { published });
 }
