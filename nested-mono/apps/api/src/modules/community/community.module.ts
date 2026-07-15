@@ -18,7 +18,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
 
-const CATEGORIES = ["NOTICE", "EVENT", "CHORE", "MARKET", "CHAT"] as const;
+const CATEGORIES = ["NOTICE", "EVENT", "CHORE", "MARKET", "CHAT", "SEEKING"] as const;
 type Category = (typeof CATEGORIES)[number];
 
 @Injectable()
@@ -27,14 +27,26 @@ export class CommunityService {
 
   // Board listing. Pinned posts float to the top, then newest first.
   // `_count.comments` is what the UI shows as "💬 N replies".
-  async list(category?: string) {
-    const where =
+  // `q` does a case-insensitive keyword match on title/body — used by hosts to
+  // search "방 구함"(SEEKING) posts for suitable tenants.
+  async list(category?: string, q?: string) {
+    const categoryWhere =
       category && category !== "all" && CATEGORIES.includes(category.toUpperCase() as Category)
         ? { category: category.toUpperCase() as Category }
         : {};
 
+    const keyword = q?.trim();
+    const keywordWhere = keyword
+      ? {
+          OR: [
+            { title: { contains: keyword, mode: "insensitive" as const } },
+            { body: { contains: keyword, mode: "insensitive" as const } },
+          ],
+        }
+      : {};
+
     return this.prisma.post.findMany({
-      where,
+      where: { ...categoryWhere, ...keywordWhere },
       orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
       include: {
         author: { select: { id: true, name: true } },
@@ -127,8 +139,8 @@ export class CommunityController {
   constructor(private readonly community: CommunityService) {}
 
   @Get()
-  list(@Query("category") category?: string) {
-    return this.community.list(category);
+  list(@Query("category") category?: string, @Query("q") q?: string) {
+    return this.community.list(category, q);
   }
 
   @Get(":id")

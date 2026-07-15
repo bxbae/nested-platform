@@ -425,6 +425,7 @@ enum PostCategory {
   CHORE
   MARKET
   CHAT
+  SEEKING
 }
 
 model Post {
