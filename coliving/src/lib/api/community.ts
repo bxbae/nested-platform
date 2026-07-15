@@ -46,6 +46,7 @@ function adapt(p: ApiPost): Post {
     id: p.id,
     houseId: p.roomId,
     author: p.author?.name ?? "알 수 없음",
+    authorId: p.author?.id,
     category: toUi(p.category),
     title: p.title,
     body: p.body,

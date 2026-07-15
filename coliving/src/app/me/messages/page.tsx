@@ -27,7 +27,13 @@ export default function Messages() {
     (async () => {
       const list = await listChatRooms();
       setRooms(list);
-      setActive(list[0] ?? null);
+      // If we arrived with ?room=<id> (e.g. host just started a chat), open it.
+      const wanted =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("room")
+          : null;
+      const initial = (wanted && list.find((r) => r.id === wanted)) || list[0] || null;
+      setActive(initial);
       setLoading(false);
     })();
   }, []);

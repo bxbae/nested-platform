@@ -61,3 +61,9 @@ export async function sendMessage(chatRoomId: string, body: string): Promise<Api
 export async function openChatRoom(roomId: string, hostId: string): Promise<ApiChatRoom> {
   return api.post<ApiChatRoom>("/messages/rooms", { roomId, hostId });
 }
+
+// POST /messages/rooms/as-host — the host starts a chat with a guest, choosing
+// one of their own listings. Used by "채팅 시작" on the 입주 희망자 찾기 page.
+export async function openChatRoomAsHost(roomId: string, guestId: string): Promise<ApiChatRoom> {
+  return api.post<ApiChatRoom>("/messages/rooms/as-host", { roomId, guestId });
+}

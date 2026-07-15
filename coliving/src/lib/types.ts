@@ -96,6 +96,7 @@ export interface Post {
   id: string;
   houseId: string;
   author: string;
+  authorId?: string;
   category: "notice" | "event" | "chore" | "market" | "chat" | "seeking";
   title: string;
   body: string;

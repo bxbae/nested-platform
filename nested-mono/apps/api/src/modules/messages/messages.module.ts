@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Injectable, Module } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Injectable, Module, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -45,10 +45,44 @@ export class MessagesService {
       create: { roomId, guestId, hostId },
     });
   }
+
+  // Host initiates a chat with a guest (e.g. a 방 구함 poster). The logged-in
+  // user is the host here — the inverse of openRoom. We verify the host owns
+  // the room so nobody can start a chat "from" a listing that isn't theirs,
+  // and block self-chat. Reuses the same room if one already exists
+  // (unique on [roomId, guestId]).
+  async openRoomAsHost(hostId: string, roomId: string, guestId: string) {
+    if (hostId === guestId) {
+      throw new ForbiddenException({ code: "SELF_CHAT", message: "자신과는 채팅할 수 없습니다." });
+    }
+    const room = await this.prisma.room.findUnique({
+      where: { id: roomId },
+      select: { hostId: true },
+    });
+    if (!room) {
+      throw new NotFoundException({ code: "ROOM_NOT_FOUND", message: "숙소를 찾을 수 없습니다." });
+    }
+    if (room.hostId !== hostId) {
+      throw new ForbiddenException({ code: "NOT_HOST", message: "본인 숙소로만 채팅을 시작할 수 있습니다." });
+    }
+    const guest = await this.prisma.user.findUnique({
+      where: { id: guestId },
+      select: { id: true },
+    });
+    if (!guest) {
+      throw new NotFoundException({ code: "GUEST_NOT_FOUND", message: "상대방을 찾을 수 없습니다." });
+    }
+    return this.prisma.chatRoom.upsert({
+      where: { roomId_guestId: { roomId, guestId } },
+      update: {},
+      create: { roomId, guestId, hostId },
+    });
+  }
 }
 
 const sendSchema = z.object({ body: z.string().optional(), imageUrl: z.string().optional() });
 const openSchema = z.object({ roomId: z.string(), hostId: z.string() });
+const openAsHostSchema = z.object({ roomId: z.string(), guestId: z.string() });
 
 // 메시지 API (REST alongside the Socket.io gateway)
 @Controller("messages")
@@ -64,6 +98,12 @@ export class MessagesController {
   @Post("rooms")
   open(@Req() req: any, @Body(new ZodValidationPipe(openSchema)) dto: any) {
     return this.messages.openRoom(req.user.id, dto.roomId, dto.hostId);
+  }
+
+  // POST /messages/rooms/as-host — the host starts a chat with a guest.
+  @Post("rooms/as-host")
+  openAsHost(@Req() req: any, @Body(new ZodValidationPipe(openAsHostSchema)) dto: any) {
+    return this.messages.openRoomAsHost(req.user.id, dto.roomId, dto.guestId);
   }
 
   @Get(":chatRoomId")
