@@ -85,11 +85,23 @@ export class AdminService {
   }
 
   // reports (신고 관리)
-  reports(status?: string) {
-    return this.prisma.report.findMany({
+  async reports(status?: string) {
+    const rows = await this.prisma.report.findMany({
       where: status ? { status: status as any } : {},
       orderBy: { createdAt: "desc" },
+      include: { reporter: { select: { name: true } } },
+      take: 200,
     });
+    // Flatten the reporter relation so the client gets a plain name string.
+    return rows.map((r: (typeof rows)[number]) => ({
+      id: r.id,
+      targetType: r.targetType,
+      targetId: r.targetId,
+      reason: r.reason,
+      status: r.status,
+      createdAt: r.createdAt,
+      reporterName: r.reporter?.name ?? "알 수 없음",
+    }));
   }
   setReportStatus(id: string, status: string) {
     return this.prisma.report.update({ where: { id }, data: { status: status as any } });
