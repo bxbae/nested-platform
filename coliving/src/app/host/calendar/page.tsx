@@ -1,131 +1,140 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Booking } from "@/lib/types";
-import { MY_HOUSE_IDS } from "@/lib/host";
-import { addMonths } from "@/lib/pricing";
+import { won } from "@/lib/format";
+import {
+  listHostReservations,
+  setHostReservationStatus,
+  type HostReservation,
+  type HostReservationStatus,
+} from "@/lib/api/reservations";
 
-export default function HostCalendar() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  });
+// Full lifecycle labels/colors. Guest-side cancellations and host actions are
+// shown distinctly so the host can tell what happened.
+const STATUS: Record<HostReservationStatus, { label: string; color: string; muted?: boolean }> = {
+  PENDING_PAYMENT: { label: "결제 대기", color: "var(--warning)" },
+  CONFIRMED: { label: "예약 확정", color: "var(--secondary)" },
+  COMPLETED: { label: "이용 완료", color: "var(--text-2)", muted: true },
+  NO_SHOW: { label: "노쇼", color: "var(--text-2)", muted: true },
+  CANCELLED_BY_GUEST: { label: "게스트 취소", color: "var(--text-2)", muted: true },
+  CANCELLED_BY_HOST: { label: "거절/취소", color: "var(--text-2)", muted: true },
+};
 
-  useEffect(() => {
-    fetch("/api/bookings")
-      .then((r) => r.json())
-      .then((d) =>
-        setBookings(
-          d.bookings.filter(
-            (b: Booking) => MY_HOUSE_IDS.includes(b.houseId) && b.status !== "cancelled"
-          )
-        )
-      );
-  }, []);
+type Filter = "all" | "PENDING_PAYMENT" | "CONFIRMED" | "done";
 
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+export default function HostReservations() {
+  const [rows, setRows] = useState<HostReservation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
 
-  // for each day, which bookings are active
-  function bookingsOn(day: number): Booking[] {
-    const date = new Date(year, month, day);
-    return bookings.filter((b) => {
-      const inD = new Date(b.moveIn);
-      const outD = addMonths(inD, b.months);
-      return date >= new Date(inD.getFullYear(), inD.getMonth(), inD.getDate()) && date < outD;
-    });
+  async function load() {
+    setLoading(true);
+    setRows(await listHostReservations());
+    setLoading(false);
   }
 
-  const cells: (number | null)[] = [
-    ...Array(firstDay).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
+  useEffect(() => {
+    load();
+  }, []);
 
-  const monthLabel = `${year}년 ${month + 1}월`;
+  async function act(
+    id: string,
+    status: "CONFIRMED" | "CANCELLED_BY_HOST" | "COMPLETED" | "NO_SHOW"
+  ) {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      await setHostReservationStatus(id, status);
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const shown = rows.filter((r) => {
+    if (filter === "all") return true;
+    if (filter === "done") return ["COMPLETED", "NO_SHOW", "CANCELLED_BY_GUEST", "CANCELLED_BY_HOST"].includes(r.status);
+    return r.status === filter;
+  });
+
+  const FILTERS: { key: Filter; label: string }[] = [
+    { key: "all", label: "전체" },
+    { key: "PENDING_PAYMENT", label: "결제 대기" },
+    { key: "CONFIRMED", label: "예약 확정" },
+    { key: "done", label: "종료" },
+  ];
 
   return (
     <div>
-      <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>예약 캘린더</h1>
-      <p style={{ color: "var(--text-2)", marginBottom: 20 }}>숙소별 예약 현황을 달력으로 확인하세요.</p>
+      <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>예약 관리</h1>
+      <p style={{ color: "var(--text-2)", marginBottom: 20 }}>내 숙소로 들어온 예약을 확인하고 처리하세요.</p>
 
-      <div className="card" style={{ padding: 22 }}>
-        {/* month nav */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <button className="btn btn-ghost press" style={{ padding: "8px 14px" }} onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="이전 달">‹</button>
-          <strong style={{ fontSize: 17 }}>{monthLabel}</strong>
-          <button className="btn btn-ghost press" style={{ padding: "8px 14px" }} onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="다음 달">›</button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        {FILTERS.map((f) => (
+          <button key={f.key} className="chip" data-active={filter === f.key} onClick={() => setFilter(f.key)}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && <div style={{ color: "var(--text-2)" }}>불러오는 중…</div>}
+
+      {!loading && shown.length === 0 && (
+        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)", border: "1px dashed var(--border)", background: "transparent" }}>
+          해당하는 예약이 없습니다. 게스트가 예약하면 여기에 표시됩니다.
         </div>
+      )}
 
-        {/* weekday header */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6, marginBottom: 6 }}>
-          {["일", "월", "화", "수", "목", "금", "토"].map((d, i) => (
-            <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: i === 0 ? "var(--primary)" : "var(--text-2)" }}>
-              {d}
-            </div>
-          ))}
-        </div>
-
-        {/* days */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
-          {cells.map((day, i) => {
-            if (day === null) return <div key={i} />;
-            const active = bookingsOn(day);
-            const isToday =
-              new Date().getFullYear() === year &&
-              new Date().getMonth() === month &&
-              new Date().getDate() === day;
-            return (
-              <div
-                key={i}
-                style={{
-                  minHeight: 68,
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--r-sm)",
-                  padding: 6,
-                  background: active.length ? "var(--secondary-soft)" : "#fff",
-                  outline: isToday ? "2px solid var(--primary)" : "none",
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>{day}</div>
-                {active.slice(0, 2).map((b) => (
-                  <div
-                    key={b.id}
-                    title={`${b.houseName.trim()} · ${b.guestName}`}
-                    style={{
-                      marginTop: 3,
-                      fontSize: 10,
-                      padding: "1px 4px",
-                      borderRadius: 4,
-                      background: b.status === "paid" ? "var(--secondary)" : "var(--warning)",
-                      color: "#fff",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {b.houseName.trim()}
+      <div style={{ display: "grid", gap: 12 }}>
+        {shown.map((b) => {
+          const st = STATUS[b.status];
+          return (
+            <div key={b.id} className="card" style={{ padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <strong style={{ fontSize: 16 }}>{b.houseName.trim()}</strong>
+                    <span className="chip" style={{ fontSize: 11, background: st.color, color: st.muted ? "var(--text-2)" : "#fff", border: "none" }}>
+                      {st.label}
+                    </span>
                   </div>
-                ))}
-                {active.length > 2 && (
-                  <div style={{ fontSize: 10, color: "var(--text-2)", marginTop: 2 }}>+{active.length - 2}</div>
-                )}
+                  <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
+                    {b.guestName} · 입주 {b.moveIn} · {b.months}개월
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <strong style={{ fontSize: 17 }}>{won(b.totalDueNow)}</strong>
+                  <div style={{ fontSize: 12, color: "var(--text-2)" }}>입주 시 결제</div>
+                </div>
               </div>
-            );
-          })}
-        </div>
 
-        {/* legend */}
-        <div style={{ display: "flex", gap: 16, marginTop: 16, fontSize: 12.5, color: "var(--text-2)" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 12, height: 12, borderRadius: 3, background: "var(--secondary)", display: "inline-block" }} /> 예약 확정
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 12, height: 12, borderRadius: 3, background: "var(--warning)", display: "inline-block" }} /> 결제 대기
-          </span>
-        </div>
+              {/* Pending → approve / reject */}
+              {b.status === "PENDING_PAYMENT" && (
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "CONFIRMED")}>
+                    예약 승인
+                  </button>
+                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "CANCELLED_BY_HOST")}>
+                    거절
+                  </button>
+                </div>
+              )}
+
+              {/* Confirmed → complete / no-show */}
+              {b.status === "CONFIRMED" && (
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "COMPLETED")}>
+                    이용 완료 처리
+                  </button>
+                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "NO_SHOW")}>
+                    노쇼 처리
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
