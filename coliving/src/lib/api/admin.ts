@@ -39,6 +39,32 @@ export async function listPendingRooms(): Promise<PendingListing[]> {
 // function per endpoint that calls `api`, (3) the page calling these in an
 // effect. Copy this shape for reports, stats, etc.
 
+// ── Reports (신고 관리) ──
+
+export type ReportStatus = "RECEIVED" | "IN_REVIEW" | "RESOLVED";
+export type ReportTargetType = "ROOM" | "REVIEW" | "USER" | "MESSAGE";
+
+export interface AdminReport {
+  id: string;
+  targetType: ReportTargetType;
+  targetId: string;
+  reason: string;
+  status: ReportStatus;
+  createdAt: string;
+  reporterName: string;
+}
+
+// GET /admin/reports?status= — omit status for all.
+export async function listReports(status?: ReportStatus): Promise<AdminReport[]> {
+  const query = status ? `?status=${status}` : "";
+  return api.get<AdminReport[]>(`/admin/reports${query}`);
+}
+
+// PATCH /admin/reports/:id — move a report through RECEIVED → IN_REVIEW → RESOLVED.
+export async function setReportStatus(id: string, status: ReportStatus): Promise<void> {
+  await api.patch(`/admin/reports/${id}`, { status });
+}
+
 export interface AdminMember {
   id: string;
   name: string;
