@@ -80,6 +80,7 @@ model User {
   settlements  Settlement[]
   posts        Post[]
   comments     Comment[]
+  preference   RoommatePreference?
 
   @@index([provider, providerId])
 }
@@ -457,4 +458,93 @@ model Comment {
   createdAt DateTime @default(now())
 
   @@index([postId, createdAt])
+}
+
+// ── Roommate preference survey (onboarding) ──────────────────────────
+// A user's living-style answers, captured during onboarding and reused by
+// the profile editor (스토리보드 08) and the /match algorithm (스토리보드 07).
+// One row per user (1:1), mirroring the HostProfile relation pattern.
+// `isCompleted` gates entry to /match; the survey is submitted as a whole,
+// so the nine answers are required (non-null) on a completed row.
+
+enum NoiseSensitivity {
+  QUIET      // 조용한 환경 선호
+  MODERATE   // 보통
+  LIVELY     // 활기찬 분위기도 괜찮음
+}
+
+enum CleanlinessLevel {
+  VERY_TIDY  // 매우 깔끔하게 유지
+  MODERATE   // 적당히
+  RELAXED    // 느슨한 편
+}
+
+enum SmokingPreference {
+  NON_SMOKING_ONLY // 비흡연 환경만 가능
+  OUTDOOR_OK       // 실외 흡연은 괜찮음
+  SMOKING_OK       // 흡연 무관
+}
+
+enum PetPreference {
+  NO_PETS      // 반려동물 불가
+  CONDITIONAL  // 조건부 가능
+  PETS_OK      // 반려동물 환영
+}
+
+enum VisitorPolicy {
+  PRIOR_AGREEMENT // 사전 협의 필요
+  OCCASIONAL_OK   // 가끔은 괜찮음
+  FREQUENT_OK     // 자유롭게 허용
+}
+
+enum SleepPattern {
+  EARLY_BIRD // 아침형
+  FLEXIBLE   // 유동적
+  NIGHT_OWL  // 저녁형
+}
+
+enum Sociability {
+  PRIVATE   // 각자 생활 선호
+  BALANCED  // 적당히
+  SOCIAL    // 자주 어울림
+}
+
+enum SharedSpaceStyle {
+  MINIMAL  // 최소한만 사용
+  MODERATE // 보통
+  COMMUNAL // 함께 자주 사용
+}
+
+enum DrinkingHabit {
+  NON_DRINKER    // 거의 안 함
+  SOCIAL_DRINKER // 가끔
+  FREQUENT       // 자주
+}
+
+model RoommatePreference {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  noise       NoiseSensitivity
+  cleanliness CleanlinessLevel
+  smoking     SmokingPreference
+  pets        PetPreference
+  visitors    VisitorPolicy
+  sleep       SleepPattern
+  sociability Sociability
+  sharedSpace SharedSpaceStyle
+  drinking    DrinkingHabit
+
+  // Free-text answer from the subjective step (스토리보드 1-3), optional.
+  intro       String?
+  // Keywords extracted from `intro` by a rule-based dictionary (no API cost
+  // in the MVP; swappable for an LLM later without changing this shape).
+  keywords    String[] @default([])
+
+  // True once the survey is submitted. /match entry checks this flag.
+  isCompleted Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
