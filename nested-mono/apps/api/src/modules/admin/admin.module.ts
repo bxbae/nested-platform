@@ -118,6 +118,35 @@ export class AdminService {
     const gmv = paidAgg._sum.amount ?? 0;
     return { users, rooms, reservations, gmv, commission: Math.round(gmv * 0.05) };
   }
+
+  // all reservations (관리자용 예약 조회)
+  // Optional status filter; newest first; simple offset pagination. Joins the
+  // room name and guest so the admin table can show who booked what without
+  // extra lookups.
+  async reservations(status?: string, take = 50, skip = 0) {
+    const where = status ? { status: status as any } : {};
+    const [rows, total] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take,
+        skip,
+        select: {
+          id: true,
+          status: true,
+          checkIn: true,
+          checkOut: true,
+          months: true,
+          totalDueNow: true,
+          createdAt: true,
+          room: { select: { id: true, name: true } },
+          guest: { select: { id: true, name: true, email: true } },
+        },
+      }),
+      this.prisma.reservation.count({ where }),
+    ]);
+    return { rows, total, take, skip };
+  }
 }
 
 const suspendSchema = z.object({ suspended: z.boolean() });
@@ -174,6 +203,20 @@ export class AdminController {
   @Patch("reports/:id")
   reportStatus(@Param("id") id: string, @Body(new ZodValidationPipe(reportStatusSchema)) dto: any) {
     return this.admin.setReportStatus(id, dto.status);
+  }
+
+  // GET /admin/reservations?status=&take=&skip=
+  @Get("reservations")
+  reservations(
+    @Query("status") status?: string,
+    @Query("take") take?: string,
+    @Query("skip") skip?: string,
+  ) {
+    return this.admin.reservations(
+      status,
+      take ? Number(take) : undefined,
+      skip ? Number(skip) : undefined,
+    );
   }
 }
 
