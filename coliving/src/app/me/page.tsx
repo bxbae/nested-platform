@@ -1,5 +1,5 @@
 import { ProfileHeader } from "./ProfileHeader";
-import { QuickCards } from "./QuickCards";
+import { PreferenceSummary } from "./PreferenceSummary";
 
 export const metadata = { title: "프로필 · Nested" };
 
@@ -12,7 +12,7 @@ export default function Profile() {
       <ProfileHeader />
 
       {/* quick links — badge counts are fetched client-side from the live API */}
-      <QuickCards />
+      <PreferenceSummary />
     </div>
   );
 }
