@@ -175,7 +175,9 @@ export type HostReservationStatus =
   | "CANCELLED_BY_GUEST"
   | "CANCELLED_BY_HOST"
   | "COMPLETED"
-  | "NO_SHOW";
+  | "NO_SHOW"
+  | "EARLY_CHECKOUT_REQUESTED"
+  | "EARLY_CHECKOUT_APPROVED";
 
 export interface HostReservation {
   id: string;
@@ -287,6 +289,7 @@ export async function listMyBookings(): Promise<Booking[]> {
       totalDueNow: r.totalDueNow,
       serviceFeeRate: 0.05,
       status: mapStatus(r.status),
+      rawStatus: r.status,
       createdAt: r.createdAt,
     }));
   } catch {
@@ -300,4 +303,20 @@ export async function listMyBookings(): Promise<Booking[]> {
 export async function sendOverdueNotice(reservationId: string, message?: string): Promise<void> {
   if (!USE_REAL_API) return;
   await api.post(`/host/overdue/${reservationId}`, message ? { message } : {});
+}
+
+// PATCH /reservations/:id/early-checkout — guest requests an early checkout on
+// a confirmed reservation (waits for host approval).
+export async function requestEarlyCheckout(reservationId: string): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.patch(`/reservations/${reservationId}/early-checkout`);
+}
+
+// PATCH /reservations/:id/early-checkout/decision — host approves or rejects.
+export async function decideEarlyCheckout(
+  reservationId: string,
+  decision: "approve" | "reject"
+): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.patch(`/reservations/${reservationId}/early-checkout/decision`, { decision });
 }

@@ -41,6 +41,45 @@ export async function getHostDashboard(): Promise<HostDashboard> {
   return api.get<HostDashboard>("/host/dashboard");
 }
 
+// ── Host calendar: reservations + blocked (unavailable) dates ──
+export interface CalendarReservation {
+  id: string;
+  roomId: string;
+  guestName: string;
+  checkIn: string; // ISO
+  checkOut: string; // ISO
+  status: string;
+}
+export interface CalendarMonth {
+  reservations: CalendarReservation[];
+  blockedDates: string[]; // YYYY-MM-DD
+}
+
+// GET /host/calendar — one room's reservations + blocked days for a month.
+export async function getHostCalendar(
+  roomId: string,
+  year: number,
+  month: number,
+): Promise<CalendarMonth> {
+  if (!USE_REAL_API) {
+    return { reservations: [], blockedDates: [] };
+  }
+  const p = new URLSearchParams({ roomId, year: String(year), month: String(month) });
+  return api.get<CalendarMonth>(`/host/calendar?${p.toString()}`);
+}
+
+// POST /host/calendar/block — mark a date unavailable (YYYY-MM-DD).
+export async function blockDate(roomId: string, date: string, reason?: string): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.post("/host/calendar/block", { roomId, date, reason });
+}
+
+// DELETE /host/calendar/block — make a blocked date available again.
+export async function unblockDate(roomId: string, date: string): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.delete("/host/calendar/block", { body: { roomId, date } });
+}
+
 // ── CSV export ──
 // Download an authenticated CSV. We can't use the JSON `api` helper here, so we
 // fetch with the Bearer token and trigger a browser download from the blob.

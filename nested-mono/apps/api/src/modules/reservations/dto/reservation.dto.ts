@@ -32,6 +32,12 @@ export const hostStatusSchema = z.object({
 });
 export type HostStatusDto = z.infer<typeof hostStatusSchema>;
 
+// ── Early-checkout decision ── host approves or rejects a guest's request.
+export const earlyCheckoutSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+});
+export type EarlyCheckoutDto = z.infer<typeof earlyCheckoutSchema>;
+
 function startOfToday(): number {
   const d = new Date();
   d.setHours(0, 0, 0, 0);

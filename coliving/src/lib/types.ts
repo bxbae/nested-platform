@@ -120,6 +120,7 @@ export interface Booking {
   totalDueNow: number;
   serviceFeeRate: number; // e.g. 0.05
   status: "hold" | "paid" | "cancelled";
+  rawStatus?: string; // original server status, for states the 3-way map collapses
   createdAt: string;
 }
 

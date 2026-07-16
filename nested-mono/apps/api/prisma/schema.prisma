@@ -36,6 +36,8 @@ enum ReservationStatus {
   CANCELLED_BY_HOST
   COMPLETED
   NO_SHOW
+  EARLY_CHECKOUT_REQUESTED
+  EARLY_CHECKOUT_APPROVED
 }
 
 enum PaymentStatus {
