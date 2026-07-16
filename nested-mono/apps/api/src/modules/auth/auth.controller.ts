@@ -37,6 +37,10 @@ const updateMeSchema = z.object({
   name: z.string().min(1, "이름을 입력해주세요.").max(40).optional(),
   bio: z.string().max(500, "자기소개는 500자 이내로 입력해주세요.").optional(),
   avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요.").optional(),
+  // Profile card fields (스토리보드 1-1 / 08). All optional.
+  avatarUrl: z.string().url("이미지 주소가 올바르지 않아요.").max(500).nullable().optional(),
+  age: z.number().int().min(0).max(120).nullable().optional(),
+  job: z.string().max(40).nullable().optional(),
 });
 
 const forgotPasswordSchema = z.object({
