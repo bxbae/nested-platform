@@ -23,15 +23,45 @@ function demoTokens(email: string, name?: string): AuthTokens {
   };
 }
 
-export async function register(email: string, password: string, name: string): Promise<AuthUser> {
+// Register can resolve two ways now:
+//   • { user }            — logged in immediately (demo mode, or no mail provider)
+//   • { verificationRequired } — a verification email was sent; NOT logged in
+export type RegisterResult =
+  | { user: AuthUser }
+  | { verificationRequired: true; email: string; message: string };
+
+export async function register(
+  email: string,
+  password: string,
+  name: string,
+): Promise<RegisterResult> {
   if (!USE_REAL_API) {
     const t = demoTokens(email, name);
     authStore.set(t);
-    return t.user;
+    return { user: t.user };
   }
-  const res = await api.post<AuthTokens>("/auth/register", { email, password, name }, { auth: false });
+  const res = await api.post<
+    AuthTokens | { verificationRequired: true; email: string; message: string }
+  >("/auth/register", { email, password, name }, { auth: false });
+
+  if ("verificationRequired" in res) {
+    // No session yet — the caller shows a "check your email" state.
+    return res;
+  }
+  authStore.set(res);
+  return { user: res.user };
+}
+
+// POST /auth/verify-email — consume the emailed token, log the user in.
+export async function verifyEmail(token: string): Promise<AuthUser> {
+  const res = await api.post<AuthTokens>("/auth/verify-email", { token }, { auth: false });
   authStore.set(res);
   return res.user;
+}
+
+// POST /auth/resend-verification — always resolves (no account enumeration).
+export async function resendVerification(email: string): Promise<void> {
+  await api.post("/auth/resend-verification", { email }, { auth: false });
 }
 
 export async function login(email: string, password: string): Promise<AuthUser> {

@@ -135,10 +135,35 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new ConflictException("이미 가입된 이메일입니다.");
     const passwordHash = await bcrypt.hash(password, 10);
+
+    // When no mail provider is configured (local dev / offline demo) we can't
+    // ask the user to prove they own the address, so we mark them verified on
+    // creation. With a real provider set, emailVerified stays null until they
+    // click the link, and login is blocked in the meantime.
+    const autoVerify = !this.mail.configured;
+
     const user = await this.prisma.user.create({
-      data: { email, passwordHash, name },
+      data: {
+        email,
+        passwordHash,
+        name,
+        emailVerified: autoVerify ? new Date() : null,
+      },
     });
-    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
+
+    if (autoVerify) {
+      // Straight to a session — same behaviour as before mail was required.
+      return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
+    }
+
+    // Real provider: send the verification link and DO NOT issue tokens.
+    // The client shows a "check your email" state instead of logging in.
+    await this.sendVerificationEmail(user.id, user.email);
+    return {
+      verificationRequired: true as const,
+      email: user.email,
+      message: "가입 확인 메일을 보냈어요. 메일의 링크를 눌러 인증을 완료해주세요.",
+    };
   }
 
   // ── Email/password login ──
@@ -149,6 +174,14 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException("이메일 또는 비밀번호가 올바르지 않습니다.");
     if (user.deletedAt) throw new UnauthorizedException("탈퇴한 계정입니다.");
     if (user.suspended) throw new UnauthorizedException("정지된 계정입니다.");
+    // Block login until the address is confirmed — but only when a mail
+    // provider is configured (otherwise no one could ever verify).
+    if (this.mail.configured && !user.emailVerified) {
+      throw new UnauthorizedException({
+        code: "EMAIL_NOT_VERIFIED",
+        message: "이메일 인증이 필요해요. 가입 시 받은 메일의 링크를 눌러주세요.",
+      });
+    }
     return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
   }
 
@@ -319,6 +352,64 @@ export class AuthService {
       this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
     ]);
 
+    return { ok: true };
+  }
+
+  // Issue a fresh verification token and email the link. Any outstanding
+  // tokens are cleared so only the newest link works.
+  private async sendVerificationEmail(userId: string, email: string) {
+    await this.prisma.emailVerificationToken.deleteMany({ where: { userId } });
+    const token = randomBytes(32).toString("hex");
+    await this.prisma.emailVerificationToken.create({
+      data: {
+        userId,
+        tokenHash: this.hashToken(token),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+      },
+    });
+    const base = process.env.FRONTEND_URL ?? "http://localhost:3000";
+    await this.mail.sendEmailVerification(email, `${base}/auth/verify?token=${token}`);
+  }
+
+  // GET/POST target for the emailed link. Stamps emailVerified and burns the
+  // token so the link can't be replayed. Returns a session so the user is
+  // logged in immediately after verifying.
+  async verifyEmail(token: string) {
+    const row = await this.prisma.emailVerificationToken.findUnique({
+      where: { tokenHash: this.hashToken(token) },
+      select: { id: true, userId: true, expiresAt: true, usedAt: true },
+    });
+    if (!row || row.usedAt || row.expiresAt < new Date()) {
+      throw new BadRequestException({
+        code: "INVALID_VERIFICATION_TOKEN",
+        message: "인증 링크가 만료되었거나 이미 사용되었어요. 다시 요청해주세요.",
+      });
+    }
+
+    const [user] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: row.userId },
+        data: { emailVerified: new Date() },
+      }),
+      this.prisma.emailVerificationToken.update({
+        where: { id: row.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
+  }
+
+  // Re-send the verification link. Silent no-op for unknown or already-verified
+  // addresses so the endpoint can't be used to probe who's registered.
+  async resendVerification(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, emailVerified: true },
+    });
+    if (user && !user.emailVerified && this.mail.configured) {
+      await this.sendVerificationEmail(user.id, user.email);
+    }
     return { ok: true };
   }
 

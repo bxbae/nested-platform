@@ -41,6 +41,9 @@ export function AuthModal({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Set when registration returns "verification required" instead of a session:
+  // we keep the modal open and show a check-your-email message.
+  const [notice, setNotice] = useState("");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -63,13 +66,24 @@ export function AuthModal({
     }
     setBusy(true);
     try {
-      if (mode === "login") await login(email, password);
-      else await register(email, password, name);
+      if (mode === "login") {
+        await login(email, password);
+      } else {
+        const res = await register(email, password, name);
+        // Real API with a mail provider: no session yet — prompt for email
+        // verification and keep the modal open.
+        if ("verificationRequired" in res) {
+          setNotice(res.message);
+          setBusy(false);
+          return;
+        }
+      }
       onClose();
       // reset for next open
       setName("");
       setEmail("");
       setPassword("");
+      setNotice("");
     } catch (e) {
       setError((e as Error).message || "요청에 실패했습니다.");
     } finally {
@@ -166,6 +180,11 @@ export function AuthModal({
           />
         </div>
 
+        {notice && (
+          <p style={{ color: "var(--primary)", fontSize: 13, marginTop: 12, lineHeight: 1.6 }}>
+            {notice}
+          </p>
+        )}
         {error && (
           <p style={{ color: "#e5484d", fontSize: 13, marginTop: 12 }}>{error}</p>
         )}

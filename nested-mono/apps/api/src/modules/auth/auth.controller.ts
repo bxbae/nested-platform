@@ -47,6 +47,8 @@ const forgotPasswordSchema = z.object({
   email: z.string().email("올바른 이메일을 입력해주세요."),
 });
 
+const verifyEmailSchema = z.object({ token: z.string().min(1) });
+const resendVerificationSchema = z.object({ email: z.string().email() });
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
   newPassword: z.string().min(8, "비밀번호는 8자 이상이어야 합니다."),
@@ -126,6 +128,26 @@ export class AuthController {
     @Body(new ZodValidationPipe(resetPasswordSchema)) dto: z.infer<typeof resetPasswordSchema>,
   ) {
     return this.auth.resetPassword(dto.token, dto.newPassword);
+  }
+
+  // POST /auth/verify-email — consumes the emailed verification token and
+  // returns a session (the user is logged in on success).
+  @Post("verify-email")
+  @HttpCode(200)
+  verifyEmail(
+    @Body(new ZodValidationPipe(verifyEmailSchema)) dto: z.infer<typeof verifyEmailSchema>,
+  ) {
+    return this.auth.verifyEmail(dto.token);
+  }
+
+  // POST /auth/resend-verification — re-send the verification link.
+  // Always resolves, even for unknown/verified addresses (no enumeration).
+  @Post("resend-verification")
+  @HttpCode(200)
+  resendVerification(
+    @Body(new ZodValidationPipe(resendVerificationSchema)) dto: z.infer<typeof resendVerificationSchema>,
+  ) {
+    return this.auth.resendVerification(dto.email);
   }
 
   // DELETE /auth/me — soft-delete own account (anonymise + block login).
