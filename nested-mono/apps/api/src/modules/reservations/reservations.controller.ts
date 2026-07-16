@@ -19,10 +19,12 @@ import {
   createReservationSchema,
   confirmPaymentSchema,
   hostStatusSchema,
+  earlyCheckoutSchema,
   type QuoteDto,
   type CreateReservationDto,
   type ConfirmPaymentDto,
   type HostStatusDto,
+  type EarlyCheckoutDto,
 } from "./dto/reservation.dto";
 
 // Pulls the authenticated user's id off req.user (populated by JwtAuthGuard).
@@ -110,5 +112,26 @@ export class ReservationsController {
   @HttpCode(200)
   cancel(@Param("id") id: string, @CurrentGuest() guestId: string) {
     return this.service.cancel(id, guestId);
+  }
+
+  // PATCH /reservations/:id/early-checkout — guest requests an early checkout.
+  @Patch("reservations/:id/early-checkout")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  requestEarlyCheckout(@Param("id") id: string, @CurrentGuest() guestId: string) {
+    return this.service.requestEarlyCheckout(id, guestId);
+  }
+
+  // PATCH /reservations/:id/early-checkout/decision — host approves/rejects.
+  // Body: { decision: "approve" | "reject" }.
+  @Patch("reservations/:id/early-checkout/decision")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  decideEarlyCheckout(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(earlyCheckoutSchema)) dto: EarlyCheckoutDto,
+    @CurrentGuest() hostId: string
+  ) {
+    return this.service.decideEarlyCheckout(id, hostId, dto.decision);
   }
 }

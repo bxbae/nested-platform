@@ -170,6 +170,50 @@ export class ReservationsService {
     return this.repo.updateStatus(id, "CANCELLED_BY_GUEST");
   }
 
+  // Guest requests an early checkout on a CONFIRMED reservation. This doesn't
+  // end the stay yet — it flips to EARLY_CHECKOUT_REQUESTED and waits for the
+  // host to approve or reject.
+  async requestEarlyCheckout(id: string, guestId: string): Promise<ReservationRecord> {
+    const r = await this.repo.findById(id);
+    if (!r) throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+    if (r.guestId !== guestId) {
+      throw new ForbiddenException({ code: "FORBIDDEN", message: "본인 예약만 요청할 수 있습니다." });
+    }
+    if (r.status !== "CONFIRMED") {
+      throw new BadRequestException({
+        code: "NOT_CONFIRMED",
+        message: "이용 중인(확정) 예약만 조기 퇴실을 요청할 수 있습니다.",
+      });
+    }
+    return this.repo.updateStatus(id, "EARLY_CHECKOUT_REQUESTED");
+  }
+
+  // Host approves or rejects an early-checkout request.
+  // Approve → EARLY_CHECKOUT_APPROVED (the stay is treated as ending early).
+  // Reject  → back to CONFIRMED.
+  async decideEarlyCheckout(
+    id: string,
+    hostId: string,
+    decision: "approve" | "reject"
+  ): Promise<ReservationRecord> {
+    const r = await this.repo.findById(id);
+    if (!r) throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+    const ownerId = await this.repo.findRoomHostId(id);
+    if (ownerId !== hostId) {
+      throw new ForbiddenException({ code: "NOT_HOST", message: "본인 숙소의 예약만 처리할 수 있습니다." });
+    }
+    if (r.status !== "EARLY_CHECKOUT_REQUESTED") {
+      throw new BadRequestException({
+        code: "NOT_REQUESTED",
+        message: "조기 퇴실이 요청된 예약만 처리할 수 있습니다.",
+      });
+    }
+    return this.repo.updateStatus(
+      id,
+      decision === "approve" ? "EARLY_CHECKOUT_APPROVED" : "CONFIRMED"
+    );
+  }
+
   // All reservations for the logged-in guest (my trips).
   async listMine(guestId: string) {
     return this.repo.listByGuest(guestId);

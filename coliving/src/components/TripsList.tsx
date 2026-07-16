@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Booking } from "@/lib/types";
 import { won } from "@/lib/format";
-import { listMyBookings, cancelBooking } from "@/lib/api/reservations";
+import { listMyBookings, cancelBooking, requestEarlyCheckout } from "@/lib/api/reservations";
 
 export function TripsList({ bare = false }: { bare?: boolean }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -32,6 +32,19 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
       await cancelBooking(id);
     } catch {
       /* revert by reloading the authoritative list */
+    }
+    load();
+  }
+
+  // Guest requests an early checkout on a confirmed reservation.
+  async function requestEarly(id: string) {
+    setBookings((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, rawStatus: "EARLY_CHECKOUT_REQUESTED" } : b))
+    );
+    try {
+      await requestEarlyCheckout(id);
+    } catch {
+      /* ignore; reload restores authoritative state */
     }
     load();
   }
@@ -130,13 +143,36 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
               </div>
 
               {!cancelled && (
-                <button
-                  className="btn btn-ghost"
-                  style={{ marginTop: 14, fontSize: 13, padding: "8px 16px" }}
-                  onClick={() => cancel(b.id)}
-                >
-                  예약 취소
-                </button>
+                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 13, padding: "8px 16px" }}
+                    onClick={() => cancel(b.id)}
+                  >
+                    예약 취소
+                  </button>
+
+                  {/* Early checkout: only on a confirmed (paid) stay. */}
+                  {b.rawStatus === "CONFIRMED" && (
+                    <button
+                      className="btn btn-ghost"
+                      style={{ fontSize: 13, padding: "8px 16px" }}
+                      onClick={() => requestEarly(b.id)}
+                    >
+                      조기 퇴실 요청
+                    </button>
+                  )}
+                  {b.rawStatus === "EARLY_CHECKOUT_REQUESTED" && (
+                    <span style={{ fontSize: 12.5, color: "var(--primary)" }}>
+                      조기 퇴실 요청됨 · 호스트 승인 대기
+                    </span>
+                  )}
+                  {b.rawStatus === "EARLY_CHECKOUT_APPROVED" && (
+                    <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                      조기 퇴실 승인됨
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           );

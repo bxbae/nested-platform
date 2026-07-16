@@ -6,6 +6,7 @@ import {
   listHostReservations,
   setHostReservationStatus,
   sendOverdueNotice,
+  decideEarlyCheckout,
   type HostReservation,
   type HostReservationStatus,
 } from "@/lib/api/reservations";
@@ -19,6 +20,8 @@ const STATUS: Record<HostReservationStatus, { label: string; color: string; mute
   NO_SHOW: { label: "노쇼", color: "var(--text-2)", muted: true },
   CANCELLED_BY_GUEST: { label: "게스트 취소", color: "var(--text-2)", muted: true },
   CANCELLED_BY_HOST: { label: "거절/취소", color: "var(--text-2)", muted: true },
+  EARLY_CHECKOUT_REQUESTED: { label: "조기 퇴실 요청", color: "var(--primary)" },
+  EARLY_CHECKOUT_APPROVED: { label: "조기 퇴실 승인", color: "var(--text-2)", muted: true },
 };
 
 type Filter = "all" | "PENDING_PAYMENT" | "CONFIRMED" | "done";
@@ -61,6 +64,18 @@ export default function HostReservations() {
     try {
       await sendOverdueNotice(id);
       setNoticed((prev) => new Set(prev).add(id));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Approve or reject a guest's early-checkout request.
+  async function decideEarly(id: string, decision: "approve" | "reject") {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      await decideEarlyCheckout(id, decision);
+      await load();
     } finally {
       setBusyId(null);
     }
@@ -152,6 +167,21 @@ export default function HostReservations() {
                     title="입주자에게 연체 안내 알림을 보냅니다"
                   >
                     {noticed.has(b.id) ? "✓ 안내 발송됨" : "🔔 연체 안내"}
+                  </button>
+                </div>
+              )}
+
+              {/* Early-checkout request → approve / reject */}
+              {b.status === "EARLY_CHECKOUT_REQUESTED" && (
+                <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+                    입주자가 계약 기간 전 퇴실을 요청했습니다.
+                  </span>
+                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideEarly(b.id, "approve")}>
+                    퇴실 승인
+                  </button>
+                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideEarly(b.id, "reject")}>
+                    거절
                   </button>
                 </div>
               )}

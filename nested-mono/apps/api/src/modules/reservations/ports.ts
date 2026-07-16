@@ -7,7 +7,9 @@ export type ReservationStatus =
   | "CANCELLED_BY_GUEST"
   | "CANCELLED_BY_HOST"
   | "COMPLETED"
-  | "NO_SHOW";
+  | "NO_SHOW"
+  | "EARLY_CHECKOUT_REQUESTED"
+  | "EARLY_CHECKOUT_APPROVED";
 
 export interface RoomRecord {
   id: string;
