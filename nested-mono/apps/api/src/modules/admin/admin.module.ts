@@ -4,6 +4,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
+import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
 
@@ -147,6 +148,75 @@ export class AdminService {
     ]);
     return { rows, total, take, skip };
   }
+
+  // monthly revenue + reservation counts (통계/매출 월별 추이)
+  // Aggregates the last `months` calendar months (default 6) in the DB with
+  // date_trunc, so the admin charts show real data instead of the lib/admin
+  // mock. Returns one row per month, oldest→newest, with zero-filled gaps.
+  async monthlyTrend(months = 6) {
+    // Start of the window: first day of the month, (months-1) months ago.
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+
+    // Revenue = sum of PAID payments per month. Refunds tracked separately.
+    const revenueRows = await this.prisma.$queryRaw<
+      { month: Date; paid: bigint; refunded: bigint }[]
+    >`
+      SELECT date_trunc('month', "createdAt") AS month,
+             COALESCE(SUM(CASE WHEN "status" = 'PAID' THEN "amount" ELSE 0 END), 0) AS paid,
+             COALESCE(SUM(CASE WHEN "status" = 'REFUNDED' THEN "amount" ELSE 0 END), 0) AS refunded
+      FROM "Payment"
+      WHERE "createdAt" >= ${start}
+      GROUP BY 1
+      ORDER BY 1
+    `;
+
+    // Reservation counts per month.
+    const reservationRows = await this.prisma.$queryRaw<
+      { month: Date; count: bigint }[]
+    >`
+      SELECT date_trunc('month', "createdAt") AS month, COUNT(*) AS count
+      FROM "Reservation"
+      WHERE "createdAt" >= ${start}
+      GROUP BY 1
+      ORDER BY 1
+    `;
+
+    // Index DB results by "YYYY-M" so we can zero-fill missing months.
+    const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}`;
+    const revByMonth = new Map(revenueRows.map((r) => [key(new Date(r.month)), r]));
+    const resByMonth = new Map(reservationRows.map((r) => [key(new Date(r.month)), r]));
+
+    const trend: {
+      month: string;
+      revenue: number;
+      refunds: number;
+      reservations: number;
+    }[] = [];
+    for (let i = 0; i < months; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+      const rev = revByMonth.get(key(d));
+      const res = resByMonth.get(key(d));
+      trend.push({
+        month: `${d.getMonth() + 1}월`,
+        revenue: rev ? Number(rev.paid) : 0,
+        refunds: rev ? Number(rev.refunded) : 0,
+        reservations: res ? Number(res.count) : 0,
+      });
+    }
+
+    // Totals across the window for the summary cards.
+    const gmv = trend.reduce((s, t) => s + t.revenue, 0);
+    const refunds = trend.reduce((s, t) => s + t.refunds, 0);
+    const commission = Math.round(gmv * 0.05);
+    return {
+      gmv,
+      commission,
+      payouts: gmv - commission,
+      refunds,
+      trend,
+    };
+  }
 }
 
 const suspendSchema = z.object({ suspended: z.boolean() });
@@ -217,6 +287,12 @@ export class AdminController {
       take ? Number(take) : undefined,
       skip ? Number(skip) : undefined,
     );
+  }
+
+  // GET /admin/revenue/monthly?months=6
+  @Get("revenue/monthly")
+  monthlyTrend(@Query("months") months?: string) {
+    return this.admin.monthlyTrend(months ? Number(months) : undefined);
   }
 }
 
