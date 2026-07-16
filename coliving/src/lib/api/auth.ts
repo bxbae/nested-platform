@@ -101,6 +101,7 @@ interface ApiMe {
   name?: string | null;
   bio?: string | null;
   avatarColor?: string;
+  avatarUrl?: string | null;
   hasPassword?: boolean;
   createdAt?: string | null;
 }
@@ -113,6 +114,7 @@ function toAuthUser(me: ApiMe): AuthUser {
     name: me.name ?? undefined,
     bio: me.bio ?? null,
     avatarColor: me.avatarColor,
+    avatarUrl: me.avatarUrl ?? null,
     hasPassword: me.hasPassword,
     createdAt: me.createdAt ?? null,
   };
@@ -124,6 +126,7 @@ export async function updateProfile(data: {
   name?: string;
   bio?: string;
   avatarColor?: string;
+  avatarUrl?: string | null;
 }): Promise<AuthUser> {
   const me = await api.patch<ApiMe>("/auth/me", data);
   const user = toAuthUser(me);
