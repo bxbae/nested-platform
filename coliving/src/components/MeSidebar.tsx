@@ -13,6 +13,7 @@ const items = [
   { href: "/me/messages", label: "메시지", icon: "💬" },
   { href: "/me/notifications", label: "알림", icon: "🔔" },
   { href: "/me/reviews", label: "리뷰 관리", icon: "⭐" },
+  { href: "/me/preference", label: "생활 성향", icon: "🧭" },
   { href: "/me/settings", label: "설정", icon: "⚙️" },
 ];
 
