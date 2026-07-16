@@ -108,3 +108,47 @@ export async function publishRoom(id: string, published = true): Promise<void> {
 export async function rejectRoom(id: string): Promise<void> {
   await api.delete(`/admin/rooms/${id}`);
 }
+
+// ── All reservations (관리자용 예약 조회) ─────────────────────────────
+// Backend reservation status enum, mapped to Korean labels in the UI.
+export type AdminReservationStatus =
+  | "PENDING_PAYMENT"
+  | "CONFIRMED"
+  | "CANCELLED_BY_GUEST"
+  | "CANCELLED_BY_HOST"
+  | "COMPLETED"
+  | "NO_SHOW"
+  | "EARLY_CHECKOUT_REQUESTED"
+  | "EARLY_CHECKOUT_APPROVED";
+
+export interface AdminReservation {
+  id: string;
+  status: AdminReservationStatus;
+  checkIn: string;
+  checkOut: string;
+  months: number;
+  totalDueNow: number;
+  createdAt: string;
+  room: { id: string; name: string };
+  guest: { id: string; name: string; email: string };
+}
+
+export interface AdminReservationPage {
+  rows: AdminReservation[];
+  total: number;
+  take: number;
+  skip: number;
+}
+
+// GET /admin/reservations?status=&take=&skip=
+export async function listReservations(
+  status?: AdminReservationStatus,
+  take = 50,
+  skip = 0,
+): Promise<AdminReservationPage> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("take", String(take));
+  params.set("skip", String(skip));
+  return api.get<AdminReservationPage>(`/admin/reservations?${params.toString()}`);
+}

@@ -2,72 +2,136 @@
 
 import { useEffect, useState } from "react";
 import { won } from "@/lib/format";
-import type { Booking } from "@/lib/types";
+import {
+  listReservations,
+  type AdminReservation,
+  type AdminReservationStatus,
+} from "@/lib/api/admin";
 
-const STATUS = {
-  hold: { label: "결제 대기", color: "var(--warning)" },
-  paid: { label: "예약 확정", color: "var(--secondary)" },
-  cancelled: { label: "취소됨", color: "var(--text-2)" },
-} as const;
+// Status → Korean label + colour. Covers all eight ReservationStatus values.
+const STATUS: Record<AdminReservationStatus, { label: string; color: string }> = {
+  PENDING_PAYMENT: { label: "결제 대기", color: "var(--warning)" },
+  CONFIRMED: { label: "예약 확정", color: "var(--secondary)" },
+  COMPLETED: { label: "이용 완료", color: "var(--text-2)" },
+  CANCELLED_BY_GUEST: { label: "게스트 취소", color: "var(--text-2)" },
+  CANCELLED_BY_HOST: { label: "호스트 취소", color: "var(--text-2)" },
+  NO_SHOW: { label: "노쇼", color: "var(--text-2)" },
+  EARLY_CHECKOUT_REQUESTED: { label: "조기퇴실 요청", color: "var(--warning)" },
+  EARLY_CHECKOUT_APPROVED: { label: "조기퇴실 승인", color: "var(--secondary)" },
+};
+
+// Filter chips: "all" plus the statuses an admin most often filters by.
+const FILTERS: { value: "all" | AdminReservationStatus; label: string }[] = [
+  { value: "all", label: "전체" },
+  { value: "PENDING_PAYMENT", label: "결제 대기" },
+  { value: "CONFIRMED", label: "예약 확정" },
+  { value: "COMPLETED", label: "이용 완료" },
+  { value: "CANCELLED_BY_GUEST", label: "취소" },
+];
+
+const PAGE_SIZE = 50;
+
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export default function AdminReservations() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [rows, setRows] = useState<AdminReservation[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "hold" | "paid" | "cancelled">("all");
+  const [filter, setFilter] = useState<"all" | AdminReservationStatus>("all");
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
-    fetch("/api/bookings")
-      .then((r) => r.json())
-      .then((d) => {
-        setBookings(d.bookings);
-        setLoading(false);
+    let alive = true;
+    setLoading(true);
+    listReservations(
+      filter === "all" ? undefined : filter,
+      PAGE_SIZE,
+      page * PAGE_SIZE,
+    )
+      .then((res) => {
+        if (!alive) return;
+        setRows(res.rows);
+        setTotal(res.total);
+      })
+      .catch(() => {
+        if (alive) setRows([]);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
       });
-  }, []);
+    return () => {
+      alive = false;
+    };
+  }, [filter, page]);
 
-  const shown = filter === "all" ? bookings : bookings.filter((b) => b.status === filter);
-  const gmv = bookings.filter((b) => b.status === "paid").reduce((s, b) => s + b.totalDueNow, 0);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div>
       <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>예약 관리</h1>
       <p style={{ color: "var(--text-2)", marginBottom: 20 }}>
-        전체 {bookings.length}건 · 확정 거래액 {won(gmv)}
+        전체 {total}건
       </p>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-        {(["all", "hold", "paid", "cancelled"] as const).map((f) => (
-          <button key={f} className="chip" data-active={filter === f} onClick={() => setFilter(f)}>
-            {f === "all" ? "전체" : STATUS[f].label}
+        {FILTERS.map((f) => (
+          <button
+            key={f.value}
+            className="chip"
+            data-active={filter === f.value}
+            onClick={() => {
+              setFilter(f.value);
+              setPage(0);
+            }}
+          >
+            {f.label}
           </button>
         ))}
       </div>
 
       {loading && <div style={{ color: "var(--text-2)" }}>불러오는 중…</div>}
 
-      {!loading && shown.length === 0 && (
+      {!loading && rows.length === 0 && (
         <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)", border: "1px dashed var(--border)", background: "transparent" }}>
           해당하는 예약이 없습니다.
         </div>
       )}
 
-      {shown.length > 0 && (
+      {!loading && rows.length > 0 && (
         <div className="card" style={{ overflow: "hidden" }}>
-          <div className="admin-table-head" style={{ gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr" }}>
+          <div className="admin-table-head" style={{ gridTemplateColumns: "2fr 1.5fr 1.2fr 1fr 1fr" }}>
             <span>숙소</span><span>게스트</span><span>입주일</span><span>금액</span><span>상태</span>
           </div>
-          {shown.map((b) => (
-            <div key={b.id} className="admin-table-row" style={{ gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr" }}>
-              <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.houseName.trim()}</span>
-              <span style={{ fontSize: 13.5 }}>{b.guestName}</span>
-              <span style={{ fontSize: 13, color: "var(--text-2)" }}>{b.moveIn}</span>
-              <span style={{ fontSize: 13.5 }}>{won(b.totalDueNow)}</span>
+          {rows.map((r) => (
+            <div key={r.id} className="admin-table-row" style={{ gridTemplateColumns: "2fr 1.5fr 1.2fr 1fr 1fr" }}>
+              <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.room.name.trim()}</span>
+              <span style={{ fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.guest.name}</span>
+              <span style={{ fontSize: 13, color: "var(--text-2)" }}>{fmtDate(r.checkIn)}</span>
+              <span style={{ fontSize: 13.5 }}>{won(r.totalDueNow)}</span>
               <span>
-                <span className="chip" style={{ fontSize: 11, background: STATUS[b.status].color, color: b.status === "cancelled" ? "var(--text-2)" : "#fff", border: "none" }}>
-                  {STATUS[b.status].label}
+                <span className="chip" style={{ fontSize: 11, background: STATUS[r.status].color, color: STATUS[r.status].color === "var(--text-2)" ? "var(--text-2)" : "#fff", border: "none" }}>
+                  {STATUS[r.status].label}
                 </span>
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {!loading && totalPages > 1 && (
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center", marginTop: 20 }}>
+          <button className="chip" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+            이전
+          </button>
+          <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+            {page + 1} / {totalPages}
+          </span>
+          <button className="chip" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+            다음
+          </button>
         </div>
       )}
     </div>
