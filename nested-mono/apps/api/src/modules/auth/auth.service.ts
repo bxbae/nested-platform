@@ -29,7 +29,7 @@ export class AuthService {
       where: { id: userId },
       select: {
         id: true, email: true, name: true, role: true, createdAt: true,
-        bio: true, avatarColor: true,
+        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true,
         // Lets the client hide "change password" for OAuth-only accounts,
         // which have no password to change.
         passwordHash: true,
@@ -43,26 +43,43 @@ export class AuthService {
       role: user.role,
       bio: user.bio,
       avatarColor: user.avatarColor,
+      avatarUrl: user.avatarUrl,
+      age: user.age,
+      job: user.job,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
     };
   }
 
   // ── Profile update ──
-  // Only name/bio/avatarColor are writable. Email and role are deliberately
+  // Only name/bio/avatarColor/avatarUrl/age/job are writable. Email and role are deliberately
   // NOT accepted: letting a client set its own role would make anyone an admin,
   // and email changes need a verification flow we don't have.
-  async updateMe(userId: string, data: { name?: string; bio?: string; avatarColor?: string }) {
+  async updateMe(
+    userId: string,
+    data: {
+      name?: string;
+      bio?: string;
+      avatarColor?: string;
+      avatarUrl?: string | null;
+      age?: number | null;
+      job?: string | null;
+    },
+  ) {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.bio !== undefined ? { bio: data.bio } : {}),
         ...(data.avatarColor !== undefined ? { avatarColor: data.avatarColor } : {}),
+        ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
+        ...(data.age !== undefined ? { age: data.age } : {}),
+        ...(data.job !== undefined ? { job: data.job } : {}),
       },
       select: {
         id: true, email: true, name: true, role: true, createdAt: true,
-        bio: true, avatarColor: true, passwordHash: true,
+        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true,
+        passwordHash: true,
       },
     });
     return {
@@ -72,6 +89,9 @@ export class AuthService {
       role: user.role,
       bio: user.bio,
       avatarColor: user.avatarColor,
+      avatarUrl: user.avatarUrl,
+      age: user.age,
+      job: user.job,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
     };
