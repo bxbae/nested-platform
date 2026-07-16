@@ -23,6 +23,7 @@ import { HostModule } from "./modules/host/host.module";
 import { HostCalendarModule } from "./modules/host/host-calendar.module";
 import { HostExportModule } from "./modules/host/host-export.module";
 import { HostOverdueModule } from "./modules/host/host-overdue.module";
+import { HostSettlementModule } from "./modules/host/host-settlement.module";
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { HostOverdueModule } from "./modules/host/host-overdue.module";
     HostCalendarModule,
     HostExportModule,
     HostOverdueModule,
+    HostSettlementModule,
   ],
 })
 export class AppModule {}

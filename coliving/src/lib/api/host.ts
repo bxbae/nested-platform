@@ -112,3 +112,33 @@ export function downloadRevenueCsv() {
 export function downloadTenantsCsv() {
   return downloadCsv("/host/export/tenants.csv", "tenants.csv");
 }
+
+// ── Host settlements (정산 내역) ──
+// Computed on the server from settleable reservations; no Settlement rows need
+// to pre-exist. Demo mode returns an empty breakdown.
+export interface SettlementRow {
+  reservationId: string;
+  roomName: string;
+  guestName: string;
+  checkIn: string;
+  months: number;
+  gross: number;
+  commission: number;
+  net: number;
+  status: "SCHEDULED" | "PAID";
+}
+export interface SettlementSummary {
+  rows: SettlementRow[];
+  totalGross: number;
+  totalCommission: number;
+  totalNet: number;
+  scheduledNet: number;
+  paidNet: number;
+}
+
+export async function getHostSettlements(): Promise<SettlementSummary> {
+  if (!USE_REAL_API) {
+    return { rows: [], totalGross: 0, totalCommission: 0, totalNet: 0, scheduledNet: 0, paidNet: 0 };
+  }
+  return api.get<SettlementSummary>("/host/settlements");
+}

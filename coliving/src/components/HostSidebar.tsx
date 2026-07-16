@@ -8,6 +8,7 @@ const items = [
   { href: "/host/listings", label: "숙소 관리", icon: "🏠" },
   { href: "/host/listings/new", label: "숙소 등록", icon: "➕" },
   { href: "/host/reservations", label: "예약 관리", icon: "📋" },
+  { href: "/host/settlements", label: "정산 내역", icon: "💰" },
   { href: "/host/calendar", label: "예약 캘린더", icon: "📅" },
   { href: "/host/seekers", label: "입주 희망자 찾기", icon: "🔍" },
   { href: "/host/inquiries", label: "문의 관리", icon: "💬" },
