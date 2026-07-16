@@ -152,3 +152,24 @@ export async function listReservations(
   params.set("skip", String(skip));
   return api.get<AdminReservationPage>(`/admin/reservations?${params.toString()}`);
 }
+
+// ── Monthly revenue + reservation trend (통계/매출 월별 추이) ──────────
+export interface MonthlyTrendPoint {
+  month: string;      // "6월"
+  revenue: number;    // PAID payment sum
+  refunds: number;    // REFUNDED sum
+  reservations: number;
+}
+
+export interface RevenueTrend {
+  gmv: number;
+  commission: number;
+  payouts: number;
+  refunds: number;
+  trend: MonthlyTrendPoint[];
+}
+
+// GET /admin/revenue/monthly?months=6
+export async function getRevenueTrend(months = 6): Promise<RevenueTrend> {
+  return api.get<RevenueTrend>(`/admin/revenue/monthly?months=${months}`);
+}
