@@ -78,4 +78,27 @@ export class MailService {
     `;
     await this.send(to, "[Nested] 비밀번호 재설정", html);
   }
+
+  async sendEmailVerification(to: string, verifyUrl: string): Promise<void> {
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#222">
+        <h1 style="font-size:22px;margin:0 0 16px">이메일 인증</h1>
+        <p style="font-size:15px;line-height:1.6;color:#555;margin:0 0 24px">
+          Nested 가입을 환영합니다. 아래 버튼을 눌러 이메일 인증을 완료하면 로그인할 수 있어요.
+        </p>
+        <a href="${verifyUrl}"
+           style="display:inline-block;background:#FF5A5F;color:#fff;text-decoration:none;padding:13px 28px;border-radius:999px;font-weight:600;font-size:15px">
+          이메일 인증하기
+        </a>
+        <p style="font-size:13px;line-height:1.6;color:#888;margin:24px 0 0">
+          이 링크는 <strong>24시간 후 만료</strong>되며 한 번만 사용할 수 있습니다.<br />
+          본인이 가입하지 않았다면 이 메일을 무시하셔도 됩니다.
+        </p>
+        <p style="font-size:12px;color:#aaa;margin:24px 0 0;word-break:break-all">
+          버튼이 동작하지 않으면 이 주소를 복사해 붙여넣으세요:<br />${verifyUrl}
+        </p>
+      </div>
+    `;
+    await this.send(to, "[Nested] 이메일 인증", html);
+  }
 }
