@@ -4,6 +4,7 @@ import { ROOM_TYPE_LABELS } from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
 import { HeroSearch } from "@/components/HeroSearch";
 import { NoticeBar } from "@/components/NoticeBar";
+import { HomeBanner } from "@/components/HomeBanner";
 import {
   popularRegions,
   recommendedHomes,
@@ -37,6 +38,9 @@ export default async function Home() {
     <>
       {/* 공지 띠 배너 (관리자 공지 공개 노출) */}
       <NoticeBar />
+
+      {/* 메인 배너 (관리자 배너 공개 노출) */}
+      <HomeBanner />
 
       {/* ── 1. Hero Banner + 2. 검색창 ── */}
       <section style={{ position: "relative", overflow: "hidden" }}>

@@ -215,3 +215,58 @@ export async function updateNotice(
 export async function deleteNotice(id: string): Promise<void> {
   await api.delete(`/admin/notices/${id}`);
 }
+
+// ── Banners (배너 관리 + 공개 조회) ───────────────────────────────────
+export interface AdminBanner {
+  id: string;
+  title: string;
+  color: string;
+  position: string;
+  linkUrl: string | null;
+  active: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// GET /admin/banners (admin) — full list
+export async function listBanners(): Promise<AdminBanner[]> {
+  return api.get<AdminBanner[]>("/admin/banners");
+}
+
+// GET /banners (public) — active only, for the home screen
+export async function listActiveBanners(): Promise<AdminBanner[]> {
+  return api.get<AdminBanner[]>("/banners", { auth: false });
+}
+
+// POST /admin/banners
+export async function createBanner(input: {
+  title: string;
+  color: string;
+  position: string;
+  linkUrl?: string | null;
+  active?: boolean;
+  order?: number;
+}): Promise<AdminBanner> {
+  return api.post<AdminBanner>("/admin/banners", input);
+}
+
+// PATCH /admin/banners/:id
+export async function updateBanner(
+  id: string,
+  input: Partial<{
+    title: string;
+    color: string;
+    position: string;
+    linkUrl: string | null;
+    active: boolean;
+    order: number;
+  }>,
+): Promise<AdminBanner> {
+  return api.patch<AdminBanner>(`/admin/banners/${id}`, input);
+}
+
+// DELETE /admin/banners/:id
+export async function deleteBanner(id: string): Promise<void> {
+  await api.delete(`/admin/banners/${id}`);
+}
