@@ -270,3 +270,42 @@ export async function updateBanner(
 export async function deleteBanner(id: string): Promise<void> {
   await api.delete(`/admin/banners/${id}`);
 }
+
+// ── Coupons (쿠폰 관리) ───────────────────────────────────────────────
+export interface AdminCoupon {
+  id: string;
+  code: string;
+  type: "FIXED" | "PERCENT";
+  value: number;
+  maxDiscount: number | null;
+  minSpend: number;
+  validFrom: string;
+  validTo: string;
+  usageLimit: number | null;
+  usedCount: number;
+  active: boolean; // derived server-side from window + usage
+}
+
+// GET /admin/coupons
+export async function listCoupons(): Promise<AdminCoupon[]> {
+  return api.get<AdminCoupon[]>("/admin/coupons");
+}
+
+// POST /admin/coupons
+export async function createCoupon(input: {
+  code: string;
+  type: "FIXED" | "PERCENT";
+  value: number;
+  maxDiscount?: number | null;
+  minSpend?: number;
+  validFrom: string;
+  validTo: string;
+  usageLimit?: number | null;
+}): Promise<AdminCoupon> {
+  return api.post<AdminCoupon>("/admin/coupons", input);
+}
+
+// DELETE /admin/coupons/:id
+export async function deleteCoupon(id: string): Promise<void> {
+  await api.delete(`/admin/coupons/${id}`);
+}
