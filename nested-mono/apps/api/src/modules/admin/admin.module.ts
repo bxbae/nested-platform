@@ -34,6 +34,16 @@ const bannerUpdateSchema = z.object({
   active: z.boolean().optional(),
   order: z.number().int().optional(),
 });
+const couponCreateSchema = z.object({
+  code: z.string().min(1, "코드를 입력해주세요.").max(50),
+  type: z.enum(["FIXED", "PERCENT"]),
+  value: z.number().int().positive("할인값은 0보다 커야 해요."),
+  maxDiscount: z.number().int().positive().nullable().optional(),
+  minSpend: z.number().int().min(0).optional(),
+  validFrom: z.string().min(1),
+  validTo: z.string().min(1),
+  usageLimit: z.number().int().positive().nullable().optional(),
+});
 
 @Injectable()
 export class AdminService {
@@ -357,6 +367,57 @@ export class AdminService {
       throw new NotFoundException({ code: "BANNER_NOT_FOUND", message: "배너를 찾을 수 없어요." });
     }
   }
+
+  // ── Coupons (쿠폰 관리) ──
+  // The discount math + validation already live in reservations (couponDiscount
+  // / assertCouponUsable). Admins were missing a way to CREATE and LIST coupons,
+  // which is what these add. "Active" is derived from the validity window and
+  // remaining usage rather than a stored flag.
+  async listCoupons() {
+    const rows = await this.prisma.coupon.findMany({ orderBy: { validTo: "desc" } });
+    const now = new Date();
+    return rows.map((c) => ({
+      ...c,
+      // Derived status: within the window and not exhausted.
+      active:
+        now >= c.validFrom &&
+        now <= c.validTo &&
+        (c.usageLimit == null || c.usedCount < c.usageLimit),
+    }));
+  }
+
+  createCoupon(data: {
+    code: string;
+    type: "FIXED" | "PERCENT";
+    value: number;
+    maxDiscount?: number | null;
+    minSpend?: number;
+    validFrom: string;
+    validTo: string;
+    usageLimit?: number | null;
+  }) {
+    return this.prisma.coupon.create({
+      data: {
+        code: data.code,
+        type: data.type,
+        value: data.value,
+        maxDiscount: data.maxDiscount ?? null,
+        minSpend: data.minSpend ?? 0,
+        validFrom: new Date(data.validFrom),
+        validTo: new Date(data.validTo),
+        usageLimit: data.usageLimit ?? null,
+      },
+    });
+  }
+
+  async deleteCoupon(id: string) {
+    const found = await this.prisma.coupon.findUnique({ where: { id }, select: { id: true } });
+    if (!found) {
+      throw new NotFoundException({ code: "COUPON_NOT_FOUND", message: "쿠폰을 찾을 수 없어요." });
+    }
+    await this.prisma.coupon.delete({ where: { id } });
+    return { ok: true };
+  }
 }
 
 const suspendSchema = z.object({ suspended: z.boolean() });
@@ -481,6 +542,22 @@ export class AdminController {
   @Delete("banners/:id")
   deleteBanner(@Param("id") id: string) {
     return this.admin.deleteBanner(id);
+  }
+
+  // ── Coupons (쿠폰 관리) ──
+  @Get("coupons")
+  listCoupons() {
+    return this.admin.listCoupons();
+  }
+
+  @Post("coupons")
+  createCoupon(@Body(new ZodValidationPipe(couponCreateSchema)) dto: z.infer<typeof couponCreateSchema>) {
+    return this.admin.createCoupon(dto);
+  }
+
+  @Delete("coupons/:id")
+  deleteCoupon(@Param("id") id: string) {
+    return this.admin.deleteCoupon(id);
   }
 }
 
