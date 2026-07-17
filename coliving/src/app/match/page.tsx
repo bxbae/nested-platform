@@ -1,299 +1,125 @@
 "use client";
 
-import { useState } from "react";
-import type { MatchResult, MatchPreferences } from "@/lib/types";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useAuth } from "@/lib/api/useAuth";
+import { getPreference } from "@/lib/api/preference";
+import { getMatches, type MatchCandidate } from "@/lib/api/match";
 
-const allInterests = [
-  "design", "coding", "art", "music", "cooking", "coffee",
-  "hiking", "climbing", "books", "film", "travel", "games", "sports", "wine",
-];
-
+// 룸메이트 매칭 (성향 기반). Gated on a completed survey: if the user hasn't
+// filled it in, we point them to /me/preference instead of showing an empty
+// or fabricated result (스토리보드 07).
 export default function Match() {
-  const [pref, setPref] = useState<MatchPreferences>({
-    sleepSchedule: "flexible",
-    cleanliness: 4,
-    social: 3,
-    interests: [],
-    smoker: false,
-    pets: false,
-  });
-  const [results, setResults] = useState<MatchResult[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const [state, setState] = useState<"loading" | "need-survey" | "ready" | "guest">("loading");
+  const [results, setResults] = useState<MatchCandidate[]>([]);
 
-  function toggleInterest(i: string) {
-    setPref((p) => ({
-      ...p,
-      interests: p.interests.includes(i)
-        ? p.interests.filter((x) => x !== i)
-        : [...p.interests, i],
-    }));
-  }
-
-  async function run() {
-    setLoading(true);
-    const res = await fetch("/api/match", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(pref),
-    });
-    const data = await res.json();
-    setResults(data.results);
-    setLoading(false);
-  }
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setState("guest");
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const pref = await getPreference();
+        if (!alive) return;
+        if (!pref?.isCompleted) {
+          setState("need-survey");
+          return;
+        }
+        const matches = await getMatches();
+        if (!alive) return;
+        setResults(matches);
+        setState("ready");
+      } catch {
+        if (alive) setState("need-survey");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isAuthenticated]);
 
   return (
-    <div className="wrap" style={{ paddingTop: 40, paddingBottom: 60 }}>
+    <div className="wrap" style={{ paddingTop: 40, paddingBottom: 60, maxWidth: 900 }}>
       <span className="eyebrow">Roommate match</span>
-      <h1 className="display" style={{ fontSize: 40, marginTop: 8 }}>
-        Who you&apos;d actually click with
-      </h1>
-      <p style={{ color: "var(--text-2)", maxWidth: 560, marginTop: 8 }}>
-        Tell us how you live. We&apos;ll score everyone in the house on rhythm,
-        tidiness, energy, and shared interests — and show our reasoning.
+      <h1 className="display" style={{ fontSize: 36, marginTop: 8 }}>나와 잘 맞는 룸메이트</h1>
+      <p style={{ color: "var(--text-2)", maxWidth: 560, marginTop: 8, marginBottom: 28 }}>
+        생활 성향 설문을 바탕으로 궁합이 높은 순서대로 보여드려요.
       </p>
 
-      <div className="match-layout" style={{ marginTop: 30 }}>
-        {/* Preferences form */}
-        <div className="card map-sticky" style={{ padding: 24 }}>
-          <strong style={{ fontSize: 16 }}>Your preferences</strong>
+      {state === "loading" && <p style={{ color: "var(--text-2)" }}>불러오는 중…</p>}
 
-          <div className="field" style={{ marginTop: 18 }}>
-            <label>Sleep schedule</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              {(["early", "flexible", "night"] as const).map((s) => (
-                <button
-                  key={s}
-                  className="chip"
-                  data-active={pref.sleepSchedule === s}
-                  onClick={() => setPref((p) => ({ ...p, sleepSchedule: s }))}
-                  style={{ flex: 1, justifyContent: "center" }}
+      {state === "guest" && (
+        <div className="card" style={{ padding: 32, textAlign: "center" }}>
+          <p style={{ color: "var(--text-2)", marginBottom: 16 }}>매칭을 보려면 로그인이 필요해요.</p>
+          <Link href="/?auth=1" className="btn btn-primary press">로그인</Link>
+        </div>
+      )}
+
+      {state === "need-survey" && (
+        <div className="card" style={{ padding: 32, textAlign: "center" }}>
+          <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>먼저 생활 성향을 알려주세요</p>
+          <p style={{ color: "var(--text-2)", marginBottom: 20 }}>
+            9개 문항에 답하면 잘 맞는 룸메이트를 찾아드려요.
+          </p>
+          <Link href="/me/preference" className="btn btn-primary press">성향 설문 하러 가기</Link>
+        </div>
+      )}
+
+      {state === "ready" && results.length === 0 && (
+        <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-2)", border: "1px dashed var(--border)", background: "transparent" }}>
+          아직 매칭 가능한 상대가 없어요. 더 많은 사용자가 성향을 등록하면 나타나요.
+        </div>
+      )}
+
+      {state === "ready" && results.length > 0 && (
+        <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
+          {results.map((m) => (
+            <div key={m.userId} className="card" style={{ padding: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                <div
+                  style={{
+                    width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
+                    background: m.avatarUrl ? `center/cover url(${m.avatarUrl})` : m.avatarColor,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontWeight: 700, fontSize: 18,
+                  }}
                 >
-                  {s === "early" ? "Early bird" : s === "night" ? "Night owl" : "Flexible"}
-                </button>
-              ))}
+                  {!m.avatarUrl && m.name.charAt(0)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong style={{ fontSize: 15.5 }}>{m.name}</strong>
+                  <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                    {[m.age ? `${m.age}세` : null, m.job].filter(Boolean).join(" · ") || "정보 없음"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div className="display" style={{ fontSize: 22, fontWeight: 700, color: "var(--primary)" }}>{m.score}%</div>
+                  <div style={{ fontSize: 11, color: "var(--text-2)" }}>궁합</div>
+                </div>
+              </div>
+
+              {m.reasons.length > 0 && (
+                <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 4 }}>
+                  {m.reasons.map((r, i) => (
+                    <li key={i} style={{ fontSize: 13, color: "var(--text-2)" }}>· {r}</li>
+                  ))}
+                </ul>
+              )}
+
+              {m.keywords.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {m.keywords.slice(0, 4).map((k) => (
+                    <span key={k} className="chip" style={{ fontSize: 11, background: "var(--bg-2)", color: "var(--primary)", border: "none" }}>{k}</span>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-
-          <Slider
-            label="Tidiness"
-            hint={["relaxed", "spotless"]}
-            value={pref.cleanliness}
-            onChange={(v) => setPref((p) => ({ ...p, cleanliness: v }))}
-          />
-          <Slider
-            label="Social energy"
-            hint={["keep to myself", "always hosting"]}
-            value={pref.social}
-            onChange={(v) => setPref((p) => ({ ...p, social: v }))}
-          />
-
-          <div className="field" style={{ marginTop: 18 }}>
-            <label>Interests</label>
-            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-              {allInterests.map((i) => (
-                <button
-                  key={i}
-                  className="chip"
-                  data-active={pref.interests.includes(i)}
-                  onClick={() => toggleInterest(i)}
-                  style={{ fontSize: 12.5 }}
-                >
-                  {i}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 18, marginTop: 18 }}>
-            <Toggle
-              label="I smoke"
-              value={pref.smoker}
-              onChange={(v) => setPref((p) => ({ ...p, smoker: v }))}
-            />
-            <Toggle
-              label="I have a pet"
-              value={pref.pets}
-              onChange={(v) => setPref((p) => ({ ...p, pets: v }))}
-            />
-          </div>
-
-          <button
-            className="btn btn-primary"
-            style={{ width: "100%", justifyContent: "center", marginTop: 22 }}
-            onClick={run}
-            disabled={loading}
-          >
-            {loading ? "Scoring…" : "Find my matches"}
-          </button>
-        </div>
-
-        {/* Results */}
-        <div>
-          {!results && (
-            <div
-              className="card"
-              style={{
-                padding: 40,
-                textAlign: "center",
-                color: "var(--text-2)",
-                border: "1px dashed var(--border)",
-                background: "transparent",
-              }}
-            >
-              <svg width="60" height="54" viewBox="0 0 40 40" style={{ margin: "0 auto 14px" }}>
-                <circle cx="15" cy="20" r="11" stroke="var(--secondary)" strokeWidth="1.6" fill="none" />
-                <circle cx="25" cy="20" r="11" stroke="var(--primary)" strokeWidth="1.6" fill="none" />
-              </svg>
-              Set your preferences and run the match to see who fits.
-            </div>
-          )}
-          {results && (
-            <div style={{ display: "grid", gap: 14 }}>
-              {results.map((m, i) => (
-                <MatchCard key={m.resident.id} match={m} rank={i} />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MatchCard({ match, rank }: { match: MatchResult; rank: number }) {
-  const { resident, score, reasons } = match;
-  const tone = score >= 75 ? "var(--success)" : score >= 50 ? "var(--warning)" : "var(--text-2)";
-  return (
-    <div className="card" style={{ padding: 20, display: "flex", gap: 18 }}>
-      {/* Score ring */}
-      <div style={{ position: "relative", width: 68, height: 68, flexShrink: 0 }}>
-        <svg width="68" height="68" viewBox="0 0 68 68">
-          <circle cx="34" cy="34" r="29" fill="none" stroke="var(--border)" strokeWidth="6" />
-          <circle
-            cx="34"
-            cy="34"
-            r="29"
-            fill="none"
-            stroke={tone}
-            strokeWidth="6"
-            strokeLinecap="round"
-            strokeDasharray={`${(score / 100) * 182} 182`}
-            transform="rotate(-90 34 34)"
-          />
-        </svg>
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: 700,
-            fontSize: 17,
-            color: tone,
-          }}
-        >
-          {score}
-        </div>
-      </div>
-
-      <div style={{ flex: 1 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <strong style={{ fontSize: 16.5 }}>
-            {resident.name}
-            {rank === 0 && (
-              <span className="chip" style={{ marginLeft: 8, background: "var(--secondary)", color: "#fff", fontSize: 11 }}>
-                Top match
-              </span>
-            )}
-          </strong>
-          <span style={{ fontSize: 13, color: "var(--text-2)" }}>
-            {resident.age} · {resident.occupation}
-          </span>
-        </div>
-        <p style={{ fontSize: 14, color: "var(--text-2)", marginTop: 4 }}>{resident.bio}</p>
-        <ul style={{ listStyle: "none", marginTop: 12, display: "grid", gap: 5 }}>
-          {reasons.slice(0, 4).map((r, idx) => (
-            <li key={idx} style={{ fontSize: 13.5, display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <span style={{ color: tone, marginTop: 1 }}>◗</span>
-              <span>{r}</span>
-            </li>
           ))}
-        </ul>
-      </div>
+        </div>
+      )}
     </div>
-  );
-}
-
-function Slider({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string;
-  hint: [string, string];
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="field" style={{ marginTop: 18 }}>
-      <label>{label}</label>
-      <input
-        type="range"
-        min={1}
-        max={5}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--text-2)" }}>
-        <span>{hint[0]}</span>
-        <span>{hint[1]}</span>
-      </div>
-    </div>
-  );
-}
-
-function Toggle({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      onClick={() => onChange(!value)}
-      style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 14 }}
-    >
-      <span
-        style={{
-          width: 40,
-          height: 23,
-          borderRadius: 99,
-          background: value ? "var(--secondary)" : "var(--border)",
-          position: "relative",
-          transition: "background .15s ease",
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            position: "absolute",
-            top: 2,
-            left: value ? 19 : 2,
-            width: 19,
-            height: 19,
-            borderRadius: 99,
-            background: "#fff",
-            transition: "left .15s ease",
-            boxShadow: "var(--shadow-sm)",
-          }}
-        />
-      </span>
-      {label}
-    </button>
   );
 }

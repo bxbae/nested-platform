@@ -25,6 +25,7 @@ import { HostExportModule } from "./modules/host/host-export.module";
 import { HostOverdueModule } from "./modules/host/host-overdue.module";
 import { HostSettlementModule } from "./modules/host/host-settlement.module";
 import { PreferenceModule } from "./modules/preference/preference.module";
+import { MatchModule } from "./modules/match/match.module";
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { PreferenceModule } from "./modules/preference/preference.module";
     HostOverdueModule,
     HostSettlementModule,
     PreferenceModule,
+    MatchModule,
   ],
 })
 export class AppModule {}
