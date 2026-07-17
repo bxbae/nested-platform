@@ -173,3 +173,45 @@ export interface RevenueTrend {
 export async function getRevenueTrend(months = 6): Promise<RevenueTrend> {
   return api.get<RevenueTrend>(`/admin/revenue/monthly?months=${months}`);
 }
+
+// ── Notices (공지 관리 + 공개 조회) ───────────────────────────────────
+export interface AdminNotice {
+  id: string;
+  title: string;
+  body: string;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// GET /admin/notices (admin) — full list, pinned first
+export async function listNotices(): Promise<AdminNotice[]> {
+  return api.get<AdminNotice[]>("/admin/notices");
+}
+
+// GET /notices (public) — for the home / notices page, no auth
+export async function listPublicNotices(): Promise<AdminNotice[]> {
+  return api.get<AdminNotice[]>("/notices", { auth: false });
+}
+
+// POST /admin/notices
+export async function createNotice(input: {
+  title: string;
+  body: string;
+  pinned?: boolean;
+}): Promise<AdminNotice> {
+  return api.post<AdminNotice>("/admin/notices", input);
+}
+
+// PATCH /admin/notices/:id
+export async function updateNotice(
+  id: string,
+  input: { title?: string; body?: string; pinned?: boolean },
+): Promise<AdminNotice> {
+  return api.patch<AdminNotice>(`/admin/notices/${id}`, input);
+}
+
+// DELETE /admin/notices/:id
+export async function deleteNotice(id: string): Promise<void> {
+  await api.delete(`/admin/notices/${id}`);
+}

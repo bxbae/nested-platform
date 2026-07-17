@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Patch, Delete, Param, Query, Body, Req, UseGuards, Injectable, Module,
+  Controller, Get, Post, Patch, Delete, Param, Query, Body, Req, UseGuards, Injectable, Module,
   NotFoundException, BadRequestException,
 } from "@nestjs/common";
 import { z } from "zod";
@@ -7,6 +7,17 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
+
+const noticeCreateSchema = z.object({
+  title: z.string().min(1, "제목을 입력해주세요.").max(200),
+  body: z.string().min(1, "내용을 입력해주세요.").max(5000),
+  pinned: z.boolean().optional(),
+});
+const noticeUpdateSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  body: z.string().min(1).max(5000).optional(),
+  pinned: z.boolean().optional(),
+});
 
 @Injectable()
 export class AdminService {
@@ -217,6 +228,48 @@ export class AdminService {
       trend,
     };
   }
+
+  // ── Notices (공지 CRUD) ──
+  listNotices() {
+    // Pinned first, then newest. Admin list shows everything.
+    return this.prisma.notice.findMany({
+      orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
+    });
+  }
+
+  createNotice(data: { title: string; body: string; pinned?: boolean }) {
+    return this.prisma.notice.create({
+      data: { title: data.title, body: data.body, pinned: data.pinned ?? false },
+    });
+  }
+
+  async updateNotice(
+    id: string,
+    data: { title?: string; body?: string; pinned?: boolean },
+  ) {
+    await this.ensureNotice(id);
+    return this.prisma.notice.update({
+      where: { id },
+      data: {
+        ...(data.title !== undefined ? { title: data.title } : {}),
+        ...(data.body !== undefined ? { body: data.body } : {}),
+        ...(data.pinned !== undefined ? { pinned: data.pinned } : {}),
+      },
+    });
+  }
+
+  async deleteNotice(id: string) {
+    await this.ensureNotice(id);
+    await this.prisma.notice.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  private async ensureNotice(id: string) {
+    const found = await this.prisma.notice.findUnique({ where: { id }, select: { id: true } });
+    if (!found) {
+      throw new NotFoundException({ code: "NOTICE_NOT_FOUND", message: "공지를 찾을 수 없어요." });
+    }
+  }
 }
 
 const suspendSchema = z.object({ suspended: z.boolean() });
@@ -294,10 +347,46 @@ export class AdminController {
   monthlyTrend(@Query("months") months?: string) {
     return this.admin.monthlyTrend(months ? Number(months) : undefined);
   }
+
+  // ── Notices (공지 관리) ──
+  @Get("notices")
+  listNotices() {
+    return this.admin.listNotices();
+  }
+
+  @Post("notices")
+  createNotice(@Body(new ZodValidationPipe(noticeCreateSchema)) dto: z.infer<typeof noticeCreateSchema>) {
+    return this.admin.createNotice(dto);
+  }
+
+  @Patch("notices/:id")
+  updateNotice(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(noticeUpdateSchema)) dto: z.infer<typeof noticeUpdateSchema>,
+  ) {
+    return this.admin.updateNotice(id, dto);
+  }
+
+  @Delete("notices/:id")
+  deleteNotice(@Param("id") id: string) {
+    return this.admin.deleteNotice(id);
+  }
+}
+
+// Public (no auth): notices for the notices page / home.
+@Controller("notices")
+export class PublicNoticeController {
+  constructor(private readonly admin: AdminService) {}
+
+  // GET /notices — anyone can read notices.
+  @Get()
+  list() {
+    return this.admin.listNotices();
+  }
 }
 
 @Module({
-  controllers: [AdminController],
+  controllers: [AdminController, PublicNoticeController],
   providers: [AdminService],
 })
 export class AdminModule {}

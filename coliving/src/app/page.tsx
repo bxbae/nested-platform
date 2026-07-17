@@ -3,6 +3,7 @@ import { wonShort } from "@/lib/format";
 import { ROOM_TYPE_LABELS } from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
 import { HeroSearch } from "@/components/HeroSearch";
+import { NoticeBar } from "@/components/NoticeBar";
 import {
   popularRegions,
   recommendedHomes,
@@ -34,6 +35,9 @@ export default async function Home() {
 
   return (
     <>
+      {/* 공지 띠 배너 (관리자 공지 공개 노출) */}
+      <NoticeBar />
+
       {/* ── 1. Hero Banner + 2. 검색창 ── */}
       <section style={{ position: "relative", overflow: "hidden" }}>
         {/* warm brand gradient wash */}

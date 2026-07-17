@@ -571,3 +571,33 @@ model RoommatePreference {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// ── Notices & banners (관리자 콘텐츠) ─────────────────────────────────
+// Platform-wide content managed by admins. No user relation: these belong to
+// the service, not to any account. Notices show on a notices page; banners
+// render on the home screen (스토리보드 02) filtered by `active`.
+
+model Notice {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  pinned    Boolean  @default(false) // 상단 고정
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([pinned, createdAt])
+}
+
+model Banner {
+  id        String   @id @default(cuid())
+  title     String
+  color     String                    // 배경색 (hex, e.g. "#FF5A5F")
+  position  String                    // 노출 위치 (예: "메인 상단")
+  linkUrl   String?                   // 클릭 시 이동 (선택)
+  active    Boolean  @default(true)   // 노출 여부 (홈 공개 조회가 이 값으로 필터)
+  order     Int      @default(0)      // 정렬 순서 (낮을수록 먼저)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, order])
+}
