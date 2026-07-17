@@ -18,6 +18,22 @@ const noticeUpdateSchema = z.object({
   body: z.string().min(1).max(5000).optional(),
   pinned: z.boolean().optional(),
 });
+const bannerCreateSchema = z.object({
+  title: z.string().min(1, "제목을 입력해주세요.").max(200),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요."),
+  position: z.string().min(1).max(50),
+  linkUrl: z.string().url().max(500).nullable().optional(),
+  active: z.boolean().optional(),
+  order: z.number().int().optional(),
+});
+const bannerUpdateSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  position: z.string().min(1).max(50).optional(),
+  linkUrl: z.string().url().max(500).nullable().optional(),
+  active: z.boolean().optional(),
+  order: z.number().int().optional(),
+});
 
 @Injectable()
 export class AdminService {
@@ -270,6 +286,77 @@ export class AdminService {
       throw new NotFoundException({ code: "NOTICE_NOT_FOUND", message: "공지를 찾을 수 없어요." });
     }
   }
+
+  // ── Banners (배너 CRUD) ──
+  // Admin list shows everything; the public home shows only active ones.
+  listBanners() {
+    return this.prisma.banner.findMany({ orderBy: [{ order: "asc" }, { createdAt: "desc" }] });
+  }
+
+  listActiveBanners() {
+    return this.prisma.banner.findMany({
+      where: { active: true },
+      orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+    });
+  }
+
+  createBanner(data: {
+    title: string;
+    color: string;
+    position: string;
+    linkUrl?: string | null;
+    active?: boolean;
+    order?: number;
+  }) {
+    return this.prisma.banner.create({
+      data: {
+        title: data.title,
+        color: data.color,
+        position: data.position,
+        linkUrl: data.linkUrl ?? null,
+        active: data.active ?? true,
+        order: data.order ?? 0,
+      },
+    });
+  }
+
+  async updateBanner(
+    id: string,
+    data: {
+      title?: string;
+      color?: string;
+      position?: string;
+      linkUrl?: string | null;
+      active?: boolean;
+      order?: number;
+    },
+  ) {
+    await this.ensureBanner(id);
+    return this.prisma.banner.update({
+      where: { id },
+      data: {
+        ...(data.title !== undefined ? { title: data.title } : {}),
+        ...(data.color !== undefined ? { color: data.color } : {}),
+        ...(data.position !== undefined ? { position: data.position } : {}),
+        ...(data.linkUrl !== undefined ? { linkUrl: data.linkUrl } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+        ...(data.order !== undefined ? { order: data.order } : {}),
+      },
+    });
+  }
+
+  async deleteBanner(id: string) {
+    await this.ensureBanner(id);
+    await this.prisma.banner.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  private async ensureBanner(id: string) {
+    const found = await this.prisma.banner.findUnique({ where: { id }, select: { id: true } });
+    if (!found) {
+      throw new NotFoundException({ code: "BANNER_NOT_FOUND", message: "배너를 찾을 수 없어요." });
+    }
+  }
 }
 
 const suspendSchema = z.object({ suspended: z.boolean() });
@@ -371,6 +458,30 @@ export class AdminController {
   deleteNotice(@Param("id") id: string) {
     return this.admin.deleteNotice(id);
   }
+
+  // ── Banners (배너 관리) ──
+  @Get("banners")
+  listBanners() {
+    return this.admin.listBanners();
+  }
+
+  @Post("banners")
+  createBanner(@Body(new ZodValidationPipe(bannerCreateSchema)) dto: z.infer<typeof bannerCreateSchema>) {
+    return this.admin.createBanner(dto);
+  }
+
+  @Patch("banners/:id")
+  updateBanner(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(bannerUpdateSchema)) dto: z.infer<typeof bannerUpdateSchema>,
+  ) {
+    return this.admin.updateBanner(id, dto);
+  }
+
+  @Delete("banners/:id")
+  deleteBanner(@Param("id") id: string) {
+    return this.admin.deleteBanner(id);
+  }
 }
 
 // Public (no auth): notices for the notices page / home.
@@ -385,8 +496,20 @@ export class PublicNoticeController {
   }
 }
 
+// Public (no auth): active banners for the home screen.
+@Controller("banners")
+export class PublicBannerController {
+  constructor(private readonly admin: AdminService) {}
+
+  // GET /banners — active banners only, ordered.
+  @Get()
+  list() {
+    return this.admin.listActiveBanners();
+  }
+}
+
 @Module({
-  controllers: [AdminController, PublicNoticeController],
+  controllers: [AdminController, PublicNoticeController, PublicBannerController],
   providers: [AdminService],
 })
 export class AdminModule {}
