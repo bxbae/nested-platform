@@ -68,6 +68,17 @@ export class RoomsController {
     return this.rooms.findOne(id);
   }
 
+  // 비슷한 숙소 추천 (유사 숙소 추천)
+  // GET /rooms/:id/similar
+  // 라우트 순서 주의: 반드시 @Get(":id") 아래, @Post() 위에 있어야 함.
+  // NestJS는 라우트를 선언한 순서대로 매칭을 시도하는데, ":id/similar"는
+  // ":id" 라우트보다 경로 세그먼트가 하나 더 있어서 순서와 무관하게 정상
+  // 동작은 하지만, 관련된 라우트끼리 묶어두면 나중에 보기 편함.
+  @Get(":id/similar")
+  findSimilar(@Param("id") id: string){
+    return this.rooms.findSimilar(id);
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("HOST", "ADMIN")
@@ -88,4 +99,6 @@ export class RoomsController {
   remove(@Req() req: any, @Param("id") id: string) {
     return this.rooms.remove(req.user.id, id);
   }
+
+
 }

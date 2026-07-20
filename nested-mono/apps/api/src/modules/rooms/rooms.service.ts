@@ -287,4 +287,75 @@ export class RoomsService {
     await this.prisma.room.delete({ where: { id } });
     return { ok: true };
   }
+  // ═══════════════════════════════════════════════════════════
+  // 비슷한 숙소 추천 (유사 숙소 추천)
+  // ═══════════════════════════════════════════════════════════
+  // 숙소 상세 페이지에서 "이 숙소랑 비슷한 곳" 목록을 보여주기 위한 기능.
+  // 별도 AI 모델 없이, 이미 있는 숙소 속성(지역/방종류/가격/편의시설)이
+  // 얼마나 겹치는지를 점수로 환산해서 가장 비슷한 순서로 추천한다.
+  //
+  // 점수 배점 (총 100점 만점 기준으로 설계):
+  //   - 같은 방 종류(roomType)        : +30점
+  //   - 가격 차이가 적을수록          : 최대 +25점 (5만원 차이당 1점씩 감점)
+  //   - 성별 정책(genderPolicy) 일치  : +15점
+  //   - 겹치는 편의시설 1개당         : +10점 (최대 +30점)
+    async findSimilar(roomId: string, limit = 4){
+    // 1) 기준이 되는 숙소(target) 정보를 가져온다.
+    // amenities(편의시설)까지 같이 가져와야 뒤에서 겹치는 개수를 셀 수 있음.
+    const target = await this.prisma.room.findUnique({
+      where: { id: roomId },
+      include: { amenities: true },
+    });
+    // 존재하지 않는 숙소 id로 요청이 오면(잘못된 링크 등) 빈 배열로 안전하게 응답.
+    if(!target) return[];
+
+    // 2) 비교 대상 후보군을 DB에서 미리 좁혀서 가져온다.
+    //    - 자기 자신은 제외 (id not equal)
+    //    - 아직 승인 안 된(비공개) 숙소는 제외 (published: true)
+    //    - 같은 지역(region)으로 먼저 필터링 → 전체 숙소를 다 훑지 않고
+    //      DB 단계에서 미리 줄여야 숙소 수가 늘어나도 성능이 유지됨
+    //    - take: 30 → 점수 계산은 이 30개 후보 안에서만 수행
+    const candidates = await this.prisma.room.findMany({
+      where:{
+        id: { not: roomId },
+        published: true,
+        region: target.region,
+      },
+      include:{ amenities: true },
+      take: 30,
+    });
+
+    // 기준 숙소가 가진 편의시설 id들을 Set으로 만들어둠 (겹치는 개수를 빠르게 세기 위함)
+    const targetAmenityIds = new Set(target.amenities.map((a) => a.amenityId));
+
+    // 3) 후보 30개 각각에 대해 점수를 계산한다.
+    const scored = candidates.map((r) => {
+      let score = 0;
+
+      // 방 종류가 같으면 30점 (원룸끼리, 쉐어룸끼리 비교하는 게 의미 있으므로 배점 높게)
+      if (r.roomType === target.roomType) score += 30;
+
+      // 가격 차이가 적을수록 높은 점수. 5만원 차이날 때마다 1점씩 깎이고,
+      // 25만원 이상 차이나면 0점 (Math.max로 음수 방지)
+      const priceDiff = Math.abs(r.monthlyRent - target.monthlyRent);
+      score += Math.max(0, 25 - priceDiff / 50000);
+
+      // 성별 정책(남성전용/여성전용/무관)이 같으면 15점
+      if (r.genderPolicy === target.genderPolicy) score += 15;
+
+      // 편의시설이 겹치는 개수만큼 10점씩, 최대 30점까지만 인정
+      const shared = r.amenities.filter((a) => targetAmenityIds.has(a.amenityId));
+      score += Math.min(30, shared.length * 10);
+
+      return { room: r, score };
+    });
+
+    // 4) 점수 높은 순으로 정렬해서 상위 limit(기본 4)개만 반환.
+    // room 객체만 반환하고 score는 API 응답에서는 굳이 안 보여줌 (내부 계산용).
+    return scored
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((s) => s.room);
+  }
+
 }
