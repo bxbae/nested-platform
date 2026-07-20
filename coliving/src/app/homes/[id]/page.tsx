@@ -13,7 +13,7 @@ import { DetailActions } from "@/components/DetailActions";
 import { ReviewForm } from "@/components/ReviewForm";
 import { LocationMap } from "@/components/LocationMap";
 import { USE_REAL_API } from "@/lib/api/config";
-import { getRoom } from "@/lib/api/rooms";
+import { getRoom, getSimilarRooms } from "@/lib/api/rooms"; // 유사 숙소 추천(비슷한 숙소) API 함수 추가
 
 // Render this page on demand so it always reads live data and the current
 // USE_REAL_API value at request time — never a stale build-time snapshot.
@@ -78,6 +78,7 @@ export default async function HomeDetail({
   const base = await loadHouse(id);
   if (!base) notFound();
   const house = enrichHouse(base);
+  const similarRooms = await getSimilarRooms(id);
 
   const hub = hubId ? jobHubs.find((h) => h.id === hubId) : null;
   const commute = hub ? estimateCommute(house.lat, house.lng, hub.lat, hub.lng) : null;
@@ -236,6 +237,60 @@ export default async function HomeDetail({
           <Section title="위치">
             <LocationMap lat={house.lat} lng={house.lng} region={house.region} color={house.color} />
           </Section>
+
+          {/* ══════════════════════════════════════════════════════
+              비슷한 숙소 추천 (유사 숙소 추천)
+              ══════════════════════════════════════════════════════
+              현재 보고 있는 숙소와 방종류·가격대·성별정책·편의시설이
+              겹치는 정도를 점수로 매겨서(백엔드 findSimilar() 참고),
+              가장 비슷한 숙소 최대 4개를 가로 스크롤 카드로 보여준다.
+
+              similarRooms가 빈 배열이면(같은 지역에 비교할 숙소가 없는
+              경우) 섹션 자체를 렌더링하지 않는다 — 위치 섹션과 리뷰
+              섹션 사이에 빈 제목만 덩그러니 뜨는 걸 방지하기 위함.
+              ══════════════════════════════════════════════════════ */}
+          {similarRooms.length > 0 && (
+            <Section title="비슷한 숙소">
+              {/* overflowX: auto → 카드가 많아지면 가로 스크롤로 넘어가게.
+                  다른 숙소 카드 클릭 시 그 숙소의 상세 페이지로 이동(Link). */}
+              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+                {similarRooms.map((r) => (
+                  <Link
+                    key={r.id}
+                    href={`/homes/${r.id}`}
+                    className="card"
+                    style={{ minWidth: 220, padding: 14, flexShrink: 0 }}
+                  >
+                    {/* 썸네일: 실제 사진(r.photo)이 있으면 그걸 배경으로,
+                        없으면 숙소 고유 색상(r.color)으로 대체 표시 */}
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 120,
+                        borderRadius: 10,
+                        background: r.color ?? "var(--border)",
+                        backgroundImage: r.photo ? `url(${r.photo})` : undefined,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                      }}
+                      aria-hidden="true"
+                    />
+                    <strong style={{ fontSize: 14.5, display: "block", marginTop: 10 }}>
+                      {r.name.trim()}
+                    </strong>
+                    {/* ROOM_TYPE_LABELS: "ONE_ROOM" 같은 코드값을 "원룸" 같은
+                        한글 라벨로 바꿔주는, 파일 상단에 이미 import된 매핑 */}
+                    <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
+                      {ROOM_TYPE_LABELS[r.roomType]} · {r.region}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>
+                      {won(r.monthlyRent)} / 월
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </Section>
+          )}
 
           {/* ── 리뷰 / 평점 ── */}
           <Section title={`후기 ${house.reviews}개 · ★ ${avgRating}`}>
