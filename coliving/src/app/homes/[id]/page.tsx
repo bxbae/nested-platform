@@ -269,7 +269,8 @@ export default async function HomeDetail({
                         height: 120,
                         borderRadius: 10,
                         background: r.color ?? "var(--border)",
-                        backgroundImage: r.photo ? `url(${r.photo})` : undefined,
+                        // 수정 — gallery 배열의 첫 번째 사진을 썸네일로 사용
+                        backgroundImage: r.gallery?.[0] ? `url(${r.gallery[0]})` : undefined,
                         backgroundSize: "cover",
                         backgroundPosition: "center",
                       }}
