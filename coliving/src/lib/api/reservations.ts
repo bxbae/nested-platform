@@ -20,6 +20,26 @@ export interface AvailabilityResult {
   available: boolean;
   reason?: string;
   checkOut?: string;
+  /** Server-computed price for these dates (includes any coupon discount). */
+  price?: QuotedPrice;
+  /** True when `reason` is about the coupon, not the dates. */
+  couponError?: boolean;
+}
+
+// Server-computed price breakdown. The server is the source of truth for money:
+// coupon validation (expiry, usage cap, min spend) only exists there, so the
+// widget renders these numbers instead of recomputing them client-side.
+export interface QuotedPrice {
+  monthlyRent: number;
+  months: number;
+  rentSubtotal: number;
+  deposit: number;
+  cleaningFee: number;
+  maintenanceFee: number;
+  serviceFee: number;
+  discount: number;
+  dueNow: number;
+  contractTotal: number;
 }
 
 export interface CreatedBooking {
@@ -33,6 +53,7 @@ export async function checkAvailability(input: {
   houseId: string;
   checkIn: string;
   months: number;
+  couponCode?: string;
 }): Promise<AvailabilityResult> {
   if (!USE_REAL_API) {
     const params = new URLSearchParams({
@@ -45,18 +66,35 @@ export async function checkAvailability(input: {
   }
 
   try {
-    await api.post("/reservations/quote", {
-      roomId: input.houseId,
-      checkIn: input.checkIn,
-      months: input.months,
-    });
+    // The quote endpoint doubles as the availability check AND the authoritative
+    // price — including any coupon discount. We keep the response rather than
+    // discarding it so the widget can show the server's numbers.
+    const quote = await api.post<QuotedPrice & { checkOut: string }>(
+      "/reservations/quote",
+      {
+        roomId: input.houseId,
+        checkIn: input.checkIn,
+        months: input.months,
+        ...(input.couponCode ? { couponCode: input.couponCode } : {}),
+      }
+    );
     return {
       available: true,
-      checkOut: toISODate(addMonths(new Date(input.checkIn), input.months)),
+      checkOut: quote.checkOut ?? toISODate(addMonths(new Date(input.checkIn), input.months)),
+      price: quote,
     };
   } catch (e) {
     const reason = e instanceof ApiError ? e.message : "예약할 수 없는 날짜입니다.";
-    return { available: false, reason };
+    // A bad coupon shouldn't read as "these dates are unavailable". The API puts
+    // its error code in the response body (e.g. { code: "COUPON_EXPIRED" }).
+    const code =
+      e instanceof ApiError && e.body && typeof e.body === "object"
+        ? (e.body as { code?: string }).code
+        : undefined;
+    const couponError =
+      code === "COUPON_INVALID" || code === "COUPON_EXPIRED" || code === "COUPON_EXHAUSTED";
+    // Dates are fine when only the coupon was rejected.
+    return { available: couponError, reason, couponError };
   }
 }
 
@@ -66,6 +104,7 @@ export async function requestBooking(input: {
   guestName: string;
   moveIn: string;
   months: number;
+  couponCode?: string;
 }): Promise<CreatedBooking> {
   if (!USE_REAL_API) {
     const res = await fetch("/api/bookings", {
@@ -93,6 +132,7 @@ export async function requestBooking(input: {
       roomId: input.houseId,
       checkIn: input.moveIn,
       months: input.months,
+      ...(input.couponCode ? { couponCode: input.couponCode } : {}),
     }
   );
   return { id: r.id, status: r.status, totalDueNow: r.totalDueNow };
