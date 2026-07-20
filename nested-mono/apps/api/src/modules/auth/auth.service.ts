@@ -7,6 +7,7 @@ import * as bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { MailService } from "./mail.service";
+import type { ReservationStatus } from "@prisma/client";
 
 export interface JwtPayload {
   sub: string;
@@ -328,6 +329,42 @@ export class AuthService {
     }
     if (user.deletedAt) {
       throw new BadRequestException({ code: "ALREADY_DELETED", message: "이미 탈퇴한 계정입니다." });
+    }
+
+    // A live reservation ties two people together: the guest who booked and the
+    // host whose room it is. Letting either side vanish would strand the other,
+    // so withdrawal is blocked until the booking is settled (cancelled by
+    // agreement, or completed). Statuses that no longer hold the room —
+    // cancelled / completed / no-show — don't block.
+    const ACTIVE: ReservationStatus[] = [
+      "PENDING_PAYMENT",
+      "CONFIRMED",
+      "EARLY_CHECKOUT_REQUESTED",
+      "EARLY_CHECKOUT_APPROVED",
+    ];
+
+    const [asGuest, asHost] = await Promise.all([
+      // Bookings this user made.
+      this.prisma.reservation.count({
+        where: { guestId: userId, status: { in: ACTIVE } },
+      }),
+      // Bookings on rooms this user hosts.
+      this.prisma.reservation.count({
+        where: { status: { in: ACTIVE }, room: { hostId: userId } },
+      }),
+    ]);
+
+    if (asGuest > 0 || asHost > 0) {
+      const role = asHost > 0 ? "호스트" : "입주자";
+      const count = asGuest + asHost;
+      throw new BadRequestException({
+        code: "ACTIVE_RESERVATION_EXISTS",
+        message:
+          `진행 중인 예약이 ${count}건 있어 탈퇴할 수 없습니다. ` +
+          `${role}로서 상대방과 협의해 예약을 정리한 뒤 다시 시도해주세요.`,
+        activeAsGuest: asGuest,
+        activeAsHost: asHost,
+      });
     }
 
     await this.prisma.$transaction([
