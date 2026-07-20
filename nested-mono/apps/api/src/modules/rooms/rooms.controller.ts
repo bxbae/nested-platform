@@ -16,6 +16,9 @@ const createRoomSchema = z.object({
     errorMap: () => ({ message: "실제 매물임을 확인해주세요." }),
   }),
   roomType: z.enum(["ONE_ROOM", "SHARE_ROOM", "WHOLE_HOUSE", "APARTMENT"]),
+  // 함께 지낼 최대 인원. 독채는 통째로 빌리므로 정원 개념이 없다 —
+  // 아래 superRefine 에서 타입별로 필수/금지를 가른다.
+  capacity: z.number().int().min(1).max(20).nullable().optional(),
   monthlyRent: z.number().int().positive(),
   deposit: z.number().int().nonnegative(),
   cleaningFee: z.number().int().nonnegative(),
@@ -26,7 +29,34 @@ const createRoomSchema = z.object({
   // the service — Zod strips unknown keys.
   images: z.array(z.string().url()).max(8).optional().default([]),
 });
-const updateRoomSchema = createRoomSchema.partial();
+// 독채가 아니면 정원을 반드시 받고, 독채면 정원을 받지 않는다.
+// 프론트 폼에서도 같은 규칙으로 입력칸을 숨기지만, 서버가 최종 판단한다.
+const capacityRule = (
+  data: { roomType?: string; capacity?: number | null },
+  ctx: z.RefinementCtx,
+) => {
+  if (data.roomType === undefined) return; // 부분 수정: 타입을 안 바꾸면 검사 생략
+  if (data.roomType === "WHOLE_HOUSE") {
+    if (data.capacity != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["capacity"],
+        message: "독채는 인원수를 설정하지 않습니다.",
+      });
+    }
+    return;
+  }
+  if (data.capacity == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["capacity"],
+      message: "함께 지낼 인원수를 입력해주세요.",
+    });
+  }
+};
+
+const createRoomSchemaChecked = createRoomSchema.superRefine(capacityRule);
+const updateRoomSchema = createRoomSchema.partial().superRefine(capacityRule);
 
 // 숙소 CRUD + 검색 API (REST). Reads are public; writes require HOST role.
 @Controller("rooms")
@@ -82,7 +112,7 @@ export class RoomsController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("HOST", "ADMIN")
-  create(@Req() req: any, @Body(new ZodValidationPipe(createRoomSchema)) dto: any) {
+  create(@Req() req: any, @Body(new ZodValidationPipe(createRoomSchemaChecked)) dto: any) {
     return this.rooms.create(req.user.id, dto);
   }
 

@@ -188,6 +188,25 @@ export function FilterSheet({
           </Section>
 
           {/* Gender */}
+          {/* 인원수 — 독채는 정원이 없어 이 필터를 걸면 자연히 제외된다 */}
+          <Section title="함께 지낼 인원">
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="chip"
+                  data-active={draft.minCapacity === n}
+                  onClick={() =>
+                    set({ minCapacity: draft.minCapacity === n ? undefined : n })
+                  }
+                >
+                  {n}명 이상
+                </button>
+              ))}
+            </div>
+          </Section>
+
           <Section title="성별">
             <div style={{ display: "flex", gap: 8 }}>
               {GENDERS.map((g) => (

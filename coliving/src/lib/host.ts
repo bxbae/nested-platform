@@ -15,7 +15,7 @@ export function revenueSummary() {
   const monthly = listings.reduce((sum, h) => sum + h.monthlyRent * h.residents, 0);
   const occupancy = Math.round(
     (listings.reduce((s, h) => s + h.residents, 0) /
-      listings.reduce((s, h) => s + h.capacity, 0)) *
+      listings.reduce((s, h) => s + (h.capacity ?? 0), 0)) *
       100
   );
   const upcoming = 3; // demo

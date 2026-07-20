@@ -165,6 +165,9 @@ model Room {
   // Host attested this is a real listing they're authorised to rent.
   verifiedByHost Boolean      @default(false)
   roomType       RoomType
+  // 함께 지낼 수 있는 최대 인원. 독채(WHOLE_HOUSE)는 통째로 빌리므로 정원
+  // 개념이 없어 null 로 둔다. 나머지 타입은 등록 시 필수.
+  capacity       Int?
   genderPolicy   GenderPolicy @default(ANY)
   monthlyRent    Int
   deposit        Int
