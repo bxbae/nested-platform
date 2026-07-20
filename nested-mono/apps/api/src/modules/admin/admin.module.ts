@@ -45,22 +45,74 @@ const couponCreateSchema = z.object({
   usageLimit: z.number().int().positive().nullable().optional(),
 });
 
+// ── Activity tier (활동 등급) ─────────────────────────────────────────
+// Derived on read from completed stays and reviews written — no stored column,
+// so it can never drift from the underlying data. Thresholds are deliberately
+// low: this platform is young and a "우수" badge should still be reachable.
+export type ActivityTier = "SEED" | "REGULAR" | "TRUSTED";
+
+export function activityTier(completedStays: number, reviewsWritten: number): ActivityTier {
+  if (completedStays >= 3 || reviewsWritten >= 3) return "TRUSTED";
+  if (completedStays >= 1) return "REGULAR";
+  return "SEED";
+}
+
+export const TIER_LABEL: Record<ActivityTier, string> = {
+  SEED: "새싹",
+  REGULAR: "일반",
+  TRUSTED: "우수",
+};
+
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   // members (검색 + 정지 토글)
-  members(q?: string) {
-    return this.prisma.user.findMany({
+  async members(q?: string) {
+    const rows = await this.prisma.user.findMany({
       where: {
         // Hide accounts that have deleted themselves — they're anonymised and
         // shouldn't clutter the admin list.
         deletedAt: null,
         ...(q ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] } : {}),
       },
-      select: { id: true, name: true, email: true, role: true, suspended: true, createdAt: true },
+      select: {
+        id: true, name: true, email: true, role: true, suspended: true, createdAt: true,
+        verifiedAt: true,
+        // Counts that feed the activity tier.
+        _count: { select: { reviews: true } },
+        reservations: { where: { status: "COMPLETED" }, select: { id: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
+    });
+
+    return rows.map(({ _count, reservations, ...u }) => {
+      const completedStays = reservations.length;
+      const reviewsWritten = _count.reviews;
+      const tier = activityTier(completedStays, reviewsWritten);
+      return {
+        ...u,
+        verified: u.verifiedAt != null,
+        tier,
+        tierLabel: TIER_LABEL[tier],
+        completedStays,
+        reviewsWritten,
+      };
+    });
+  }
+
+  // Admin marks identity as checked (or revokes it). Separate from
+  // emailVerified: that only proves the address works, this is a human check.
+  async setVerified(userId: string, verified: boolean) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없어요." });
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { verifiedAt: verified ? new Date() : null },
+      select: { id: true, verifiedAt: true },
     });
   }
 
@@ -421,6 +473,7 @@ export class AdminService {
 }
 
 const suspendSchema = z.object({ suspended: z.boolean() });
+const verifySchema = z.object({ verified: z.boolean() });
 const publishSchema = z.object({ published: z.boolean() });
 const reportStatusSchema = z.object({ status: z.enum(["RECEIVED", "IN_REVIEW", "RESOLVED"]) });
 
@@ -439,6 +492,15 @@ export class AdminController {
   @Get("members")
   members(@Query("q") q?: string) {
     return this.admin.members(q);
+  }
+
+  // PATCH /admin/members/:id/verify — 신원 확인 표시 토글
+  @Patch("members/:id/verify")
+  setVerified(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(verifySchema)) dto: z.infer<typeof verifySchema>,
+  ) {
+    return this.admin.setVerified(id, dto.verified);
   }
 
   @Patch("members/:id/suspend")

@@ -79,6 +79,8 @@ export async function setReportStatus(id: string, status: ReportStatus): Promise
   await api.patch(`/admin/reports/${id}`, { status });
 }
 
+export type ActivityTier = "SEED" | "REGULAR" | "TRUSTED";
+
 export interface AdminMember {
   id: string;
   name: string;
@@ -86,6 +88,19 @@ export interface AdminMember {
   role: string;
   suspended: boolean;
   createdAt: string;
+  /** Identity checked by an admin. */
+  verified: boolean;
+  verifiedAt: string | null;
+  /** Derived from completed stays + reviews written (server-computed). */
+  tier: ActivityTier;
+  tierLabel: string;
+  completedStays: number;
+  reviewsWritten: number;
+}
+
+// PATCH /admin/members/:id/verify — mark identity as checked (or revoke).
+export async function verifyMember(id: string, verified: boolean): Promise<void> {
+  await api.patch(`/admin/members/${id}/verify`, { verified });
 }
 
 // GET /admin/members?q= — search by name/email (omit q for all).

@@ -9,7 +9,7 @@
 // Copy this shape for /admin/reports and the dashboard.
 
 import { useCallback, useEffect, useState } from "react";
-import { listMembers, suspendMember, type AdminMember } from "@/lib/api/admin";
+import { listMembers, suspendMember, verifyMember, type AdminMember } from "@/lib/api/admin";
 import { useAuth } from "@/lib/api/useAuth";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -46,6 +46,20 @@ export default function AdminMembers() {
     const t = setTimeout(() => load(q), 300);
     return () => clearTimeout(t);
   }, [q, load]);
+
+  // Flip the identity-verified badge. Optimistic: the row updates immediately
+  // and reverts by refetching if the request fails.
+  async function toggleVerify(m: AdminMember) {
+    setMembers((prev) =>
+      prev.map((x) => (x.id === m.id ? { ...x, verified: !m.verified } : x)),
+    );
+    try {
+      await verifyMember(m.id, !m.verified);
+    } catch {
+      // Re-fetch with the current query so the row reflects server state again.
+      load(q);
+    }
+  }
 
   async function toggle(m: AdminMember) {
     if (busyId) return;
@@ -110,8 +124,28 @@ export default function AdminMembers() {
           return (
             <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: "2.4fr 0.9fr 1fr 0.9fr 0.9fr" }}>
               <span style={{ minWidth: 0 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, display: "block" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {m.name}{isSelf && <span style={{ color: "var(--text-2)", fontWeight: 400 }}> (나)</span>}
+                  {m.verified && (
+                    <span
+                      title="신원 확인됨"
+                      style={{
+                        fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999,
+                        background: "var(--secondary)", color: "#fff",
+                      }}
+                    >
+                      ✓ 인증
+                    </span>
+                  )}
+                  <span
+                    title={`완료 숙박 ${m.completedStays}건 · 리뷰 ${m.reviewsWritten}건`}
+                    style={{
+                      fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999,
+                      border: "1px solid var(--border)", color: "var(--text-2)",
+                    }}
+                  >
+                    {m.tierLabel}
+                  </span>
                 </span>
                 <span style={{ fontSize: 12, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
                   {m.email}
@@ -136,7 +170,15 @@ export default function AdminMembers() {
                 </span>
               </span>
 
-              <span>
+              <span style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                <button
+                  className="btn btn-ghost press"
+                  style={{ fontSize: 12, padding: "5px 10px" }}
+                  onClick={() => toggleVerify(m)}
+                  title={m.verified ? "인증 해제" : "신원 확인 처리"}
+                >
+                  {m.verified ? "인증 해제" : "인증"}
+                </button>
                 {/* Can't suspend yourself — the API blocks it, so hide the button. */}
                 {isSelf ? (
                   <span style={{ fontSize: 12, color: "var(--text-2)" }}>—</span>
