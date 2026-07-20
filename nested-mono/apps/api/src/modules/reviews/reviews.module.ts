@@ -45,6 +45,16 @@ export class ReviewsService {
     return this.prisma.review.create({ data: { ...data, authorId } });
   }
 
+  // Reviews I wrote — the guest-side "내 리뷰" list. Includes the room so the
+  // list can link back to what was reviewed.
+  listForGuest(authorId: string) {
+    return this.prisma.review.findMany({
+      where: { authorId },
+      include: { room: { select: { id: true, name: true, region: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
   // Every review across the listings I host — the 리뷰 관리 inbox.
   listForHost(hostId: string) {
     return this.prisma.review.findMany({
@@ -95,9 +105,19 @@ export class ReviewsController {
   }
 
   // Declared before any ":id" route so "mine" isn't captured as an id.
+  // GET /reviews/mine — 내가 작성한 리뷰 (게스트 관점)
   @Get("mine")
   @UseGuards(JwtAuthGuard)
   mine(@Req() req: any) {
+    return this.reviews.listForGuest(req.user.id);
+  }
+
+  // GET /reviews/received — 내 숙소에 달린 리뷰 (호스트 관점)
+  // 예전에는 /mine 이 이 동작을 했다. 게스트가 /mine 을 부르면 자기 리뷰가
+  // 아니라 빈 목록이 돌아오던 문제를 바로잡으면서 경로를 나눴다.
+  @Get("received")
+  @UseGuards(JwtAuthGuard)
+  received(@Req() req: any) {
     return this.reviews.listForHost(req.user.id);
   }
 
