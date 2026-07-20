@@ -10,6 +10,8 @@ import {
   type ApiMessage,
 } from "@/lib/api/messages";
 import { uploadImage } from "@/lib/api/storage";
+import { createChatSocket } from "@/lib/api/socket";
+import type { Socket } from "socket.io-client";
 
 // Inbox: conversation list on the left, thread on the right. Threads are
 // created from a listing page ("호스트에게 문의"), so an empty state here just
@@ -25,6 +27,7 @@ export default function Messages() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -49,40 +52,133 @@ export default function Messages() {
     if (active) loadThread(active.id);
   }, [active, loadThread]);
 
-  async function send() {
-    const body = draft.trim();
-    if (!body || !active || sending) return;
-    setSending(true);
-    setError(null);
-    try {
-      const created = await sendMessage(active.id, body);
-      setMsgs((prev) => [...prev, created]);
-      setDraft("");
-    } catch (e) {
-      // Surface it — a silently dropped message looks like it sent, then
-      // vanishes on reload.
-      setError(e instanceof Error ? e.message : "메시지를 보내지 못했어요.");
-    } finally {
-      setSending(false);
-    }
+  useEffect(() => {
+  if (!active) {
+    return;
   }
 
+  const socket = createChatSocket(active.id);
+  socketRef.current = socket;
+
+  function handleNewMessage(message: ApiMessage) {
+    setMsgs((prev) => {
+      if (prev.some((item) => item.id === message.id)) {
+        return prev;
+      }
+
+      return [...prev, message];
+    });
+  }
+
+  socket.on("message:new", handleNewMessage);
+
+  return () => {
+    socket.off("message:new", handleNewMessage);
+    socket.disconnect();
+
+    if (socketRef.current === socket) {
+      socketRef.current = null;
+    }
+  };
+}, [active]);
+
+  function send() {
+  const body = draft.trim();
+  const socket = socketRef.current;
+
+  if (!body || !active || sending) {
+    return;
+  }
+
+  if (!socket?.connected) {
+    setError("채팅 서버에 연결되지 않았어요. 잠시 후 다시 시도해주세요.");
+    return;
+  }
+
+  setSending(true);
+  setError(null);
+
+  socket.timeout(5000).emit(
+    "message:send",
+    {
+      roomId: active.id,
+      body,
+    },
+    (socketError: Error | null, created?: ApiMessage) => {
+      setSending(false);
+
+      if (socketError || !created) {
+        setError("메시지를 보내지 못했어요.");
+        return;
+      }
+
+      setDraft("");
+
+      setMsgs((prev) => {
+        if (prev.some((message) => message.id === created.id)) {
+          return prev;
+        }
+
+        return [...prev, created];
+      });
+    },
+  );
+}
+
   async function onPickImage(files: FileList | null) {
-    const file = files?.[0];
-    if (!file || !active || uploading) return;
-    setUploading(true);
-    setError(null);
-    try {
-      const url = await uploadImage(file, "chat");
-      const created = await sendMessage(active.id, undefined, url);
-      setMsgs((prev) => [...prev, created]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "이미지를 보내지 못했어요.");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+  const file = files?.[0];
+  const socket = socketRef.current;
+
+  if (!file || !active || uploading) {
+    return;
+  }
+
+  if (!socket?.connected) {
+    setError("채팅 서버에 연결되지 않았어요. 잠시 후 다시 시도해주세요.");
+    return;
+  }
+
+  setUploading(true);
+  setError(null);
+
+  try {
+    const url = await uploadImage(file, "chat");
+
+    const created = await new Promise<ApiMessage>((resolve, reject) => {
+      socket.timeout(5000).emit(
+        "message:send",
+        {
+          roomId: active.id,
+          imageUrl: url,
+        },
+        (socketError: Error | null, message?: ApiMessage) => {
+          if (socketError || !message) {
+            reject(socketError ?? new Error("메시지 응답이 없습니다."));
+            return;
+          }
+
+          resolve(message);
+        },
+      );
+    });
+
+    setMsgs((prev) => {
+      if (prev.some((message) => message.id === created.id)) {
+        return prev;
+      }
+
+      return [...prev, created];
+    });
+  } catch (e) {
+    setError(e instanceof Error ? e.message : "이미지를 보내지 못했어요.");
+  } finally {
+    setUploading(false);
+
+    if (fileRef.current) {
+      fileRef.current.value = "";
     }
   }
+}
 
   if (loading) {
     return (
