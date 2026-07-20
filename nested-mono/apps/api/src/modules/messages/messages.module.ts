@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Injectable, Module, ForbiddenException, NotFoundException } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+  Injectable,
+  Module,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -31,9 +44,65 @@ export class MessagesService {
   }
 
   // REST send (mirrors the Socket.io message:send for non-realtime clients)
-  send(chatRoomId: string, senderId: string, data: { body?: string; imageUrl?: string }) {
-    return this.prisma.message.create({
-      data: { chatRoomId, senderId, body: data.body, imageUrl: data.imageUrl, readBy: [senderId] },
+  async send(
+    chatRoomId: string,
+    senderId: string,
+    data: { body?: string; imageUrl?: string },
+  ) {
+    const chatRoom = await this.prisma.chatRoom.findUnique({
+      where: { id: chatRoomId },
+      select: {
+        guestId: true,
+        hostId: true,
+      },
+    });
+
+    if (!chatRoom) {
+      throw new NotFoundException({
+        code: "CHAT_ROOM_NOT_FOUND",
+        message: "대화방을 찾을 수 없습니다.",
+      });
+    }
+
+    const isGuest = chatRoom.guestId === senderId;
+    const isHost = chatRoom.hostId === senderId;
+
+    if (!isGuest && !isHost) {
+      throw new ForbiddenException({
+        code: "NOT_CHAT_MEMBER",
+        message: "대화방 참여자만 메시지를 보낼 수 있습니다.",
+      });
+    }
+
+    const recipientId = isGuest ? chatRoom.hostId : chatRoom.guestId;
+
+    return this.prisma.$transaction(async (tx) => {
+      const message = await tx.message.create({
+        data: {
+          chatRoomId,
+          senderId,
+          body: data.body,
+          imageUrl: data.imageUrl,
+          readBy: [senderId],
+        },
+      });
+
+      const preview =
+        data.body?.trim().slice(0, 80) ||
+        (data.imageUrl ? "사진을 보냈습니다." : "새 메시지가 도착했습니다.");
+
+      await tx.notification.create({
+        data: {
+          userId: recipientId,
+          type: "MESSAGE",
+          title: "새 메시지가 도착했어요",
+          body: preview,
+
+          targetUrl: `/me/messages?room=${chatRoomId}`,
+        },
+      });
+
+      return message;
     });
   }
 
@@ -53,24 +122,36 @@ export class MessagesService {
   // (unique on [roomId, guestId]).
   async openRoomAsHost(hostId: string, roomId: string, guestId: string) {
     if (hostId === guestId) {
-      throw new ForbiddenException({ code: "SELF_CHAT", message: "자신과는 채팅할 수 없습니다." });
+      throw new ForbiddenException({
+        code: "SELF_CHAT",
+        message: "자신과는 채팅할 수 없습니다.",
+      });
     }
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
       select: { hostId: true },
     });
     if (!room) {
-      throw new NotFoundException({ code: "ROOM_NOT_FOUND", message: "숙소를 찾을 수 없습니다." });
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
     }
     if (room.hostId !== hostId) {
-      throw new ForbiddenException({ code: "NOT_HOST", message: "본인 숙소로만 채팅을 시작할 수 있습니다." });
+      throw new ForbiddenException({
+        code: "NOT_HOST",
+        message: "본인 숙소로만 채팅을 시작할 수 있습니다.",
+      });
     }
     const guest = await this.prisma.user.findUnique({
       where: { id: guestId },
       select: { id: true },
     });
     if (!guest) {
-      throw new NotFoundException({ code: "GUEST_NOT_FOUND", message: "상대방을 찾을 수 없습니다." });
+      throw new NotFoundException({
+        code: "GUEST_NOT_FOUND",
+        message: "상대방을 찾을 수 없습니다.",
+      });
     }
     return this.prisma.chatRoom.upsert({
       where: { roomId_guestId: { roomId, guestId } },
@@ -80,7 +161,10 @@ export class MessagesService {
   }
 }
 
-const sendSchema = z.object({ body: z.string().optional(), imageUrl: z.string().optional() });
+const sendSchema = z.object({
+  body: z.string().optional(),
+  imageUrl: z.string().optional(),
+});
 const openSchema = z.object({ roomId: z.string(), hostId: z.string() });
 const openAsHostSchema = z.object({ roomId: z.string(), guestId: z.string() });
 
@@ -102,7 +186,10 @@ export class MessagesController {
 
   // POST /messages/rooms/as-host — the host starts a chat with a guest.
   @Post("rooms/as-host")
-  openAsHost(@Req() req: any, @Body(new ZodValidationPipe(openAsHostSchema)) dto: any) {
+  openAsHost(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(openAsHostSchema)) dto: any,
+  ) {
     return this.messages.openRoomAsHost(req.user.id, dto.roomId, dto.guestId);
   }
 
@@ -112,7 +199,11 @@ export class MessagesController {
   }
 
   @Post(":chatRoomId")
-  send(@Req() req: any, @Param("chatRoomId") chatRoomId: string, @Body(new ZodValidationPipe(sendSchema)) dto: any) {
+  send(
+    @Req() req: any,
+    @Param("chatRoomId") chatRoomId: string,
+    @Body(new ZodValidationPipe(sendSchema)) dto: any,
+  ) {
     return this.messages.send(chatRoomId, req.user.id, dto);
   }
 }

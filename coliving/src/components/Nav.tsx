@@ -7,6 +7,7 @@ import { Rings } from "./Rings";
 import { ThemeToggle } from "./ThemeToggle";
 import { AuthModal } from "./AuthModal";
 import { useAuth } from "@/lib/api/useAuth";
+import { NotificationBell } from "./NotificationBell";
 
 const links = [
   { href: "/search", label: "숙소 검색" },
@@ -29,7 +30,8 @@ export function Nav() {
   // boundary around useSearchParams for the global nav.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const hasAuthFlag = new URLSearchParams(window.location.search).get("auth") === "1";
+    const hasAuthFlag =
+      new URLSearchParams(window.location.search).get("auth") === "1";
     if (hasAuthFlag && !isAuthenticated) {
       setAuthOpen(true);
       router.replace(path); // strip the query so it doesn't re-trigger
@@ -87,7 +89,9 @@ export function Nav() {
                     // (var(--text) is light in dark mode and would vanish here).
                     color: active ? "#222222" : "var(--text-2)",
                     background: active ? "#fff" : "transparent",
-                    border: active ? "1px solid var(--border)" : "1px solid transparent",
+                    border: active
+                      ? "1px solid var(--border)"
+                      : "1px solid transparent",
                   }}
                   className="navlink"
                 >
@@ -129,6 +133,9 @@ export function Nav() {
                 </span>
                 {user?.name ?? "마이"}
               </Link>
+
+              <NotificationBell />
+
               <button
                 onClick={logout}
                 className="press"
