@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { addFavorite, removeFavorite, listFavoriteIds } from "@/lib/api/favorites";
-import { USE_REAL_API } from "@/lib/api/config";
+import { useState } from "react";
+import { useFavorite } from "@/lib/api/useFavorites";
 
 // Share + wishlist actions shown in the detail header (matches mockup's
 // 공유하기 / 찜하기). Share uses the Web Share API with a clipboard fallback.
 // 찜하기 persists to the backend /favorites when logged in.
 export function DetailActions({ title, roomId }: { title: string; roomId: string }) {
-  const [saved, setSaved] = useState(false);
+  // 검색 카드와 같은 스토어를 쓴다 — 한쪽에서 찜하면 다른 쪽도 즉시 반영된다.
+  const { saved, toggle } = useFavorite(roomId);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -16,14 +16,6 @@ export function DetailActions({ title, roomId }: { title: string; roomId: string
     setToast(msg);
     window.setTimeout(() => setToast(null), 2000);
   };
-
-  // Reflect the current saved state on mount (real API only).
-  useEffect(() => {
-    if (!USE_REAL_API) return;
-    listFavoriteIds()
-      .then((ids) => setSaved(ids.includes(roomId)))
-      .catch(() => {});
-  }, [roomId]);
 
   const share = async () => {
     const url = typeof window !== "undefined" ? window.location.href : "";
@@ -41,19 +33,13 @@ export function DetailActions({ title, roomId }: { title: string; roomId: string
 
   const toggleSave = async () => {
     if (busy) return;
-    const next = !saved;
-    setSaved(next); // optimistic
     setBusy(true);
-    try {
-      if (next) await addFavorite(roomId);
-      else await removeFavorite(roomId);
-      flash(next ? "찜 목록에 저장했습니다" : "찜을 해제했습니다");
-    } catch (e) {
-      setSaved(!next); // revert on failure
-      const msg = (e as Error)?.message ?? "";
-      flash(msg.includes("401") || msg.includes("인증") ? "로그인이 필요합니다" : "잠시 후 다시 시도해주세요");
-    } finally {
-      setBusy(false);
+    const res = await toggle();
+    setBusy(false);
+    if (res.ok) {
+      flash(res.saved ? "찜 목록에 저장했습니다" : "찜을 해제했습니다");
+    } else {
+      flash(res.reason === "auth" ? "로그인이 필요합니다" : "잠시 후 다시 시도해주세요");
     }
   };
 
