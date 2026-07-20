@@ -22,6 +22,8 @@ import {
   earlyCheckoutSchema,
   type QuoteDto,
   type CreateReservationDto,
+  companionResponseSchema,
+  type CompanionResponseDto,
   type ConfirmPaymentDto,
   type HostStatusDto,
   type EarlyCheckoutDto,
@@ -101,12 +103,33 @@ export class ReservationsController {
     return this.service.updateStatusAsHost(id, hostId, dto.status);
   }
 
+  // GET /reservations/invites — 내가 룸메이트로 초대된 예약들.
+  // 반드시 @Get("reservations/:id") 보다 위에 있어야 한다. NestJS 는 선언
+  // 순서대로 매칭하므로, 아래에 두면 "invites" 가 :id 로 잡혀 버린다.
+  @Get("reservations/invites")
+  @UseGuards(JwtAuthGuard)
+  invites(@CurrentGuest() userId: string) {
+    return this.service.listCompanionInvites(userId);
+  }
+
   @Get("reservations/:id")
   get(@Param("id") id: string) {
     return this.service.getById(id);
   }
 
   // PATCH /reservations/:id/cancel — guest cancels their reservation (CRUD: update/delete)
+  // PATCH /reservations/:id/companion — 초대 수락/거절
+  @Patch("reservations/:id/companion")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  respondCompanion(
+    @Param("id") id: string,
+    @CurrentGuest() userId: string,
+    @Body(new ZodValidationPipe(companionResponseSchema)) dto: CompanionResponseDto,
+  ) {
+    return this.service.respondToCompanionInvite(id, userId, dto.decision);
+  }
+
   @Patch("reservations/:id/cancel")
   @UseGuards(JwtAuthGuard)
   @HttpCode(200)

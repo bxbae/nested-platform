@@ -11,9 +11,19 @@ export const quoteSchema = z.object({
 });
 export type QuoteDto = z.infer<typeof quoteSchema>;
 
-// ── Create reservation ── same inputs; server recomputes price
-export const createReservationSchema = quoteSchema;
+// ── Create reservation ── same inputs; server recomputes price.
+// companionId 를 주면 공동 예약이 된다: 결제는 예약자가 전액 하고, 상대에게는
+// 초대(PENDING)가 걸린다. 상대가 수락해야 함께 사는 것으로 확정된다.
+export const createReservationSchema = quoteSchema.extend({
+  companionId: z.string().min(1).optional(),
+});
 export type CreateReservationDto = z.infer<typeof createReservationSchema>;
+
+// ── 동반자 초대 응답 ── 초대받은 사람이 수락 또는 거절
+export const companionResponseSchema = z.object({
+  decision: z.enum(["accept", "decline"]),
+});
+export type CompanionResponseDto = z.infer<typeof companionResponseSchema>;
 
 // ── Confirm payment ── verify against PSP then mark CONFIRMED
 export const confirmPaymentSchema = z.object({
