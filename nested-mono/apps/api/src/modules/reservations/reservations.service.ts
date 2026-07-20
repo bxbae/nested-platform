@@ -47,6 +47,18 @@ export class ReservationsService {
       });
     }
 
+    // Same overlap check as create(). Without it a quote could report the dates
+    // as bookable and then the reservation would fail with 409 — the user saw
+    // "예약 가능한 날짜입니다" followed by "이미 예약되었습니다".
+    const checkOut = addMonths(dto.checkIn, dto.months);
+    const overlaps = await this.repo.findOverlapping(dto.roomId, dto.checkIn, checkOut);
+    if (overlaps.length > 0) {
+      throw new ConflictException({
+        code: "DATES_UNAVAILABLE",
+        message: "선택한 기간은 이미 예약되었습니다.",
+      });
+    }
+
     const discount = await this.resolveDiscount(dto.couponCode, room.monthlyRent);
     const breakdown = computePrice({
       monthlyRent: room.monthlyRent,
@@ -56,7 +68,7 @@ export class ReservationsService {
       months: dto.months,
       discount,
     });
-    return { ...breakdown, checkOut: addMonths(dto.checkIn, dto.months) };
+    return { ...breakdown, checkOut };
   }
 
   // ── CREATE ── holds inventory as PENDING_PAYMENT. Rejects overlaps (409).
