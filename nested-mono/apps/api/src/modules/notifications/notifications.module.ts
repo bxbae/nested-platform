@@ -2,6 +2,8 @@ import { Module, Injectable } from "@nestjs/common";
 import { BullModule, InjectQueue } from "@nestjs/bullmq";
 import { Queue } from "bullmq";
 import { NotificationsProcessor } from "./notifications.processor";
+import { JwtModule } from "@nestjs/jwt";
+import { NotificationsGateway } from "./notifications.gateway";
 
 // Producer service for enqueuing background jobs.
 @Injectable()
@@ -21,14 +23,21 @@ export class NotificationsService {
     await this.queue.add(
       "settlement-reminder",
       {},
-      { repeat: { pattern: "0 9 25 * *" } } // 25th of each month, 09:00
+      { repeat: { pattern: "0 9 25 * *" } }, // 25th of each month, 09:00
     );
   }
 }
 
 @Module({
-  imports: [BullModule.registerQueue({ name: "notifications" })],
-  providers: [NotificationsProcessor, NotificationsService],
-  exports: [NotificationsService],
+  imports: [
+    JwtModule.register({}),
+    BullModule.registerQueue({ name: "notifications" }),
+  ],
+  providers: [
+    NotificationsProcessor,
+    NotificationsService,
+    NotificationsGateway,
+  ],
+  exports: [NotificationsService, NotificationsGateway],
 })
 export class NotificationsModule {}
