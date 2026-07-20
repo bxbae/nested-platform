@@ -140,6 +140,18 @@ export async function deleteComment(commentId: string): Promise<void> {
 }
 
 // DELETE /posts/:id
+// PATCH /posts/:id — edit your own post
+export async function updatePost(
+  id: string,
+  input: { category?: string; title?: string; body?: string },
+): Promise<void> {
+  if (!USE_REAL_API) {
+    // demo mode has no persistence for edits
+    return;
+  }
+  await api.patch(`/posts/${id}`, input);
+}
+
 export async function deletePost(id: string): Promise<void> {
   await api.delete(`/posts/${id}`);
 }
