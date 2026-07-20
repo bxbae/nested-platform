@@ -315,13 +315,14 @@ export class RoomsService {
     //    - 같은 지역(region)으로 먼저 필터링 → 전체 숙소를 다 훑지 않고
     //      DB 단계에서 미리 줄여야 숙소 수가 늘어나도 성능이 유지됨
     //    - take: 30 → 점수 계산은 이 30개 후보 안에서만 수행
+    // 수정 — images도 같이 가져오도록 추가 (썸네일 표시에 필요)
     const candidates = await this.prisma.room.findMany({
-      where:{
+      where: {
         id: { not: roomId },
         published: true,
         region: target.region,
       },
-      include:{ amenities: true },
+      include: { amenities: true, images: true },
       take: 30,
     });
 
