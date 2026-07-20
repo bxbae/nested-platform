@@ -3,6 +3,7 @@ import {
   Injectable, Module, NotFoundException, ForbiddenException,
 } from "@nestjs/common";
 import { z } from "zod";
+import { toBadges } from "../../common/activity-tier";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
@@ -11,12 +12,33 @@ import { JwtAuthGuard } from "../auth/guards/auth.guards";
 export class ReviewsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  listForRoom(roomId: string) {
-    return this.prisma.review.findMany({
+  // Reviews for a listing, with the author's trust badges so a reader can weigh
+  // the review — a verified, frequent guest carries more signal than a new one.
+  async listForRoom(roomId: string) {
+    const rows = await this.prisma.review.findMany({
       where: { roomId },
-      include: { author: { select: { name: true, avatarColor: true } } },
+      include: {
+        author: {
+          select: {
+            name: true,
+            avatarColor: true,
+            verifiedAt: true,
+            _count: { select: { reviews: true } },
+            reservations: { where: { status: "COMPLETED" }, select: { id: true } },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
+
+    return rows.map(({ author, ...review }) => ({
+      ...review,
+      author: {
+        name: author.name,
+        avatarColor: author.avatarColor,
+        ...toBadges(author.verifiedAt, author.reservations.length, author._count.reviews),
+      },
+    }));
   }
 
   create(authorId: string, data: { roomId: string; rating: number; body: string }) {

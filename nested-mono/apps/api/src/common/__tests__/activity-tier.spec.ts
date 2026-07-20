@@ -1,9 +1,12 @@
-// 배치 위치: src/modules/admin/__tests__/activity-tier.spec.ts
+// 배치 위치: src/common/__tests__/activity-tier.spec.ts
 //
 // 활동 등급 산출 규칙 검증. 완료된 숙박 수와 작성한 리뷰 수만으로 결정되며,
 // 저장된 컬럼이 아니라 조회 시 계산하므로 데이터와 어긋날 일이 없다.
+//
+// 등급 함수는 admin 전용이 아니라 auth(내 프로필) · match(상대 카드) ·
+// reviews(작성자)에서도 쓰이므로 common/ 으로 옮겼다.
 
-import { activityTier, TIER_LABEL } from "../admin.module";
+import { activityTier, TIER_LABEL, toBadges } from "../activity-tier";
 
 describe("activityTier — 활동 등급", () => {
   it("이용 이력이 없으면 새싹", () => {
@@ -35,5 +38,24 @@ describe("activityTier — 활동 등급", () => {
     expect(TIER_LABEL.SEED).toBe("새싹");
     expect(TIER_LABEL.REGULAR).toBe("일반");
     expect(TIER_LABEL.TRUSTED).toBe("우수");
+  });
+});
+
+describe("toBadges — 응답용 뱃지 블록", () => {
+  it("verifiedAt 이 있으면 verified=true", () => {
+    const b = toBadges(new Date(), 0, 0);
+    expect(b.verified).toBe(true);
+    expect(b.tier).toBe("SEED");
+    expect(b.tierLabel).toBe("새싹");
+  });
+
+  it("verifiedAt 이 null 이면 verified=false", () => {
+    expect(toBadges(null, 0, 0).verified).toBe(false);
+  });
+
+  it("활동 수치가 등급에 반영된다", () => {
+    const b = toBadges(null, 5, 0);
+    expect(b.tier).toBe("TRUSTED");
+    expect(b.tierLabel).toBe("우수");
   });
 });

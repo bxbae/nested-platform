@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
+import { toBadges, type ActivityTier } from "../../common/activity-tier";
 import type {
   NoiseSensitivity,
   CleanlinessLevel,
@@ -124,6 +125,11 @@ export interface MatchCandidate {
   keywords: string[];
   score: number;
   reasons: string[];
+  // Trust signals — an admin identity check and an activity tier derived from
+  // completed stays / reviews. Helps judge a stranger before reaching out.
+  verified: boolean;
+  tier: ActivityTier;
+  tierLabel: string;
 }
 
 @Injectable()
@@ -149,6 +155,9 @@ export class MatchService {
           select: {
             id: true, name: true, age: true, job: true,
             avatarColor: true, avatarUrl: true, suspended: true, deletedAt: true,
+            verifiedAt: true,
+            _count: { select: { reviews: true } },
+            reservations: { where: { status: "COMPLETED" }, select: { id: true } },
           },
         },
       },
@@ -162,6 +171,12 @@ export class MatchService {
       const result = scoreMatch(me, other);
       if (!result.compatible) continue; // hard-filtered out
 
+      const badges = toBadges(
+        other.user.verifiedAt,
+        other.user.reservations.length,
+        other.user._count.reviews,
+      );
+
       candidates.push({
         userId: other.user.id,
         name: other.user.name,
@@ -172,6 +187,7 @@ export class MatchService {
         keywords: other.keywords,
         score: result.score,
         reasons: result.reasons,
+        ...badges,
       });
     }
 
