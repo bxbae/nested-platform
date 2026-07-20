@@ -74,6 +74,7 @@ export interface ReservationRepo {
 // Reservation joined with a little room context, for the "my trips" list.
 export interface ReservationWithRoom extends ReservationRecord {
   room: { id: string; name: string; region: string; image: string | null };
+  payment: { id: string; provider: string; amount: number; status: string; createdAt: Date } | null;
 }
 
 // Reservation joined with room + guest context, for the host's "received
