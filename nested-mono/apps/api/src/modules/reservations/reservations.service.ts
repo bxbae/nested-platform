@@ -76,6 +76,13 @@ export class ReservationsService {
     const room = await this.repo.findRoom(dto.roomId);
     if (!room) throw new NotFoundException({ code: "ROOM_NOT_FOUND", message: "숙소를 찾을 수 없습니다." });
 
+    if (dto.companionId === guestId) {
+      throw new BadRequestException({
+        code: "INVALID_COMPANION",
+        message: "자기 자신을 룸메이트로 지정할 수 없습니다.",
+      });
+    }
+
     const checkOut = addMonths(dto.checkIn, dto.months);
 
     // Pre-check overlap (the repo re-checks under a serializable lock on insert).
@@ -102,6 +109,10 @@ export class ReservationsService {
       return await this.repo.createHold({
         roomId: room.id,
         guestId,
+        // 공동 예약: 상대를 지정하면 초대 대기 상태로 시작한다.
+        companionId: dto.companionId ?? null,
+        companionStatus: dto.companionId ? "PENDING" : null,
+        companionRespondedAt: null,
         checkIn: dto.checkIn,
         checkOut,
         months: dto.months,
@@ -173,6 +184,37 @@ export class ReservationsService {
   }
 
   // Cancel a reservation (guest-initiated). Guests can only cancel their own.
+  // 동반자 초대 수락/거절. 초대받은 본인만 응답할 수 있고, 한 번 응답하면
+  // 번복할 수 없다 — 예약자가 그 결과를 보고 다음 결정을 하기 때문이다.
+  async respondToCompanionInvite(
+    id: string,
+    userId: string,
+    decision: "accept" | "decline",
+  ): Promise<ReservationRecord> {
+    const r = await this.repo.findById(id);
+    if (!r) {
+      throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+    }
+    if (r.companionId !== userId) {
+      throw new ForbiddenException({
+        code: "FORBIDDEN",
+        message: "초대받은 사람만 응답할 수 있습니다.",
+      });
+    }
+    if (r.companionStatus !== "PENDING") {
+      throw new BadRequestException({
+        code: "ALREADY_RESPONDED",
+        message: "이미 응답한 초대입니다.",
+      });
+    }
+    return this.repo.updateCompanionStatus(id, decision === "accept" ? "ACCEPTED" : "DECLINED");
+  }
+
+  // 내가 동반자로 초대된 예약 목록
+  listCompanionInvites(userId: string) {
+    return this.repo.listByCompanion(userId);
+  }
+
   async cancel(id: string, guestId: string): Promise<ReservationRecord> {
     const r = await this.repo.findById(id);
     if (!r) throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });

@@ -84,6 +84,21 @@ class FakeRepo implements ReservationRepo {
     return r;
   }
   async markCouponUsed() {}
+  async updateCompanionStatus(id: string, status: "PENDING" | "ACCEPTED" | "DECLINED") {
+    const r = this.reservations.find((x) => x.id === id)!;
+    r.companionStatus = status;
+    r.companionRespondedAt = new Date();
+    return r;
+  }
+  async listByCompanion(companionId: string) {
+    return this.reservations
+      .filter((r) => r.companionId === companionId)
+      .map((r) => ({
+        ...r,
+        room: { id: r.roomId, name: "Test Room", region: "Test", image: null },
+        payment: null,
+      }));
+  }
 }
 
 class FakeGateway implements PaymentGateway {
@@ -204,6 +219,70 @@ describe("ReservationsService", () => {
       "guestA"
     );
     expect(again.status).toBe("CONFIRMED");
+  });
+
+  // ── 공동 예약 (룸메이트와 함께) ──
+  it("companionId 를 주면 초대가 PENDING 으로 생성된다", async () => {
+    const repo = new FakeRepo();
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6, companionId: "mate1" },
+      "guestA"
+    );
+    expect(r.companionId).toBe("mate1");
+    expect(r.companionStatus).toBe("PENDING");
+  });
+
+  it("companionId 가 없으면 동반자 필드는 비어 있다", async () => {
+    const repo = new FakeRepo();
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    const r = await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    expect(r.companionId).toBeNull();
+    expect(r.companionStatus).toBeNull();
+  });
+
+  it("자기 자신을 룸메이트로 지정할 수 없다", async () => {
+    const repo = new FakeRepo();
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    await expect(
+      svc.create({ roomId: "room1", checkIn: future, months: 6, companionId: "guestA" }, "guestA")
+    ).rejects.toMatchObject({ response: { code: "INVALID_COMPANION" } });
+  });
+
+  it("초대받은 사람이 수락하면 ACCEPTED 가 된다", async () => {
+    const repo = new FakeRepo();
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6, companionId: "mate1" },
+      "guestA"
+    );
+    const updated = await svc.respondToCompanionInvite(r.id, "mate1", "accept");
+    expect(updated.companionStatus).toBe("ACCEPTED");
+  });
+
+  it("제3자는 초대에 응답할 수 없다", async () => {
+    const repo = new FakeRepo();
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6, companionId: "mate1" },
+      "guestA"
+    );
+    await expect(
+      svc.respondToCompanionInvite(r.id, "stranger", "accept")
+    ).rejects.toMatchObject({ response: { code: "FORBIDDEN" } });
+  });
+
+  it("이미 응답한 초대는 번복할 수 없다", async () => {
+    const repo = new FakeRepo();
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6, companionId: "mate1" },
+      "guestA"
+    );
+    await svc.respondToCompanionInvite(r.id, "mate1", "decline");
+    await expect(
+      svc.respondToCompanionInvite(r.id, "mate1", "accept")
+    ).rejects.toMatchObject({ response: { code: "ALREADY_RESPONDED" } });
   });
 
   it("blocks a guest from paying someone else's reservation", async () => {

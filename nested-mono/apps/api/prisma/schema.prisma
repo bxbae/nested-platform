@@ -29,6 +29,15 @@ enum GenderPolicy {
   FEMALE_ONLY
 }
 
+// 공동 예약 동반자의 응답 상태.
+// 예약을 만든 쪽(대표자)이 매칭된 상대를 지정하면 PENDING 으로 시작하고,
+// 상대가 수락해야 ACCEPTED 가 된다. 동의 없이 이름이 묶이지 않도록 하는 장치.
+enum CompanionStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 enum ReservationStatus {
   PENDING_PAYMENT
   CONFIRMED
@@ -76,6 +85,8 @@ model User {
 
   listings     Room[]        @relation("HostRooms")
   reservations Reservation[]
+  // 내가 동반자로 초대된 예약들
+  companionReservations Reservation[] @relation("ReservationCompanion")
   reviews      Review[]
   messages     Message[]
   sessions     RefreshToken[]
@@ -228,6 +239,13 @@ model Reservation {
   room           Room              @relation(fields: [roomId], references: [id])
   guestId        String
   guest          User              @relation(fields: [guestId], references: [id])
+  // ── 공동 예약 (룸메이트와 함께 방 예약) ──
+  // guest 가 대표자이자 결제자다. companion 은 함께 살 상대이며, 비용은
+  // 대표자가 전액 결제하고 둘 사이 정산은 서비스 밖에서 이뤄진다.
+  companionId    String?
+  companion      User?             @relation("ReservationCompanion", fields: [companionId], references: [id])
+  companionStatus CompanionStatus?
+  companionRespondedAt DateTime?
   checkIn        DateTime
   checkOut       DateTime
   months         Int
@@ -247,6 +265,7 @@ model Reservation {
   // constraint on (roomId, tstzrange(checkIn, checkOut)) via a migration.
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
+  @@index([companionId])
 }
 
 model Payment {

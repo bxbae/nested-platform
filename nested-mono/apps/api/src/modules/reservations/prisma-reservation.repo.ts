@@ -160,6 +160,48 @@ export class PrismaReservationRepo implements ReservationRepo {
     return row?.room.hostId ?? null;
   }
 
+  // 내가 동반자로 초대된 예약들. listByGuest 와 같은 형태로 돌려주어
+  // 마이페이지에서 같은 카드 컴포넌트로 렌더할 수 있게 한다.
+  async listByCompanion(companionId: string) {
+    const rows = await this.prisma.reservation.findMany({
+      where: { companionId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        room: {
+          select: {
+            id: true,
+            name: true,
+            region: true,
+            images: { orderBy: { order: "asc" }, take: 1, select: { url: true } },
+          },
+        },
+        payment: {
+          select: { id: true, provider: true, amount: true, status: true, createdAt: true },
+        },
+      },
+    });
+    return rows.map((r: (typeof rows)[number]) => ({
+      ...r,
+      room: {
+        id: r.room.id,
+        name: r.room.name,
+        region: r.room.region,
+        image: r.room.images[0]?.url ?? null,
+      },
+      payment: r.payment ?? null,
+    }));
+  }
+
+  async updateCompanionStatus(
+    id: string,
+    status: "PENDING" | "ACCEPTED" | "DECLINED",
+  ): Promise<ReservationRecord> {
+    return this.prisma.reservation.update({
+      where: { id },
+      data: { companionStatus: status, companionRespondedAt: new Date() },
+    });
+  }
+
   async updateStatus(id: string, status: ReservationStatus): Promise<ReservationRecord> {
     return this.prisma.reservation.update({ where: { id }, data: { status } });
   }

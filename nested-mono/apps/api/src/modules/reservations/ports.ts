@@ -21,10 +21,16 @@ export interface RoomRecord {
   availableFrom: Date;
 }
 
+export type CompanionStatus = "PENDING" | "ACCEPTED" | "DECLINED";
+
 export interface ReservationRecord {
   id: string;
   roomId: string;
   guestId: string;
+  // 공동 예약: 함께 살 상대. guest 가 결제자이고 companion 은 수락만 한다.
+  companionId: string | null;
+  companionStatus: CompanionStatus | null;
+  companionRespondedAt: Date | null;
   checkIn: Date;
   checkOut: Date;
   months: number;
@@ -68,6 +74,10 @@ export interface ReservationRepo {
   /** The host that owns the room this reservation is for (ownership checks). */
   findRoomHostId(reservationId: string): Promise<string | null>;
   updateStatus(id: string, status: ReservationStatus): Promise<ReservationRecord>;
+  /** 동반자 초대 응답 (수락/거절) 기록. */
+  updateCompanionStatus(id: string, status: CompanionStatus): Promise<ReservationRecord>;
+  /** 내가 동반자로 초대된 예약들 — 마이페이지에서 수락/거절하도록. */
+  listByCompanion(companionId: string): Promise<ReservationWithRoom[]>;
   markCouponUsed(couponId: string): Promise<void>;
 }
 
