@@ -20,6 +20,23 @@ export interface AvailabilityResult {
   available: boolean;
   reason?: string;
   checkOut?: string;
+  price?: QuotedPrice;
+  couponError?: boolean;
+}
+
+// 서버가 계산한 금액 내역. 쿠폰 검증(유효기간·소진·최소금액)은 서버에만
+// 있으므로, 화면은 이 값을 그대로 표시한다.
+export interface QuotedPrice {
+  monthlyRent: number;
+  months: number;
+  rentSubtotal: number;
+  deposit: number;
+  cleaningFee: number;
+  maintenanceFee: number;
+  serviceFee: number;
+  discount: number;
+  dueNow: number;
+  contractTotal: number;
 }
 
 export interface CreatedBooking {
@@ -33,6 +50,7 @@ export async function checkAvailability(input: {
   houseId: string;
   checkIn: string;
   months: number;
+  couponCode?: string;
 }): Promise<AvailabilityResult> {
   if (!USE_REAL_API) {
     const params = new URLSearchParams({
@@ -45,18 +63,29 @@ export async function checkAvailability(input: {
   }
 
   try {
-    await api.post("/reservations/quote", {
-      roomId: input.houseId,
-      checkIn: input.checkIn,
-      months: input.months,
-    });
+    const quote = await api.post<QuotedPrice & { checkOut: string }>(
+      "/reservations/quote",
+      {
+        roomId: input.houseId,
+        checkIn: input.checkIn,
+        months: input.months,
+        ...(input.couponCode ? { couponCode: input.couponCode } : {}),
+      }
+    );
     return {
       available: true,
-      checkOut: toISODate(addMonths(new Date(input.checkIn), input.months)),
+      checkOut: quote.checkOut ?? toISODate(addMonths(new Date(input.checkIn), input.months)),
+      price: quote,
     };
   } catch (e) {
     const reason = e instanceof ApiError ? e.message : "예약할 수 없는 날짜입니다.";
-    return { available: false, reason };
+    const code =
+      e instanceof ApiError && e.body && typeof e.body === "object"
+        ? (e.body as { code?: string }).code
+        : undefined;
+    const couponError =
+      code === "COUPON_INVALID" || code === "COUPON_EXPIRED" || code === "COUPON_EXHAUSTED";
+    return { available: couponError, reason, couponError };
   }
 }
 
@@ -66,6 +95,7 @@ export async function requestBooking(input: {
   guestName: string;
   moveIn: string;
   months: number;
+  couponCode?: string;
 }): Promise<CreatedBooking> {
   if (!USE_REAL_API) {
     const res = await fetch("/api/bookings", {
@@ -93,6 +123,7 @@ export async function requestBooking(input: {
       roomId: input.houseId,
       checkIn: input.moveIn,
       months: input.months,
+      ...(input.couponCode ? { couponCode: input.couponCode } : {}),
     }
   );
   return { id: r.id, status: r.status, totalDueNow: r.totalDueNow };

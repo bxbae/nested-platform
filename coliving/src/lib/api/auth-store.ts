@@ -18,6 +18,12 @@ export interface AuthUser {
   // false for social-login accounts, which have no password to change.
   hasPassword?: boolean;
   createdAt?: string | null;
+  // Trust badges (see common/activity-tier on the API side).
+  verified?: boolean;
+  tier?: "SEED" | "REGULAR" | "TRUSTED";
+  tierLabel?: string;
+  completedStays?: number;
+  reviewsWritten?: number;
 }
 
 export interface AuthTokens {

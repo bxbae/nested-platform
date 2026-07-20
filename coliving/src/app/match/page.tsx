@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/api/useAuth";
 import { getPreference } from "@/lib/api/preference";
 import { getMatches, type MatchCandidate } from "@/lib/api/match";
+import { UserBadges } from "@/components/UserBadges";
 
 // 룸메이트 매칭 (성향 기반). Gated on a completed survey: if the user hasn't
 // filled it in, we point them to /me/preference instead of showing an empty
@@ -90,7 +91,10 @@ export default function Match() {
                   {!m.avatarUrl && m.name.charAt(0)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <strong style={{ fontSize: 15.5 }}>{m.name}</strong>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <strong style={{ fontSize: 15.5 }}>{m.name}</strong>
+                    <UserBadges verified={m.verified} tier={m.tier} tierLabel={m.tierLabel} />
+                  </div>
                   <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
                     {[m.age ? `${m.age}세` : null, m.job].filter(Boolean).join(" · ") || "정보 없음"}
                   </div>

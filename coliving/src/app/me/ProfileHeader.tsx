@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { UserBadges } from "@/components/UserBadges";
 import Link from "next/link";
 import { currentUser } from "@/lib/me";
 import { useAuth } from "@/lib/api/useAuth";
@@ -115,9 +116,15 @@ export function ProfileHeader() {
       </div>
 
       <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <strong style={{ fontSize: 20 }}>{name}</strong>
           <span className="chip" style={{ fontSize: 12 }}>{role}</span>
+          <UserBadges
+            verified={user?.verified}
+            tier={user?.tier}
+            tierLabel={user?.tierLabel}
+            size="md"
+          />
         </div>
         <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
           {joinYear}년 가입 · {email}

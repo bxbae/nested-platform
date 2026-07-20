@@ -7,6 +7,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
+import { activityTier, TIER_LABEL } from "../../common/activity-tier";
 
 const noticeCreateSchema = z.object({
   title: z.string().min(1, "제목을 입력해주세요.").max(200),
@@ -44,24 +45,6 @@ const couponCreateSchema = z.object({
   validTo: z.string().min(1),
   usageLimit: z.number().int().positive().nullable().optional(),
 });
-
-// ── Activity tier (활동 등급) ─────────────────────────────────────────
-// Derived on read from completed stays and reviews written — no stored column,
-// so it can never drift from the underlying data. Thresholds are deliberately
-// low: this platform is young and a "우수" badge should still be reachable.
-export type ActivityTier = "SEED" | "REGULAR" | "TRUSTED";
-
-export function activityTier(completedStays: number, reviewsWritten: number): ActivityTier {
-  if (completedStays >= 3 || reviewsWritten >= 3) return "TRUSTED";
-  if (completedStays >= 1) return "REGULAR";
-  return "SEED";
-}
-
-export const TIER_LABEL: Record<ActivityTier, string> = {
-  SEED: "새싹",
-  REGULAR: "일반",
-  TRUSTED: "우수",
-};
 
 @Injectable()
 export class AdminService {

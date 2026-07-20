@@ -8,6 +8,7 @@ import { createHash, randomBytes } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { MailService } from "./mail.service";
 import type { ReservationStatus } from "@prisma/client";
+import { toBadges } from "../../common/activity-tier";
 
 export interface JwtPayload {
   sub: string;
@@ -34,9 +35,18 @@ export class AuthService {
         // Lets the client hide "change password" for OAuth-only accounts,
         // which have no password to change.
         passwordHash: true,
+        // Badge inputs: admin identity check + activity counts.
+        verifiedAt: true,
+        _count: { select: { reviews: true } },
+        reservations: { where: { status: "COMPLETED" }, select: { id: true } },
       },
     });
     if (!user) return null;
+    const badges = toBadges(
+      user.verifiedAt,
+      user.reservations.length,
+      user._count.reviews,
+    );
     return {
       id: user.id,
       email: user.email,
@@ -49,6 +59,10 @@ export class AuthService {
       job: user.job,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
+      // 인증·활동 뱃지
+      ...badges,
+      completedStays: user.reservations.length,
+      reviewsWritten: user._count.reviews,
     };
   }
 
