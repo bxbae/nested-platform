@@ -44,3 +44,4 @@ coverage/
 # ── Docker volumes (local data) ─────────────────────────────────────
 pgdata/
 redisdata/
+railway_backup.sql
