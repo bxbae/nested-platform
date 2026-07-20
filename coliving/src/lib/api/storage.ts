@@ -27,7 +27,10 @@ interface CloudinaryUploadResponse {
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
-export async function uploadImage(file: File): Promise<string> {
+export async function uploadImage(
+  file: File,
+  folder: "rooms" | "avatars" | "chat" = "rooms",
+): Promise<string> {
   if (!ALLOWED.includes(file.type)) {
     throw new Error("JPG, PNG, WebP, AVIF 형식만 올릴 수 있어요.");
   }
@@ -36,7 +39,7 @@ export async function uploadImage(file: File): Promise<string> {
   }
 
   const sig = await api.post<CloudinarySignature>("/storage/cloudinary-signature", {
-    folder: "rooms",
+    folder,
   });
 
   // Only the params that were signed may be sent — Cloudinary rejects the

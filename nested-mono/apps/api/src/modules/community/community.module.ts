@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post as HttpPost,
+  Patch,
   Delete,
   Body,
   Param,
@@ -17,20 +18,18 @@ import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
+import { NotificationsModule } from "../notifications/notifications.module";
+import { NotificationsGateway } from "../notifications/notifications.gateway";
 
-const CATEGORIES = [
-  "NOTICE",
-  "EVENT",
-  "CHORE",
-  "MARKET",
-  "CHAT",
-  "SEEKING",
-] as const;
+const CATEGORIES = ["NOTICE", "EVENT", "CHORE", "MARKET", "CHAT", "SEEKING"] as const;
 type Category = (typeof CATEGORIES)[number];
 
 @Injectable()
 export class CommunityService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsGateway: NotificationsGateway,
+  ) {}
 
   // Board listing. Pinned posts float to the top, then newest first.
   // `_count.comments` is what the UI shows as "💬 N replies".
@@ -38,9 +37,7 @@ export class CommunityService {
   // search "방 구함"(SEEKING) posts for suitable tenants.
   async list(category?: string, q?: string) {
     const categoryWhere =
-      category &&
-      category !== "all" &&
-      CATEGORIES.includes(category.toUpperCase() as Category)
+      category && category !== "all" && CATEGORIES.includes(category.toUpperCase() as Category)
         ? { category: category.toUpperCase() as Category }
         : {};
 
@@ -75,18 +72,11 @@ export class CommunityService {
         },
       },
     });
-    if (!post)
-      throw new NotFoundException({
-        code: "POST_NOT_FOUND",
-        message: "게시글을 찾을 수 없습니다.",
-      });
+    if (!post) throw new NotFoundException({ code: "POST_NOT_FOUND", message: "게시글을 찾을 수 없습니다." });
     return post;
   }
 
-  async create(
-    authorId: string,
-    dto: { roomId: string; category: Category; title: string; body: string },
-  ) {
+  async create(authorId: string, dto: { roomId: string; category: Category; title: string; body: string }) {
     return this.prisma.post.create({
       data: {
         authorId,
@@ -103,21 +93,39 @@ export class CommunityService {
   }
 
   // Only the author can delete their own post.
-  async remove(userId: string, id: string) {
-    const post = await this.prisma.post.findUnique({
-      where: { id },
-      select: { authorId: true },
-    });
-    if (!post)
-      throw new NotFoundException({
-        code: "POST_NOT_FOUND",
-        message: "게시글을 찾을 수 없습니다.",
-      });
+  // Edit a post. Only the author may edit — an admin moderating content should
+  // remove it, not silently rewrite what someone else said.
+  async update(
+    userId: string,
+    id: string,
+    dto: { category?: Category; title?: string; body?: string },
+  ) {
+    const post = await this.prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+    if (!post) throw new NotFoundException({ code: "POST_NOT_FOUND", message: "게시글을 찾을 수 없습니다." });
     if (post.authorId !== userId) {
-      throw new ForbiddenException({
-        code: "NOT_AUTHOR",
-        message: "본인이 쓴 글만 삭제할 수 있습니다.",
-      });
+      throw new ForbiddenException({ code: "NOT_AUTHOR", message: "본인이 쓴 글만 수정할 수 있습니다." });
+    }
+    return this.prisma.post.update({
+      where: { id },
+      data: {
+        ...(dto.category !== undefined ? { category: dto.category } : {}),
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.body !== undefined ? { body: dto.body } : {}),
+      },
+      include: {
+        author: { select: { id: true, name: true } },
+        _count: { select: { comments: true } },
+      },
+    });
+  }
+
+  // Delete a post. The author can remove their own; an ADMIN can remove any
+  // post so reports (/admin/reports) can actually be acted on.
+  async remove(userId: string, id: string, role?: string) {
+    const post = await this.prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+    if (!post) throw new NotFoundException({ code: "POST_NOT_FOUND", message: "게시글을 찾을 수 없습니다." });
+    if (post.authorId !== userId && role !== "ADMIN") {
+      throw new ForbiddenException({ code: "NOT_AUTHOR", message: "본인이 쓴 글만 삭제할 수 있습니다." });
     }
     await this.prisma.post.delete({ where: { id } });
     return { ok: true };
@@ -126,11 +134,7 @@ export class CommunityService {
   async addComment(authorId: string, postId: string, body: string) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: {
-        id: true,
-        title: true,
-        authorId: true,
-      },
+      select: { id: true, title: true, authorId: true },
     });
 
     if (!post) {
@@ -140,56 +144,47 @@ export class CommunityService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const comment = await tx.comment.create({
-        data: {
-          authorId,
-          postId,
-          body,
-        },
-        include: {
-          author: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
+        data: { authorId, postId, body },
+        include: { author: { select: { id: true, name: true } } },
       });
 
-      // 자기 글에 자신이 댓글을 남기면 알림을 만들지 않음
+      let notification = null;
+
       if (post.authorId !== authorId) {
-        await tx.notification.create({
+        notification = await tx.notification.create({
           data: {
             userId: post.authorId,
             type: "MESSAGE",
             title: "내 게시글에 새 댓글이 달렸어요",
             body: `"${post.title}" 게시글에 새로운 댓글이 등록되었습니다.`,
-
             targetUrl: `/community/${post.id}`,
           },
         });
       }
 
-      return comment;
+      return { comment, notification };
     });
+
+    if (result.notification) {
+      this.notificationsGateway.emitToUser(
+        post.authorId,
+        result.notification,
+      );
+    }
+
+    return result.comment;
   }
 
-  async removeComment(userId: string, commentId: string) {
+  async removeComment(userId: string, commentId: string, role?: string) {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: { authorId: true },
     });
-    if (!comment)
-      throw new NotFoundException({
-        code: "COMMENT_NOT_FOUND",
-        message: "댓글을 찾을 수 없습니다.",
-      });
-    if (comment.authorId !== userId) {
-      throw new ForbiddenException({
-        code: "NOT_AUTHOR",
-        message: "본인이 쓴 댓글만 삭제할 수 있습니다.",
-      });
+    if (!comment) throw new NotFoundException({ code: "COMMENT_NOT_FOUND", message: "댓글을 찾을 수 없습니다." });
+    if (comment.authorId !== userId && role !== "ADMIN") {
+      throw new ForbiddenException({ code: "NOT_AUTHOR", message: "본인이 쓴 댓글만 삭제할 수 있습니다." });
     }
     await this.prisma.comment.delete({ where: { id: commentId } });
     return { ok: true };
@@ -201,6 +196,12 @@ const createPostSchema = z.object({
   category: z.enum(CATEGORIES).default("CHAT"),
   title: z.string().min(1).max(120),
   body: z.string().min(1).max(5000),
+});
+
+const updatePostSchema = z.object({
+  category: z.enum(CATEGORIES).optional(),
+  title: z.string().min(1).max(120).optional(),
+  body: z.string().min(1).max(5000).optional(),
 });
 
 const commentSchema = z.object({
@@ -225,10 +226,7 @@ export class CommunityController {
 
   @HttpPost()
   @UseGuards(JwtAuthGuard)
-  create(
-    @Req() req: any,
-    @Body(new ZodValidationPipe(createPostSchema)) dto: any,
-  ) {
+  create(@Req() req: any, @Body(new ZodValidationPipe(createPostSchema)) dto: any) {
     return this.community.create(req.user.id, dto);
   }
 
@@ -236,13 +234,24 @@ export class CommunityController {
   @Delete("comments/:commentId")
   @UseGuards(JwtAuthGuard)
   removeComment(@Req() req: any, @Param("commentId") commentId: string) {
-    return this.community.removeComment(req.user.id, commentId);
+    return this.community.removeComment(req.user.id, commentId, req.user.role);
+  }
+
+  // PATCH /posts/:id — edit your own post
+  @Patch(":id")
+  @UseGuards(JwtAuthGuard)
+  update(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updatePostSchema)) dto: z.infer<typeof updatePostSchema>,
+  ) {
+    return this.community.update(req.user.id, id, dto);
   }
 
   @Delete(":id")
   @UseGuards(JwtAuthGuard)
   remove(@Req() req: any, @Param("id") id: string) {
-    return this.community.remove(req.user.id, id);
+    return this.community.remove(req.user.id, id, req.user.role);
   }
 
   @HttpPost(":id/comments")
@@ -257,6 +266,7 @@ export class CommunityController {
 }
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [CommunityController],
   providers: [CommunityService],
 })

@@ -7,6 +7,8 @@ import * as bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { MailService } from "./mail.service";
+import type { ReservationStatus } from "@prisma/client";
+import { toBadges } from "../../common/activity-tier";
 
 export interface JwtPayload {
   sub: string;
@@ -33,9 +35,18 @@ export class AuthService {
         // Lets the client hide "change password" for OAuth-only accounts,
         // which have no password to change.
         passwordHash: true,
+        // Badge inputs: admin identity check + activity counts.
+        verifiedAt: true,
+        _count: { select: { reviews: true } },
+        reservations: { where: { status: "COMPLETED" }, select: { id: true } },
       },
     });
     if (!user) return null;
+    const badges = toBadges(
+      user.verifiedAt,
+      user.reservations.length,
+      user._count.reviews,
+    );
     return {
       id: user.id,
       email: user.email,
@@ -48,6 +59,10 @@ export class AuthService {
       job: user.job,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
+      // 인증·활동 뱃지
+      ...badges,
+      completedStays: user.reservations.length,
+      reviewsWritten: user._count.reviews,
     };
   }
 
@@ -318,6 +333,46 @@ export class AuthService {
   // (some via RESTRICT), and other people's history shouldn't break because
   // someone left. Instead we anonymise the personal fields and mark the row
   // deleted. The account's contributions survive as "탈퇴한 사용자".
+  // GUEST → HOST. Anyone may list a room; the safety gate is that new listings
+  // start unpublished and an admin approves them (/admin/approvals), so opening
+  // this up doesn't put unvetted rooms in front of guests.
+  //
+  // Returns a fresh token pair: the caller's current JWT still carries the old
+  // role, and every guard reads the role from the token — without new tokens
+  // they'd stay a GUEST until the next login.
+  async becomeHost(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, role: true, createdAt: true, deletedAt: true, suspended: true },
+    });
+    if (!user || user.deletedAt) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+    }
+    if (user.suspended) {
+      throw new BadRequestException({ code: "ACCOUNT_SUSPENDED", message: "정지된 계정입니다." });
+    }
+    // Admins already outrank hosts — silently downgrading them would be a bug.
+    if (user.role === "ADMIN") {
+      throw new BadRequestException({
+        code: "ALREADY_PRIVILEGED",
+        message: "관리자 계정은 호스트 전환이 필요하지 않습니다.",
+      });
+    }
+    if (user.role === "HOST") {
+      throw new BadRequestException({ code: "ALREADY_HOST", message: "이미 호스트예요." });
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { role: "HOST" },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+
+    return this.issueTokens(
+      updated.id, updated.email, updated.role, updated.name, updated.createdAt,
+    );
+  }
+
   async deleteAccount(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -328,6 +383,42 @@ export class AuthService {
     }
     if (user.deletedAt) {
       throw new BadRequestException({ code: "ALREADY_DELETED", message: "이미 탈퇴한 계정입니다." });
+    }
+
+    // A live reservation ties two people together: the guest who booked and the
+    // host whose room it is. Letting either side vanish would strand the other,
+    // so withdrawal is blocked until the booking is settled (cancelled by
+    // agreement, or completed). Statuses that no longer hold the room —
+    // cancelled / completed / no-show — don't block.
+    const ACTIVE: ReservationStatus[] = [
+      "PENDING_PAYMENT",
+      "CONFIRMED",
+      "EARLY_CHECKOUT_REQUESTED",
+      "EARLY_CHECKOUT_APPROVED",
+    ];
+
+    const [asGuest, asHost] = await Promise.all([
+      // Bookings this user made.
+      this.prisma.reservation.count({
+        where: { guestId: userId, status: { in: ACTIVE } },
+      }),
+      // Bookings on rooms this user hosts.
+      this.prisma.reservation.count({
+        where: { status: { in: ACTIVE }, room: { hostId: userId } },
+      }),
+    ]);
+
+    if (asGuest > 0 || asHost > 0) {
+      const role = asHost > 0 ? "호스트" : "입주자";
+      const count = asGuest + asHost;
+      throw new BadRequestException({
+        code: "ACTIVE_RESERVATION_EXISTS",
+        message:
+          `진행 중인 예약이 ${count}건 있어 탈퇴할 수 없습니다. ` +
+          `${role}로서 상대방과 협의해 예약을 정리한 뒤 다시 시도해주세요.`,
+        activeAsGuest: asGuest,
+        activeAsHost: asHost,
+      });
     }
 
     await this.prisma.$transaction([

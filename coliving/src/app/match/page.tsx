@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/api/useAuth";
 import { getPreference } from "@/lib/api/preference";
 import { getMatches, type MatchCandidate } from "@/lib/api/match";
+import { UserBadges } from "@/components/UserBadges";
 import MatchDetailModal from "./MatchDetailModal";
 
 export default function Match() {
@@ -15,7 +16,6 @@ export default function Match() {
   >("loading");
 
   const [results, setResults] = useState<MatchCandidate[]>([]);
-
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,7 +44,6 @@ export default function Match() {
         setResults(matches);
         setState("ready");
       } catch {
-        // 기존 처리 유지
         if (alive) {
           setState("need-survey");
         }
@@ -90,13 +89,7 @@ export default function Match() {
         </p>
 
         {state === "loading" && (
-          <p
-            style={{
-              color: "var(--text-2)",
-            }}
-          >
-            불러오는 중…
-          </p>
+          <p style={{ color: "var(--text-2)" }}>불러오는 중…</p>
         )}
 
         {state === "guest" && (
@@ -190,7 +183,6 @@ export default function Match() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-
                     setSelectedUserId(m.userId);
                   }
                 }}
@@ -233,13 +225,22 @@ export default function Match() {
                       minWidth: 0,
                     }}
                   >
-                    <strong
+                    <div
                       style={{
-                        fontSize: 15.5,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexWrap: "wrap",
                       }}
                     >
-                      {m.name}
-                    </strong>
+                      <strong style={{ fontSize: 15.5 }}>{m.name}</strong>
+
+                      <UserBadges
+                        verified={m.verified}
+                        tier={m.tier}
+                        tierLabel={m.tierLabel}
+                      />
+                    </div>
 
                     <div
                       style={{

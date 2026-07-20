@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
+import { toBadges, type ActivityTier } from "../../common/activity-tier";
 import type {
   NoiseSensitivity,
   CleanlinessLevel,
@@ -21,13 +22,6 @@ import type {
   SharedSpaceStyle,
   DrinkingHabit,
 } from "@prisma/client";
-
-// ── Matching algorithm (룸메이트 매칭) ────────────────────────────────
-// 기존 알고리즘 유지:
-// • smoking / pets / visitors의 gap이 2면 매칭 제외
-// • 9개 축의 gap 0 → 1점, gap 1 → 0.5점, gap 2 → 0점
-// • 9개 축 동일 가중치
-// • 점수 = 평균 × 100
 
 const ORDER = {
   noise: ["QUIET", "MODERATE", "LIVELY"],
@@ -45,10 +39,8 @@ type Axis = keyof typeof ORDER;
 
 const AXES = Object.keys(ORDER) as Axis[];
 
-// 기존 하드 필터 유지
 const HARD_FILTER_AXES: Axis[] = ["smoking", "pets", "visitors"];
 
-// 기존 추천 문구 유지
 const MATCH_REASONS: Record<Axis, string> = {
   noise: "생활 소음 성향이 잘 맞아요",
   cleanliness: "청결 기준이 비슷해요",
@@ -61,7 +53,6 @@ const MATCH_REASONS: Record<Axis, string> = {
   drinking: "음주 습관이 비슷해요",
 };
 
-// 상세 화면의 차이 안내에만 사용
 const ADJUSTMENT_REASONS: Record<Axis, string> = {
   noise: "생활 소음 선호에 차이가 있어 대화가 필요해요",
   cleanliness: "청결 기준에 차이가 있어 조율이 필요해요",
@@ -92,12 +83,10 @@ export interface MatchScore {
   reasons: string[];
 }
 
-// 기존 순수 점수 함수 유지
 export function scoreMatch(
   a: PreferenceAnswers,
   b: PreferenceAnswers,
 ): MatchScore {
-  // 1. 기존 하드 필터
   for (const axis of HARD_FILTER_AXES) {
     const gap = Math.abs(idx(axis, a[axis]) - idx(axis, b[axis]));
 
@@ -110,13 +99,11 @@ export function scoreMatch(
     }
   }
 
-  // 2. 기존 9개 축 거리 점수
   let total = 0;
   const perfectAxes: Axis[] = [];
 
   for (const axis of AXES) {
     const gap = Math.abs(idx(axis, a[axis]) - idx(axis, b[axis]));
-
     const points = gap === 0 ? 1 : gap === 1 ? 0.5 : 0;
 
     total += points;
@@ -128,7 +115,6 @@ export function scoreMatch(
 
   const score = Math.round((total / AXES.length) * 100);
 
-  // 3. 기존 추천 이유: 완전히 일치한 축 중 최대 3개
   const reasons = perfectAxes.slice(0, 3).map((axis) => MATCH_REASONS[axis]);
 
   return {
@@ -140,8 +126,6 @@ export function scoreMatch(
 
 function idx(axis: Axis, value: string): number {
   const index = (ORDER[axis] as readonly string[]).indexOf(value);
-
-  // 기존 방어 로직 유지
   return index === -1 ? 1 : index;
 }
 
@@ -155,20 +139,19 @@ export interface MatchCandidate {
   keywords: string[];
   score: number;
   reasons: string[];
+  verified: boolean;
+  tier: ActivityTier;
+  tierLabel: string;
 }
 
-// 상세 모달 전용 응답 타입
 export interface MatchDetail extends MatchCandidate {
   bio: string | null;
   intro: string | null;
   joinedYear: number;
-
   exactMatchCount: number;
   totalAxisCount: number;
-
   importantMatchCount: number;
   totalImportantCount: number;
-
   adjustmentPoints: string[];
 }
 
@@ -176,7 +159,6 @@ export interface MatchDetail extends MatchCandidate {
 export class MatchService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 기존 GET /match 기능 유지
   async matchesFor(userId: string): Promise<MatchCandidate[]> {
     const me = await this.prisma.roommatePreference.findUnique({
       where: { userId },
@@ -204,6 +186,20 @@ export class MatchService {
             avatarUrl: true,
             suspended: true,
             deletedAt: true,
+            verifiedAt: true,
+            _count: {
+              select: {
+                reviews: true,
+              },
+            },
+            reservations: {
+              where: {
+                status: "COMPLETED",
+              },
+              select: {
+                id: true,
+              },
+            },
           },
         },
       },
@@ -222,6 +218,12 @@ export class MatchService {
         continue;
       }
 
+      const badges = toBadges(
+        other.user.verifiedAt,
+        other.user.reservations.length,
+        other.user._count.reviews,
+      );
+
       candidates.push({
         userId: other.user.id,
         name: other.user.name,
@@ -232,10 +234,10 @@ export class MatchService {
         keywords: other.keywords,
         score: result.score,
         reasons: result.reasons,
+        ...badges,
       });
     }
 
-    // 기존 정렬 방식 유지
     candidates.sort(
       (a, b) => b.score - a.score || a.name.localeCompare(b.name),
     );
@@ -243,8 +245,6 @@ export class MatchService {
     return candidates;
   }
 
-  // 새 기능:
-  // GET /match/:userId
   async matchDetail(
     currentUserId: string,
     targetUserId: string,
@@ -279,6 +279,20 @@ export class MatchService {
               createdAt: true,
               suspended: true,
               deletedAt: true,
+              verifiedAt: true,
+              _count: {
+                select: {
+                  reviews: true,
+                },
+              },
+              reservations: {
+                where: {
+                  status: "COMPLETED",
+                },
+                select: {
+                  id: true,
+                },
+              },
             },
           },
         },
@@ -300,13 +314,17 @@ export class MatchService {
 
     const result = scoreMatch(me, target);
 
-    // 기존 목록에서 제외되는 사용자는
-    // 상세 URL로 직접 접근해도 볼 수 없도록 처리
     if (!result.compatible) {
       throw new NotFoundException("매칭 가능한 사용자가 아닙니다.");
     }
 
     const analysis = analyzeAxes(me, target);
+
+    const badges = toBadges(
+      target.user.verifiedAt,
+      target.user.reservations.length,
+      target.user._count.reviews,
+    );
 
     return {
       userId: target.user.id,
@@ -321,8 +339,6 @@ export class MatchService {
       joinedYear: target.user.createdAt.getFullYear(),
 
       keywords: target.keywords,
-
-      // 기존 scoreMatch 결과 그대로 사용
       score: result.score,
       reasons: result.reasons,
 
@@ -333,12 +349,12 @@ export class MatchService {
       totalImportantCount: HARD_FILTER_AXES.length,
 
       adjustmentPoints: analysis.adjustmentPoints,
+
+      ...badges,
     };
   }
 }
 
-// 상세 표시용 부가 정보 계산
-// 기존 scoreMatch 점수에는 영향을 주지 않습니다.
 function analyzeAxes(a: PreferenceAnswers, b: PreferenceAnswers) {
   let exactMatchCount = 0;
   let importantMatchCount = 0;
@@ -365,7 +381,6 @@ function analyzeAxes(a: PreferenceAnswers, b: PreferenceAnswers) {
     }
   }
 
-  // 차이가 큰 항목부터 최대 2개 표시
   const adjustmentPoints = differences
     .sort((a, b) => b.gap - a.gap)
     .slice(0, 2)
@@ -378,21 +393,16 @@ function analyzeAxes(a: PreferenceAnswers, b: PreferenceAnswers) {
   };
 }
 
-// 룸메이트 매칭
 @Controller("match")
 @UseGuards(JwtAuthGuard)
 export class MatchController {
   constructor(private readonly svc: MatchService) {}
 
-  // 기존 API 유지
-  // GET /match
   @Get()
   matches(@Req() req: any) {
     return this.svc.matchesFor(req.user.id);
   }
 
-  // 새 API 추가
-  // GET /match/:userId
   @Get(":userId")
   detail(@Req() req: any, @Param("userId") userId: string) {
     return this.svc.matchDetail(req.user.id, userId);

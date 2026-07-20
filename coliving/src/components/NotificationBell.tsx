@@ -10,6 +10,9 @@ import {
   type ApiNotification,
 } from "@/lib/api/notifications";
 import { useRouter } from "next/navigation";
+import { io } from "socket.io-client";
+import { authStore } from "@/lib/api/auth-store";
+import { SOCKET_URL } from "@/lib/api/config";
 
 export function NotificationBell() {
   const router = useRouter();
@@ -27,13 +30,31 @@ export function NotificationBell() {
   }
 
   useEffect(() => {
-    loadNotifications();
+  void loadNotifications();
 
-    // 처음에는 10초마다 확인하는 폴링 방식 사용
-    const timer = window.setInterval(loadNotifications, 10000);
+  const socket = io(`${SOCKET_URL}/notifications`, {
+    auth: (callback) => {
+      callback({
+        token: authStore.getAccessToken(),
+      });
+    },
+    transports: ["websocket"],
+  });
 
-    return () => window.clearInterval(timer);
-  }, []);
+  function handleNewNotification(notification: ApiNotification) {
+    setItems((prev) => [
+      notification,
+      ...prev.filter((item) => item.id !== notification.id),
+    ]);
+  }
+
+  socket.on("notification:new", handleNewNotification);
+
+  return () => {
+    socket.off("notification:new", handleNewNotification);
+    socket.disconnect();
+  };
+}, []);
 
   useEffect(() => {
     function closeOutside(event: MouseEvent) {

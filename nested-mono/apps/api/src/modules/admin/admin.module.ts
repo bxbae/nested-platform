@@ -7,6 +7,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
+import { activityTier, TIER_LABEL } from "../../common/activity-tier";
 
 const noticeCreateSchema = z.object({
   title: z.string().min(1, "제목을 입력해주세요.").max(200),
@@ -50,17 +51,51 @@ export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   // members (검색 + 정지 토글)
-  members(q?: string) {
-    return this.prisma.user.findMany({
+  async members(q?: string) {
+    const rows = await this.prisma.user.findMany({
       where: {
         // Hide accounts that have deleted themselves — they're anonymised and
         // shouldn't clutter the admin list.
         deletedAt: null,
         ...(q ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] } : {}),
       },
-      select: { id: true, name: true, email: true, role: true, suspended: true, createdAt: true },
+      select: {
+        id: true, name: true, email: true, role: true, suspended: true, createdAt: true,
+        verifiedAt: true,
+        // Counts that feed the activity tier.
+        _count: { select: { reviews: true } },
+        reservations: { where: { status: "COMPLETED" }, select: { id: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
+    });
+
+    return rows.map(({ _count, reservations, ...u }) => {
+      const completedStays = reservations.length;
+      const reviewsWritten = _count.reviews;
+      const tier = activityTier(completedStays, reviewsWritten);
+      return {
+        ...u,
+        verified: u.verifiedAt != null,
+        tier,
+        tierLabel: TIER_LABEL[tier],
+        completedStays,
+        reviewsWritten,
+      };
+    });
+  }
+
+  // Admin marks identity as checked (or revokes it). Separate from
+  // emailVerified: that only proves the address works, this is a human check.
+  async setVerified(userId: string, verified: boolean) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없어요." });
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { verifiedAt: verified ? new Date() : null },
+      select: { id: true, verifiedAt: true },
     });
   }
 
@@ -73,6 +108,34 @@ export class AdminService {
       });
     }
     return this.prisma.user.update({ where: { id: userId }, data: { suspended } });
+  }
+
+  // Change a member's role. Guests can promote themselves via
+  // POST /auth/become-host; this is the operational path — granting ADMIN, or
+  // demoting someone who shouldn't be hosting.
+  async setRole(adminId: string, userId: string, role: "GUEST" | "HOST" | "ADMIN") {
+    // Removing your own admin rights would lock you out of this very screen.
+    if (adminId === userId) {
+      throw new BadRequestException({
+        code: "CANNOT_CHANGE_OWN_ROLE",
+        message: "본인 계정의 역할은 변경할 수 없어요.",
+      });
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없어요." });
+    }
+    // The target keeps their old role until their token refreshes — guards read
+    // it from the JWT. Existing sessions are dropped so they re-authenticate.
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { role },
+        select: { id: true, role: true },
+      }),
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+    ]);
+    return updated;
   }
 
   // listing approvals (숙소 승인)
@@ -421,6 +484,8 @@ export class AdminService {
 }
 
 const suspendSchema = z.object({ suspended: z.boolean() });
+const verifySchema = z.object({ verified: z.boolean() });
+const roleSchema = z.object({ role: z.enum(["GUEST", "HOST", "ADMIN"]) });
 const publishSchema = z.object({ published: z.boolean() });
 const reportStatusSchema = z.object({ status: z.enum(["RECEIVED", "IN_REVIEW", "RESOLVED"]) });
 
@@ -439,6 +504,25 @@ export class AdminController {
   @Get("members")
   members(@Query("q") q?: string) {
     return this.admin.members(q);
+  }
+
+  // PATCH /admin/members/:id/verify — 신원 확인 표시 토글
+  @Patch("members/:id/verify")
+  setVerified(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(verifySchema)) dto: z.infer<typeof verifySchema>,
+  ) {
+    return this.admin.setVerified(id, dto.verified);
+  }
+
+  // PATCH /admin/members/:id/role — 역할 변경 (게스트 ↔ 호스트 ↔ 관리자)
+  @Patch("members/:id/role")
+  setRole(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(roleSchema)) dto: z.infer<typeof roleSchema>,
+  ) {
+    return this.admin.setRole(req.user.id, id, dto.role);
   }
 
   @Patch("members/:id/suspend")

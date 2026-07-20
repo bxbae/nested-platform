@@ -114,3 +114,13 @@ export async function getRoom(id: string): Promise<House> {
   if (!r.ok) throw new Error("room not found");
   return r.json();
 }
+
+// GET /rooms/:id/similar — 비슷한 숙소 추천 (유사 숙소 추천)
+// 같은 지역·방종류·가격대·편의시설이 겹치는 숙소를 최대 4개까지 점수 순으로
+// 반환한다 (실제 점수 계산은 백엔드 rooms.service.ts의 findSimilar()에서 처리).
+// 데모 모드(USE_REAL_API=false)에서는 비교할 실제 데이터가 없으므로 빈 배열 반환.
+export async function getSimilarRooms(id: string): Promise<House[]> {
+  if (!USE_REAL_API) return [];
+  const rows = await api.get<ApiRoom[]>(`/rooms/${id}/similar`, { auth: false });
+  return rows.map(apiRoomToHouse);
+}

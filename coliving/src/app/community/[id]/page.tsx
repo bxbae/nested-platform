@@ -9,6 +9,7 @@ import {
   addComment,
   deleteComment,
   deletePost,
+  updatePost,
   type PostDetail,
   type ApiComment,
 } from "@/lib/api/community";
@@ -30,6 +31,11 @@ export default function PostPage() {
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState("");
   const [posting, setPosting] = useState(false);
+  // Inline edit state — only the author sees this.
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -65,6 +71,28 @@ export default function PostPage() {
       await deleteComment(commentId);
     } catch {
       setPost({ ...post, comments: before, replies: post.replies }); // roll back
+    }
+  }
+
+  function startEdit() {
+    if (!post) return;
+    setEditTitle(post.title);
+    setEditBody(post.body);
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    if (!post || saving || !editTitle.trim() || !editBody.trim()) return;
+    setSaving(true);
+    try {
+      await updatePost(post.id, { title: editTitle.trim(), body: editBody.trim() });
+      // Reflect the change locally so the page doesn't need a refetch.
+      setPost({ ...post, title: editTitle.trim(), body: editBody.trim() });
+      setEditing(false);
+    } catch {
+      alert("수정에 실패했어요. 다시 시도해주세요.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -126,8 +154,47 @@ export default function PostPage() {
           <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>{timeAgo(post.createdAt)}</span>
         </div>
 
-        <h1 className="display" style={{ fontSize: 26, marginTop: 12 }}>{post.title}</h1>
-        <p style={{ fontSize: 15, marginTop: 10, whiteSpace: "pre-wrap" }}>{post.body}</p>
+        {editing ? (
+          <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+            <input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="제목"
+              style={{
+                padding: "10px 12px", border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)", fontSize: 17, fontWeight: 600,
+              }}
+            />
+            <textarea
+              value={editBody}
+              onChange={(e) => setEditBody(e.target.value)}
+              placeholder="내용"
+              rows={6}
+              style={{
+                padding: "10px 12px", border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)", fontSize: 15, resize: "vertical",
+              }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn btn-primary press"
+                style={{ fontSize: 13, opacity: saving ? 0.6 : 1 }}
+                onClick={saveEdit}
+                disabled={saving}
+              >
+                {saving ? "저장 중…" : "저장"}
+              </button>
+              <button className="btn btn-ghost press" style={{ fontSize: 13 }} onClick={() => setEditing(false)}>
+                취소
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <h1 className="display" style={{ fontSize: 26, marginTop: 12 }}>{post.title}</h1>
+            <p style={{ fontSize: 15, marginTop: 10, whiteSpace: "pre-wrap" }}>{post.body}</p>
+          </>
+        )}
 
         <div
           style={{
@@ -136,10 +203,15 @@ export default function PostPage() {
           }}
         >
           <span>by {post.author}</span>
-          {isAuthor && (
-            <button className="btn btn-ghost press" style={{ fontSize: 13 }} onClick={removePost}>
-              삭제
-            </button>
+          {isAuthor && !editing && (
+            <span style={{ display: "flex", gap: 4 }}>
+              <button className="btn btn-ghost press" style={{ fontSize: 13 }} onClick={startEdit}>
+                수정
+              </button>
+              <button className="btn btn-ghost press" style={{ fontSize: 13 }} onClick={removePost}>
+                삭제
+              </button>
+            </span>
           )}
         </div>
       </article>

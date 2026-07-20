@@ -20,6 +20,23 @@ export interface AvailabilityResult {
   available: boolean;
   reason?: string;
   checkOut?: string;
+  price?: QuotedPrice;
+  couponError?: boolean;
+}
+
+// 서버가 계산한 금액 내역. 쿠폰 검증(유효기간·소진·최소금액)은 서버에만
+// 있으므로, 화면은 이 값을 그대로 표시한다.
+export interface QuotedPrice {
+  monthlyRent: number;
+  months: number;
+  rentSubtotal: number;
+  deposit: number;
+  cleaningFee: number;
+  maintenanceFee: number;
+  serviceFee: number;
+  discount: number;
+  dueNow: number;
+  contractTotal: number;
 }
 
 export interface CreatedBooking {
@@ -33,6 +50,7 @@ export async function checkAvailability(input: {
   houseId: string;
   checkIn: string;
   months: number;
+  couponCode?: string;
 }): Promise<AvailabilityResult> {
   if (!USE_REAL_API) {
     const params = new URLSearchParams({
@@ -45,18 +63,29 @@ export async function checkAvailability(input: {
   }
 
   try {
-    await api.post("/reservations/quote", {
-      roomId: input.houseId,
-      checkIn: input.checkIn,
-      months: input.months,
-    });
+    const quote = await api.post<QuotedPrice & { checkOut: string }>(
+      "/reservations/quote",
+      {
+        roomId: input.houseId,
+        checkIn: input.checkIn,
+        months: input.months,
+        ...(input.couponCode ? { couponCode: input.couponCode } : {}),
+      }
+    );
     return {
       available: true,
-      checkOut: toISODate(addMonths(new Date(input.checkIn), input.months)),
+      checkOut: quote.checkOut ?? toISODate(addMonths(new Date(input.checkIn), input.months)),
+      price: quote,
     };
   } catch (e) {
     const reason = e instanceof ApiError ? e.message : "예약할 수 없는 날짜입니다.";
-    return { available: false, reason };
+    const code =
+      e instanceof ApiError && e.body && typeof e.body === "object"
+        ? (e.body as { code?: string }).code
+        : undefined;
+    const couponError =
+      code === "COUPON_INVALID" || code === "COUPON_EXPIRED" || code === "COUPON_EXHAUSTED";
+    return { available: couponError, reason, couponError };
   }
 }
 
@@ -66,6 +95,7 @@ export async function requestBooking(input: {
   guestName: string;
   moveIn: string;
   months: number;
+  couponCode?: string;
 }): Promise<CreatedBooking> {
   if (!USE_REAL_API) {
     const res = await fetch("/api/bookings", {
@@ -93,6 +123,7 @@ export async function requestBooking(input: {
       roomId: input.houseId,
       checkIn: input.moveIn,
       months: input.months,
+      ...(input.couponCode ? { couponCode: input.couponCode } : {}),
     }
   );
   return { id: r.id, status: r.status, totalDueNow: r.totalDueNow };
@@ -158,12 +189,64 @@ interface ApiReservation {
   status: string;
   createdAt: string;
   room: { id: string; name: string; region: string; image: string | null };
+  payment: { id: string; provider: string; amount: number; status: string; createdAt: string } | null;
 }
 
 function mapStatus(s: string): Booking["status"] {
   if (s === "CONFIRMED") return "paid";
   if (s === "PENDING_PAYMENT") return "hold";
   return "cancelled";
+}
+
+// ── My payments (결제 내역) ── derived from the same GET /reservations call,
+// since Payment is 1:1 with Reservation. No separate endpoint needed.
+export interface PaymentRecord {
+  id: string;
+  houseName: string;
+  amount: number;
+  method: string;
+  date: string;
+  status: "완료" | "환불";
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  TOSS: "토스페이먼츠",
+  PORTONE: "포트원",
+  STRIPE: "Stripe",
+};
+
+export async function listMyPayments(): Promise<PaymentRecord[]> {
+  if (!USE_REAL_API) {
+    const res = await fetch("/api/bookings");
+    if (!res.ok) return [];
+    const { bookings } = await res.json();
+    return (bookings as Booking[])
+      .filter((b) => b.status === "paid" || b.status === "cancelled")
+      .map((b) => ({
+        id: b.id,
+        houseName: b.houseName,
+        amount: b.totalDueNow,
+        method: "카드결제",
+        date: b.createdAt.slice(0, 10).replace(/-/g, "."),
+        status: b.status === "paid" ? "완료" : "환불",
+      }));
+  }
+
+  try {
+    const rows = await api.get<ApiReservation[]>("/reservations");
+    return rows
+      .filter((r) => r.payment) // only reservations that actually reached payment
+      .map((r) => ({
+        id: r.payment!.id,
+        houseName: r.room.name,
+        amount: r.payment!.amount,
+        method: PROVIDER_LABELS[r.payment!.provider] ?? r.payment!.provider,
+        date: r.payment!.createdAt.slice(0, 10).replace(/-/g, "."),
+        status: r.payment!.status === "COMPLETED" ? "완료" : "환불",
+      }));
+  } catch {
+    return [];
+  }
 }
 
 // ── Host: reservations received on my listings ──

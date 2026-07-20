@@ -15,6 +15,10 @@ export interface MatchCandidate {
   keywords: string[];
   score: number;
   reasons: string[];
+  // Trust signals shown on the card.
+  verified: boolean;
+  tier: "SEED" | "REGULAR" | "TRUSTED";
+  tierLabel: string;
 }
 
 export interface MatchDetail extends MatchCandidate {
