@@ -85,7 +85,7 @@ export default async function Home() {
           className="wrap"
           style={{ position: "relative", paddingTop: 88, paddingBottom: 72 }}
         >
-          <div style={{ maxWidth: 720 }}>
+          <div style={{ maxWidth: "clamp(720px, 58vw, 900px)" }}>
             <span className="eyebrow">서울의 공유주거</span>
             <h1
               className="display"
