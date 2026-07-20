@@ -14,6 +14,7 @@ import { ReviewForm } from "@/components/ReviewForm";
 import { LocationMap } from "@/components/LocationMap";
 import { USE_REAL_API } from "@/lib/api/config";
 import { getRoom, getSimilarRooms } from "@/lib/api/rooms"; // 유사 숙소 추천(비슷한 숙소) API 함수 추가
+import { DistanceFromMe } from "@/components/DistanceFromMe"; // 내 위치 거리 표시
 
 // Render this page on demand so it always reads live data and the current
 // USE_REAL_API value at request time — never a stale build-time snapshot.
@@ -179,6 +180,9 @@ export default async function HomeDetail({
             </div>
           )}
 
+          {/* 내 위치 기준 거리 표시 */}
+          <DistanceFromMe houseLat={house.lat} houseLng={house.lng} />
+
           {/* ── 호스트 소개 ── */}
           <Section title="호스트 소개">
             <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
@@ -287,6 +291,12 @@ export default async function HomeDetail({
                     <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>
                       {won(r.monthlyRent)} / 월
                     </div>
+                    {/* 추천 이유 — reasons 배열을 콤마로 이어붙여 한 줄로 표시 */}
+                    {r.reasons?.length > 0 && (
+                      <div style={{ fontSize: 12, color: "var(--primary)", marginTop: 6 }}>
+                        {r.reasons.join(" · ")}
+                      </div>
+                    )}
                   </Link>
                 ))}
               </div>

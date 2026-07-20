@@ -330,33 +330,48 @@ export class RoomsService {
     const targetAmenityIds = new Set(target.amenities.map((a) => a.amenityId));
 
     // 3) 후보 30개 각각에 대해 점수를 계산한다.
+    // 겹치는 항목이 있을 때마다 reasons 배열에 이유도 같이 기록해서,
+    // 프론트에서 "왜 추천됐는지" 문구로 보여줄 수 있게 한다.
     const scored = candidates.map((r) => {
       let score = 0;
+      const reasons: string[] = [];
 
       // 방 종류가 같으면 30점 (원룸끼리, 쉐어룸끼리 비교하는 게 의미 있으므로 배점 높게)
-      if (r.roomType === target.roomType) score += 30;
+      if (r.roomType === target.roomType) {
+        score += 30;
+        reasons.push("같은 방 종류");
+      }
 
       // 가격 차이가 적을수록 높은 점수. 5만원 차이날 때마다 1점씩 깎이고,
       // 25만원 이상 차이나면 0점 (Math.max로 음수 방지)
       const priceDiff = Math.abs(r.monthlyRent - target.monthlyRent);
       score += Math.max(0, 25 - priceDiff / 50000);
+      if (priceDiff <= 100000) {
+        reasons.push("비슷한 가격대");
+      }
 
       // 성별 정책(남성전용/여성전용/무관)이 같으면 15점
-      if (r.genderPolicy === target.genderPolicy) score += 15;
+      if (r.genderPolicy === target.genderPolicy) {
+        score += 15;
+        reasons.push("같은 성별 정책");
+      }
 
       // 편의시설이 겹치는 개수만큼 10점씩, 최대 30점까지만 인정
       const shared = r.amenities.filter((a) => targetAmenityIds.has(a.amenityId));
       score += Math.min(30, shared.length * 10);
+      if (shared.length > 0) {
+        reasons.push(`편의시설 ${shared.length}개 일치`);
+      }
 
-      return { room: r, score };
+      return { room: r, score, reasons };
     });
 
     // 4) 점수 높은 순으로 정렬해서 상위 limit(기본 4)개만 반환.
-    // room 객체만 반환하고 score는 API 응답에서는 굳이 안 보여줌 (내부 계산용).
+    // room 객체에 reasons를 얹어서 함께 반환한다 (score는 내부 계산용이라 응답엔 안 넣음).
     return scored
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map((s) => s.room);
+      .map((s) => ({ ...s.room, reasons: s.reasons }));
   }
 
 }
