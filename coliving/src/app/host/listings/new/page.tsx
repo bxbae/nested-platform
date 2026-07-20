@@ -9,6 +9,7 @@ import { won } from "@/lib/format";
 import { computePrice } from "@/lib/pricing";
 import { ROOM_TYPE_LABELS, GENDER_LABELS, type RoomType, type GenderPolicy } from "@/lib/types";
 import { createRoom, REGION_COORDS } from "@/lib/api/rooms";
+import { AddressSearch } from "@/components/AddressSearch";
 import { becomeHost } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { uploadImage } from "@/lib/api/storage";
@@ -324,9 +325,17 @@ export default function NewListing() {
               ))}
             </select>
           </Field>
-          <Field label="도로명 주소" error={errors.address?.message}>
-            <input {...register("address")} placeholder="예) 서울시 성동구 아차산로 100" />
-            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>
+          <Field label="도로명 주소">
+            {/* 카카오 우편번호 서비스 — 키 없이 무료. 선택한 주소는 서버가
+                지오코딩해 좌표로 바꾼다. */}
+            <AddressSearch
+              value={v.address}
+              onChange={(addr) =>
+                setValue("address", addr, { shouldValidate: true, shouldDirty: true })
+              }
+              error={errors.address?.message}
+            />
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>
               게스트에게는 정확한 주소가 공개되지 않고, 지도에 대략적인 위치만 표시됩니다.
             </p>
           </Field>
