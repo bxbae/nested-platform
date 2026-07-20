@@ -45,3 +45,4 @@ coverage/
 pgdata/
 redisdata/
 railway_backup.sql
+neon_backup_*.sql
