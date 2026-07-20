@@ -108,9 +108,29 @@ export function PropertyCard({
             ))}
           </div>
         )}
-        <div style={{ marginTop: 12, fontSize: 15 }}>
-          <strong>{won(house.monthlyRent)}</strong>
-          <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월</span>
+        <div style={{ marginTop: 12, fontSize: 15, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span>
+            <strong>{won(house.monthlyRent)}</strong>
+            <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월</span>
+          </span>
+          {/* 오늘 기준 누가 살고 있는 방 — 목록에서 빼지 않고 표시만 한다.
+              나중 날짜로는 입주할 수 있기 때문이다. */}
+          {house.occupied && (
+            <span
+              className="chip"
+              title={
+                house.availableAgainFrom
+                  ? `${new Date(house.availableAgainFrom).toLocaleDateString("ko-KR")}부터 입주 가능`
+                  : "현재 입주 중"
+              }
+              style={{
+                fontSize: 11, padding: "3px 9px", border: "none",
+                background: "var(--text-2)", color: "#fff",
+              }}
+            >
+              입주 중
+            </span>
+          )}
         </div>
       </div>
     </MotionLink>

@@ -37,6 +37,10 @@ export interface House {
   vibe: string[]; // e.g. "quiet", "social", "creative"
   rating: number;
   reviews: number;
+  /** 오늘 기준 누군가 살고 있어 지금은 입주할 수 없는 방 */
+  occupied?: boolean;
+  /** 현재 예약이 끝나 다시 들어갈 수 있는 날 (occupied 일 때만) */
+  availableAgainFrom?: string | null;
   color: string; // accent used in the card ring
   photo?: string; // primary thumbnail image url
   gallery?: string[]; // additional gallery images
