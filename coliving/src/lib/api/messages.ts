@@ -51,9 +51,13 @@ export async function listMessages(chatRoomId: string): Promise<ApiMessage[]> {
   }
 }
 
-// POST /messages/:chatRoomId
-export async function sendMessage(chatRoomId: string, body: string): Promise<ApiMessage> {
-  return api.post<ApiMessage>(`/messages/${chatRoomId}`, { body });
+// POST /messages/:chatRoomId — send text, an image, or both.
+export async function sendMessage(
+  chatRoomId: string,
+  body?: string,
+  imageUrl?: string,
+): Promise<ApiMessage> {
+  return api.post<ApiMessage>(`/messages/${chatRoomId}`, { body, imageUrl });
 }
 
 // POST /messages/rooms — get-or-create the thread with a listing's host.
