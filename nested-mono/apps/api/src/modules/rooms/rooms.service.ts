@@ -26,6 +26,39 @@ export interface RoomSearchQuery {
 }
 
 // Listing CRUD + search. Reads are cached; writes are host-scoped.
+// ── 입주 가능 여부 (오늘 기준) ────────────────────────────────────────
+// 오늘 날짜가 어떤 예약의 checkIn~checkOut 사이에 있으면 지금 누군가 살고 있는
+// 방이다. 목록에서 "입주 중"으로 표시해 헛걸음을 줄인다. 방을 목록에서 빼지는
+// 않는다 — 나중 날짜로는 들어갈 수 있기 때문이다.
+const OCCUPYING_STATUSES = ["PENDING_PAYMENT", "CONFIRMED"] as const;
+
+/** 오늘 진행 중인 예약만 얇게 붙여 오는 include 절. */
+function occupancyInclude() {
+  const now = new Date();
+  return {
+    reservations: {
+      where: {
+        status: { in: [...OCCUPYING_STATUSES] },
+        checkIn: { lte: now },
+        checkOut: { gt: now },
+      },
+      select: { checkOut: true },
+      take: 1,
+    },
+  };
+}
+
+/** 조회 결과에 occupied / availableAgainFrom 을 얹고 원본 관계는 걷어낸다. */
+function withOccupancy<T extends { reservations?: { checkOut: Date }[] }>(room: T) {
+  const { reservations, ...rest } = room;
+  const current = reservations?.[0];
+  return {
+    ...rest,
+    occupied: Boolean(current),
+    availableAgainFrom: current ? current.checkOut : null,
+  };
+}
+
 @Injectable()
 export class RoomsService {
   constructor(
@@ -112,13 +145,14 @@ export class RoomsService {
     // total is computed once (page 1 has no cursor) so the UI can show a count
     const total = query.cursor ? undefined : await this.prisma.room.count({ where });
 
-    const items = await this.prisma.room.findMany({
+    const rows = await this.prisma.room.findMany({
       where,
       take: take + 1,
       ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       orderBy,
-      include: { images: { orderBy: { order: "asc" }, take: 1 } },
+      include: { images: { orderBy: { order: "asc" }, take: 1 }, ...occupancyInclude() },
     });
+    const items = rows.map(withOccupancy);
 
     const hasMore = items.length > take;
     const page = hasMore ? items.slice(0, take) : items;
@@ -163,9 +197,9 @@ export class RoomsService {
     // 4) Fetch the page rows, then restore the ranked order (findMany won't keep it).
     const rows = await this.prisma.room.findMany({
       where: { id: { in: pageIds } },
-      include: { images: { orderBy: { order: "asc" }, take: 1 } },
+      include: { images: { orderBy: { order: "asc" }, take: 1 }, ...occupancyInclude() },
     });
-    const byId = new Map(rows.map((row) => [row.id, row]));
+    const byId = new Map(rows.map((row) => [row.id, withOccupancy(row)]));
     const items = pageIds.map((id) => byId.get(id)).filter(Boolean);
 
     return {
