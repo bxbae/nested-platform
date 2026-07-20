@@ -143,6 +143,10 @@ export interface SearchParams {
   minRent?: number;
   maxRent?: number;
   availableFrom?: string; // ISO date; house must be available on/before this
+  // Stay window (숙박 기간). Both set → only rooms with no overlapping
+  // reservation for that window are returned.
+  checkIn?: string; // ISO date
+  checkOut?: string; // ISO date
   gender?: GenderPolicy;
   pets?: boolean; // if true, only pet-friendly
   smoking?: boolean; // if true, only smoking-allowed

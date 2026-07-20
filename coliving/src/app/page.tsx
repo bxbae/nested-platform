@@ -44,6 +44,28 @@ export default async function Home() {
 
       {/* ── 1. Hero Banner + 2. 검색창 ── */}
       <section style={{ position: "relative", overflow: "hidden" }}>
+        {/* hero photo — right half on desktop, faded behind the copy */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundImage: "url(/hero.png)",
+            backgroundSize: "cover",
+            backgroundPosition: "center right",
+            opacity: 0.9,
+          }}
+        />
+        {/* readability scrim: solid behind the text, clearing toward the photo */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(90deg, var(--bg) 0%, var(--bg) 34%, rgba(255,255,255,0.72) 52%, rgba(255,255,255,0) 78%)",
+          }}
+        />
         {/* warm brand gradient wash */}
         <div
           aria-hidden="true"

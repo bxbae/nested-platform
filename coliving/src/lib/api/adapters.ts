@@ -54,6 +54,9 @@ export function filtersToApiQuery(f: SearchParams): URLSearchParams {
   if (f.minRent != null) p.set("minRent", String(f.minRent));
   if (f.maxRent != null) p.set("maxRent", String(f.maxRent));
   if (f.availableFrom) p.set("availableFrom", f.availableFrom);
+  // Date-range availability — the API excludes rooms booked in this window.
+  if (f.checkIn) p.set("checkIn", f.checkIn);
+  if (f.checkOut) p.set("checkOut", f.checkOut);
   if (f.gender && f.gender !== "any") p.set("gender", GENDER_TO_API[f.gender]);
   if (f.pets) p.set("petsAllowed", "true");
   if (f.smoking) p.set("smokingAllowed", "true");

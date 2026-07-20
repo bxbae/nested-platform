@@ -19,6 +19,10 @@ export interface RoomSearchQuery {
   sort?: string; // recommended | price_asc | price_desc | rating | newest
   cursor?: string;
   take?: number;
+  // Stay window (숙박 기간). When both are set, rooms already booked for any
+  // part of the window are excluded.
+  checkIn?: string;
+  checkOut?: string;
 }
 
 // Listing CRUD + search. Reads are cached; writes are host-scoped.
@@ -54,6 +58,28 @@ export class RoomsService {
     if (query.smokingAllowed !== undefined) where.smokingAllowed = query.smokingAllowed;
     if (query.parking !== undefined) where.parking = query.parking;
     if (query.availableFrom) where.availableFrom = { lte: new Date(query.availableFrom) };
+
+    // Date-range availability (날짜 기반 검색). A room is bookable for the
+    // requested window when it has NO reservation that overlaps it. Overlap is
+    // the same rule the reservation service uses:
+    //   existing.checkIn < requested.checkOut AND existing.checkOut > requested.checkIn
+    // Only reservations that still hold inventory count (PENDING_PAYMENT /
+    // CONFIRMED); cancelled or completed stays free the dates up again.
+    if (query.checkIn && query.checkOut) {
+      const from = new Date(query.checkIn);
+      const to = new Date(query.checkOut);
+      if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) {
+        // The room must also be move-in ready by the requested start date.
+        where.availableFrom = { lte: from };
+        where.reservations = {
+          none: {
+            status: { in: ["PENDING_PAYMENT", "CONFIRMED"] },
+            checkIn: { lt: to },
+            checkOut: { gt: from },
+          },
+        };
+      }
+    }
     // gender: an ANY room satisfies any request; otherwise must match
     if (query.gender && query.gender !== "ANY") {
       where.genderPolicy = { in: ["ANY", query.gender] };
