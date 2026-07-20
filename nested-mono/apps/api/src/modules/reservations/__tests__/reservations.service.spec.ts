@@ -136,6 +136,28 @@ describe("ReservationsService", () => {
     ).rejects.toMatchObject({ response: { code: "DATES_UNAVAILABLE" } });
   });
 
+  // Regression: quote used to skip the overlap check, so the UI showed
+  // "예약 가능한 날짜입니다" for dates that create() then rejected with 409.
+  it("quote rejects dates that are already booked (409)", async () => {
+    const repo = new FakeRepo();
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    await expect(
+      svc.quote({ roomId: "room1", checkIn: future, months: 3 })
+    ).rejects.toMatchObject({ response: { code: "DATES_UNAVAILABLE" } });
+  });
+
+  it("quote still succeeds for free dates after a booking ends", async () => {
+    const repo = new FakeRepo();
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    // Start right after the existing stay ends — no overlap.
+    const after = new Date(future);
+    after.setMonth(after.getMonth() + 6);
+    const q = await svc.quote({ roomId: "room1", checkIn: after, months: 3 });
+    expect(q.dueNow).toBeGreaterThan(0);
+  });
+
   it("confirms payment only when the PSP-verified amount matches", async () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(3_990_000, true));
