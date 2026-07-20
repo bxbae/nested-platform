@@ -7,7 +7,7 @@ import type { House } from "@/lib/types";
 import { ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
 import { won } from "@/lib/format";
 import { Thumbnail } from "@/components/Thumbnail";
-import { useUIStore } from "@/lib/store/ui-store";
+import { useFavorite } from "@/lib/api/useFavorites";
 
 const MotionLink = motion.create(Link);
 
@@ -20,9 +20,9 @@ export function PropertyCard({
   onHover?: (id: string | null) => void;
   active?: boolean;
 }) {
-  // client UI state from Zustand — wishlist save (persisted)
-  const saved = useUIStore((s) => s.savedIds.includes(house.id));
-  const toggleSaved = useUIStore((s) => s.toggleSaved);
+  // 찜 상태는 서버가 진실이다. 예전에는 Zustand 로컬 상태만 바꿔서, 하트는
+  // 채워지는데 새로고침하면 사라지고 상세 화면과도 어긋났다.
+  const { saved, toggle } = useFavorite(house.id);
 
   const badges: string[] = [];
   if (house.petsAllowed) badges.push("🐾 반려동물");
@@ -65,10 +65,18 @@ export function PropertyCard({
             type="button"
             aria-label={saved ? "찜 해제" : "찜하기"}
             aria-pressed={saved}
-            onClick={(e) => {
+            onClick={async (e) => {
+              // 카드 전체가 링크라 기본 이동을 막아야 한다.
               e.preventDefault();
               e.stopPropagation();
-              toggleSaved(house.id);
+              const res = await toggle();
+              if (!res.ok) {
+                alert(
+                  res.reason === "auth"
+                    ? "로그인이 필요합니다."
+                    : "잠시 후 다시 시도해주세요.",
+                );
+              }
             }}
             className="press"
             style={{
