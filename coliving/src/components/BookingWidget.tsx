@@ -7,6 +7,7 @@ import { won } from "@/lib/format";
 import { computePrice, addMonths, toISODate } from "@/lib/pricing";
 import {
   checkAvailability as checkAvailabilityApi,
+  type QuotedPrice,
   requestBooking as requestBookingApi,
   confirmBooking as confirmBookingApi,
 } from "@/lib/api/reservations";
@@ -18,6 +19,10 @@ interface Availability {
   available: boolean | null;
   reason?: string;
   checkOut?: string;
+  /** Server-quoted breakdown (authoritative, includes coupon discount). */
+  price?: QuotedPrice;
+  /** The rejection was about the coupon, not the dates. */
+  couponError?: boolean;
 }
 
 export function BookingWidget({ house }: { house: House }) {
@@ -34,34 +39,48 @@ export function BookingWidget({ house }: { house: House }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [avail, setAvail] = useState<Availability>({ loading: true, available: null });
+  // Coupon code the guest typed. `appliedCoupon` is the one currently sent to
+  // the server — we only apply on click so every keystroke doesn't re-quote.
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState("");
 
   // check-out is derived from check-in + months (월 단위 예약)
   const checkOut = toISODate(addMonths(new Date(checkIn), months));
 
-  // live price (실시간 가격 계산) — identical math to the server
-  const price = computePrice({
+  // Local estimate, used only until the server quote arrives (and in demo mode).
+  // The server is authoritative for money — coupon validity lives there — so
+  // `price` below prefers the quoted breakdown whenever we have one.
+  const localPrice = computePrice({
     monthlyRent: house.monthlyRent,
     deposit: house.deposit,
     cleaningFee: house.cleaningFee,
     maintenanceFee: house.maintenanceFee,
     months,
   });
+  const price = avail.price ?? localPrice;
 
   // ── 예약 가능 여부 ── re-check whenever dates change (debounced)
   const checkAvailability = useCallback(async () => {
     setAvail((a) => ({ ...a, loading: true }));
     try {
-      const data = await checkAvailabilityApi({ houseId: house.id, checkIn, months });
+      const data = await checkAvailabilityApi({
+        houseId: house.id,
+        checkIn,
+        months,
+        couponCode: appliedCoupon || undefined,
+      });
       setAvail({
         loading: false,
         available: data.available,
         reason: data.reason,
         checkOut: data.checkOut,
+        price: data.price,
+        couponError: data.couponError,
       });
     } catch {
       setAvail({ loading: false, available: null, reason: "확인 중 오류가 발생했습니다." });
     }
-  }, [house.id, checkIn, months]);
+  }, [house.id, checkIn, months, appliedCoupon]);
 
   useEffect(() => {
     const t = setTimeout(checkAvailability, 250);
@@ -74,6 +93,7 @@ export function BookingWidget({ house }: { house: House }) {
     setError("");
     try {
       const booking = await requestBookingApi({
+        couponCode: appliedCoupon || undefined,
         houseId: house.id,
         guestName: name || "게스트",
         moveIn: checkIn,
@@ -199,7 +219,53 @@ export function BookingWidget({ house }: { house: House }) {
             )}
           </div>
 
-          {/* 실시간 가격 계산 */}
+          {/* 쿠폰 (할인 계산은 서버가 수행) */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                value={couponInput}
+                onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === "Enter" && setAppliedCoupon(couponInput.trim())}
+                placeholder="쿠폰 코드"
+                aria-label="쿠폰 코드"
+                style={{
+                  flex: 1, padding: "9px 12px", border: "1px solid var(--border)",
+                  borderRadius: "var(--r-sm)", fontSize: 13.5, textTransform: "uppercase",
+                }}
+              />
+              {appliedCoupon ? (
+                <button
+                  className="btn btn-ghost press"
+                  style={{ fontSize: 13, padding: "9px 14px" }}
+                  onClick={() => {
+                    setAppliedCoupon("");
+                    setCouponInput("");
+                  }}
+                >
+                  해제
+                </button>
+              ) : (
+                <button
+                  className="btn btn-ghost press"
+                  style={{ fontSize: 13, padding: "9px 14px" }}
+                  onClick={() => setAppliedCoupon(couponInput.trim())}
+                  disabled={!couponInput.trim()}
+                >
+                  적용
+                </button>
+              )}
+            </div>
+            {avail.couponError && avail.reason && (
+              <p style={{ fontSize: 12.5, color: "var(--primary)", marginTop: 6 }}>{avail.reason}</p>
+            )}
+            {appliedCoupon && !avail.couponError && price.discount > 0 && (
+              <p style={{ fontSize: 12.5, color: "var(--secondary)", marginTop: 6 }}>
+                쿠폰 {appliedCoupon} 적용됨
+              </p>
+            )}
+          </div>
+
+          {/* 실시간 가격 계산 (서버 견적 우선) */}
           <Ledger
             rows={[
               ["보증금", won(price.deposit)],
@@ -207,6 +273,9 @@ export function BookingWidget({ house }: { house: House }) {
               ["청소비", won(price.cleaningFee)],
               ["관리비 (월)", won(price.maintenanceFee)],
               ["서비스 수수료 (5%)", won(price.serviceFee)],
+              ...(price.discount > 0
+                ? ([["쿠폰 할인", `-${won(price.discount)}`]] as [string, string][])
+                : []),
             ]}
             total={["입주 시 결제 금액", won(price.dueNow)]}
           />
