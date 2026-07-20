@@ -132,7 +132,7 @@ export function HeroSearch() {
         : "입주일 ~ 퇴실일";
 
   return (
-    <div ref={boxRef} style={{ position: "relative", maxWidth: 620 }}>
+    <div ref={boxRef} style={{ position: "relative", maxWidth: 620, zIndex: 100 }}>
       <div
         className="card"
         style={{
@@ -193,7 +193,7 @@ export function HeroSearch() {
         <div
           className="card"
           style={{
-            position: "absolute", top: "calc(100% + 10px)", left: 0, zIndex: 40,
+            position: "absolute", top: "calc(100% + 10px)", left: 0, zIndex: 200,
             padding: 20, boxShadow: "var(--shadow-lg, 0 12px 40px rgba(0,0,0,0.16))",
             borderRadius: "var(--r-md, 16px)", width: "min(560px, 92vw)",
           }}

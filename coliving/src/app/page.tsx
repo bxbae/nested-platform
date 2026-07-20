@@ -43,39 +43,44 @@ export default async function Home() {
       <HomeBanner />
 
       {/* ── 1. Hero Banner + 2. 검색창 ── */}
-      <section style={{ position: "relative", overflow: "hidden" }}>
-        {/* hero photo — right half on desktop, faded behind the copy */}
+      {/* NOTE: no overflow:hidden here — the date picker popover needs to escape
+          this section. The backgrounds are clipped by their own wrapper below. */}
+      <section style={{ position: "relative" }}>
+        {/* Background layers, clipped to the section so nothing bleeds out. */}
         <div
           aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            backgroundImage: "url(/hero.png)",
-            backgroundSize: "cover",
-            backgroundPosition: "center right",
-            opacity: 0.9,
-          }}
-        />
-        {/* readability scrim: solid behind the text, clearing toward the photo */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(90deg, var(--bg) 0%, var(--bg) 34%, rgba(255,255,255,0.72) 52%, rgba(255,255,255,0) 78%)",
-          }}
-        />
-        {/* warm brand gradient wash */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "radial-gradient(1000px 500px at 15% -10%, #FF5A5F18, transparent 60%), radial-gradient(900px 480px at 100% 0%, #00A69915, transparent 55%)",
-          }}
-        />
+          style={{ position: "absolute", inset: 0, overflow: "hidden" }}
+        >
+          {/* hero photo — sits to the right, behind the copy */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              backgroundImage: "url(/hero.png)",
+              backgroundSize: "cover",
+              backgroundPosition: "center right",
+              opacity: 0.9,
+            }}
+          />
+          {/* readability scrim: solid behind the text, clearing toward the photo */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "linear-gradient(90deg, var(--bg) 0%, var(--bg) 38%, rgba(255,255,255,0.78) 56%, rgba(255,255,255,0) 80%)",
+            }}
+          />
+          {/* warm brand gradient wash */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(1000px 500px at 15% -10%, #FF5A5F18, transparent 60%), radial-gradient(900px 480px at 100% 0%, #00A69915, transparent 55%)",
+            }}
+          />
+        </div>
         <div
           className="wrap"
           style={{ position: "relative", paddingTop: 88, paddingBottom: 72 }}
