@@ -10,6 +10,7 @@ import {
   type ApiNotification,
   type NotificationType,
 } from "@/lib/api/notifications";
+import { useRouter } from "next/navigation";
 
 const TYPE_COLOR: Record<NotificationType, string> = {
   RESERVATION: "#00A699",
@@ -20,6 +21,7 @@ const TYPE_COLOR: Record<NotificationType, string> = {
 };
 
 export default function Notifications() {
+  const router = useRouter();
   const [items, setItems] = useState<ApiNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const unread = items.filter((n) => !n.read).length;
@@ -32,10 +34,28 @@ export default function Notifications() {
     })();
   }, []);
 
+  function openNotification(notification: ApiNotification) {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === notification.id ? { ...item, read: true } : item,
+      ),
+    );
+
+    if (!notification.read) {
+      void markNotificationRead(notification.id);
+    }
+
+    if (notification.targetUrl) {
+      router.push(notification.targetUrl);
+    }
+  }
+
   // Optimistic: flip locally, then persist. A failed write just leaves the
   // server as-is; the next load reconciles.
   async function readOne(id: string) {
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    setItems((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+    );
     try {
       await markNotificationRead(id);
     } catch {
@@ -54,9 +74,18 @@ export default function Notifications() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          marginBottom: 20,
+        }}
+      >
         <div>
-          <h1 className="display" style={{ fontSize: 30 }}>알림</h1>
+          <h1 className="display" style={{ fontSize: 30 }}>
+            알림
+          </h1>
           <p style={{ color: "var(--text-2)", marginTop: 4 }}>
             {loading ? "불러오는 중…" : `읽지 않은 알림 ${unread}개`}
           </p>
@@ -69,7 +98,10 @@ export default function Notifications() {
       </div>
 
       {!loading && items.length === 0 ? (
-        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}>
+        <div
+          className="card"
+          style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}
+        >
           아직 알림이 없어요.
         </div>
       ) : (
@@ -77,10 +109,14 @@ export default function Notifications() {
           {items.map((n) => (
             <button
               key={n.id}
-              onClick={() => readOne(n.id)}
+              onClick={() => openNotification(n)}
               className="card press"
               style={{
-                padding: 16, textAlign: "left", display: "flex", gap: 14, alignItems: "flex-start",
+                padding: 16,
+                textAlign: "left",
+                display: "flex",
+                gap: 14,
+                alignItems: "flex-start",
                 background: !n.read ? "var(--bg-2)" : "#fff",
               }}
             >
@@ -97,16 +133,45 @@ export default function Notifications() {
                 {TYPE_LABEL[n.type]}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 8,
+                  }}
+                >
                   <strong style={{ fontSize: 14.5 }}>{n.title}</strong>
-                  <span style={{ fontSize: 12, color: "var(--text-2)", whiteSpace: "nowrap" }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-2)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {relativeTime(n.createdAt)}
                   </span>
                 </div>
-                <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 3 }}>{n.body}</div>
+                <div
+                  style={{
+                    fontSize: 13.5,
+                    color: "var(--text-2)",
+                    marginTop: 3,
+                  }}
+                >
+                  {n.body}
+                </div>
               </div>
               {!n.read && (
-                <span style={{ width: 8, height: 8, borderRadius: 99, background: "var(--primary)", flexShrink: 0, marginTop: 6 }} />
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 99,
+                    background: "var(--primary)",
+                    flexShrink: 0,
+                    marginTop: 6,
+                  }}
+                />
               )}
             </button>
           ))}

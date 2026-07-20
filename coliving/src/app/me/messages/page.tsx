@@ -9,6 +9,7 @@ import {
   type ApiChatRoom,
   type ApiMessage,
 } from "@/lib/api/messages";
+import { useSearchParams } from "next/navigation";
 
 // Inbox: conversation list on the left, thread on the right. Threads are
 // created from a listing page ("호스트에게 문의"), so an empty state here just
@@ -22,21 +23,38 @@ export default function Messages() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const wantedRoomId = searchParams.get("room");
 
   useEffect(() => {
     (async () => {
       const list = await listChatRooms();
       setRooms(list);
+      setLoading(false);
       // If we arrived with ?room=<id> (e.g. host just started a chat), open it.
       const wanted =
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("room")
           : null;
-      const initial = (wanted && list.find((r) => r.id === wanted)) || list[0] || null;
+      const initial =
+        (wanted && list.find((r) => r.id === wanted)) || list[0] || null;
       setActive(initial);
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    if (rooms.length === 0) {
+      setActive(null);
+      return;
+    }
+
+    const selectedRoom = wantedRoomId
+      ? rooms.find((room) => room.id === wantedRoomId)
+      : rooms[0];
+
+    setActive(selectedRoom ?? rooms[0]);
+  }, [rooms, wantedRoomId]);
 
   const loadThread = useCallback(async (chatRoomId: string) => {
     setMsgs(await listMessages(chatRoomId));
@@ -67,7 +85,9 @@ export default function Messages() {
   if (loading) {
     return (
       <div>
-        <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>메시지</h1>
+        <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>
+          메시지
+        </h1>
         <p style={{ color: "var(--text-2)" }}>불러오는 중…</p>
       </div>
     );
@@ -76,8 +96,13 @@ export default function Messages() {
   if (rooms.length === 0) {
     return (
       <div>
-        <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>메시지</h1>
-        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}>
+        <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>
+          메시지
+        </h1>
+        <div
+          className="card"
+          style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}
+        >
           아직 대화가 없어요.
           <div style={{ fontSize: 13.5, marginTop: 8 }}>
             숙소 상세 페이지에서 “호스트에게 문의”를 눌러 대화를 시작해보세요.
@@ -89,7 +114,9 @@ export default function Messages() {
 
   return (
     <div>
-      <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>메시지</h1>
+      <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>
+        메시지
+      </h1>
 
       <div className="inquiry-split">
         {/* conversation list */}
@@ -103,16 +130,29 @@ export default function Messages() {
                 onClick={() => setActive(r)}
                 className="card press"
                 style={{
-                  padding: 14, textAlign: "left", display: "flex", gap: 12, alignItems: "flex-start",
-                  border: active?.id === r.id ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                  padding: 14,
+                  textAlign: "left",
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "flex-start",
+                  border:
+                    active?.id === r.id
+                      ? "1.5px solid var(--text)"
+                      : "1px solid var(--border)",
                 }}
               >
                 <span
                   aria-hidden="true"
                   style={{
-                    width: 40, height: 40, borderRadius: 99, flexShrink: 0,
-                    background: "var(--primary)", display: "grid", placeItems: "center",
-                    color: "#fff", fontWeight: 700,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 99,
+                    flexShrink: 0,
+                    background: "var(--primary)",
+                    display: "grid",
+                    placeItems: "center",
+                    color: "#fff",
+                    fontWeight: 700,
                   }}
                 >
                   {title[0]}
@@ -120,12 +160,18 @@ export default function Messages() {
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <strong style={{ fontSize: 14 }}>{title}</strong>
                   <div style={{ fontSize: 12, color: "var(--text-2)" }}>
-                    {r.hostId === user?.id ? "게스트와의 대화" : "호스트와의 대화"}
+                    {r.hostId === user?.id
+                      ? "게스트와의 대화"
+                      : "호스트와의 대화"}
                   </div>
                   <div
                     style={{
-                      fontSize: 12.5, color: "var(--text-2)", marginTop: 4,
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      fontSize: 12.5,
+                      color: "var(--text-2)",
+                      marginTop: 4,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {last?.body ?? "아직 메시지가 없어요"}
@@ -138,15 +184,40 @@ export default function Messages() {
 
         {/* thread */}
         {active && (
-          <div className="card" style={{ padding: 22, display: "flex", flexDirection: "column", minHeight: 420 }}>
-            <div style={{ borderBottom: "1px solid var(--border)", paddingBottom: 14, marginBottom: 14 }}>
-              <strong style={{ fontSize: 16 }}>{active.room?.name ?? "숙소"}</strong>
+          <div
+            className="card"
+            style={{
+              padding: 22,
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 420,
+            }}
+          >
+            <div
+              style={{
+                borderBottom: "1px solid var(--border)",
+                paddingBottom: 14,
+                marginBottom: 14,
+              }}
+            >
+              <strong style={{ fontSize: 16 }}>
+                {active.room?.name ?? "숙소"}
+              </strong>
               <div style={{ fontSize: 13, color: "var(--text-2)" }}>
-                {active.hostId === user?.id ? "게스트와의 대화" : "호스트와의 대화"}
+                {active.hostId === user?.id
+                  ? "게스트와의 대화"
+                  : "호스트와의 대화"}
               </div>
             </div>
 
-            <div style={{ flex: 1, display: "grid", gap: 10, alignContent: "start" }}>
+            <div
+              style={{
+                flex: 1,
+                display: "grid",
+                gap: 10,
+                alignContent: "start",
+              }}
+            >
               {msgs.length === 0 && (
                 <p style={{ color: "var(--text-2)", fontSize: 14 }}>
                   첫 메시지를 보내보세요.
@@ -170,7 +241,9 @@ export default function Messages() {
                     {m.body}
                     <div
                       style={{
-                        fontSize: 10.5, opacity: 0.7, marginTop: 3,
+                        fontSize: 10.5,
+                        opacity: 0.7,
+                        marginTop: 3,
                         textAlign: mine ? "right" : "left",
                       }}
                     >
@@ -198,7 +271,11 @@ export default function Messages() {
               </button>
             </div>
             {error && (
-              <p style={{ fontSize: 13, color: "var(--primary)", marginTop: 8 }}>{error}</p>
+              <p
+                style={{ fontSize: 13, color: "var(--primary)", marginTop: 8 }}
+              >
+                {error}
+              </p>
             )}
           </div>
         )}

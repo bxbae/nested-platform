@@ -7,7 +7,12 @@ import { USE_REAL_API } from "./config";
 import { api } from "./client";
 import { notifications as demoNotifications } from "@/lib/me";
 
-export type NotificationType = "RESERVATION" | "PAYMENT" | "MESSAGE" | "REVIEW" | "SYSTEM";
+export type NotificationType =
+  | "RESERVATION"
+  | "PAYMENT"
+  | "MESSAGE"
+  | "REVIEW"
+  | "SYSTEM";
 
 export interface ApiNotification {
   id: string;
@@ -16,6 +21,7 @@ export interface ApiNotification {
   body: string;
   read: boolean;
   createdAt: string;
+  targetUrl: string | null;
 }
 
 // Server enum → the Korean labels the UI chips use.
@@ -48,7 +54,11 @@ export async function listNotifications(): Promise<{
   if (!USE_REAL_API) {
     const demo = demoNotifications();
     const byLabel: Record<string, NotificationType> = {
-      예약: "RESERVATION", 결제: "PAYMENT", 메시지: "MESSAGE", 리뷰: "REVIEW", 시스템: "SYSTEM",
+      예약: "RESERVATION",
+      결제: "PAYMENT",
+      메시지: "MESSAGE",
+      리뷰: "REVIEW",
+      시스템: "SYSTEM",
     };
     return {
       items: demo.map((n) => ({
@@ -58,12 +68,15 @@ export async function listNotifications(): Promise<{
         body: n.body ?? "",
         read: !n.unread,
         createdAt: new Date().toISOString(),
+        targetUrl: null,
       })),
       unread: demo.filter((n) => n.unread).length,
     };
   }
   try {
-    return await api.get<{ items: ApiNotification[]; unread: number }>("/notifications");
+    return await api.get<{ items: ApiNotification[]; unread: number }>(
+      "/notifications",
+    );
   } catch {
     return { items: [], unread: 0 };
   }
