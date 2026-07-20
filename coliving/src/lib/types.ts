@@ -32,7 +32,8 @@ export interface House {
   roomType: RoomType;
   bedrooms: number;
   residents: number;
-  capacity: number;
+  /** 함께 지낼 수 있는 최대 인원. 독채는 정원 개념이 없어 null. */
+  capacity: number | null;
   amenities: string[];
   vibe: string[]; // e.g. "quiet", "social", "creative"
   rating: number;
@@ -151,6 +152,8 @@ export interface SearchParams {
   // reservation for that window are returned.
   checkIn?: string; // ISO date
   checkOut?: string; // ISO date
+  /** 최소 수용 인원 — "N명 이상" */
+  minCapacity?: number;
   gender?: GenderPolicy;
   pets?: boolean; // if true, only pet-friendly
   smoking?: boolean; // if true, only smoking-allowed

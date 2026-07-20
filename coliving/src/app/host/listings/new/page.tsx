@@ -31,9 +31,20 @@ const listingSchema = z.object({
   minStay: z.coerce.number().min(1).max(12),
   availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
   address: z.string().min(5, "도로명 주소를 입력하세요."),
+  // 독채가 아니면 필수. 아래 superRefine 에서 타입에 따라 갈린다.
+  capacity: z.coerce.number().int().min(1).max(20).optional(),
   verifiedByHost: z.literal(true, {
     errorMap: () => ({ message: "실제 매물임을 확인해주세요." }),
   }),
+}).superRefine((data, ctx) => {
+  // 독채는 통째로 빌리므로 정원 개념이 없다. 서버도 같은 규칙으로 막는다.
+  if (data.roomType !== "whole_house" && !data.capacity) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["capacity"],
+      message: "함께 지낼 인원수를 입력하세요.",
+    });
+  }
 });
 type ListingForm = z.infer<typeof listingSchema>;
 
@@ -137,6 +148,8 @@ export default function NewListing() {
           cleaningFee: Number(form.cleaningFee),
           maintenanceFee: Number(form.maintenanceFee),
           minStayMonths: Number(form.minStay),
+          // 독채는 정원을 보내지 않는다 (서버가 거부한다).
+          capacity: form.roomType === "whole_house" ? null : Number(form.capacity),
           availableFrom: form.availableFrom,
           address: form.address,
           verifiedByHost: true,
@@ -329,6 +342,19 @@ export default function NewListing() {
               ))}
             </div>
           </Field>
+          {/* 인원수 — 독채는 정원 개념이 없어 숨긴다 */}
+          {v.roomType !== "whole_house" && (
+            <Field label="함께 지낼 인원 (명)" error={errors.capacity?.message}>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                placeholder="예: 3"
+                {...register("capacity")}
+              />
+            </Field>
+          )}
+
           <Field label="성별 조건">
             <div style={{ display: "flex", gap: 8 }}>
               {GENDERS.map((g) => (

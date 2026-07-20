@@ -64,6 +64,8 @@ export interface CreateRoomInput {
   minStayMonths: number;
   availableFrom: string; // ISO date
   images: string[];
+  /** 함께 지낼 최대 인원. 독채(whole_house)는 null 로 보낸다. */
+  capacity?: number | null;
 }
 
 // POST /rooms — host only. The listing is created unpublished and only becomes
@@ -80,6 +82,7 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
     cleaningFee: input.cleaningFee,
     maintenanceFee: input.maintenanceFee,
     minStayMonths: input.minStayMonths,
+    capacity: input.capacity ?? null,
     availableFrom: input.availableFrom,
     images: input.images,
   });

@@ -23,6 +23,8 @@ export interface RoomSearchQuery {
   // part of the window are excluded.
   checkIn?: string;
   checkOut?: string;
+  /** 최소 수용 인원. "N명 이상 지낼 수 있는 방"으로 좁힌다. */
+  minCapacity?: number;
 }
 
 // Listing CRUD + search. Reads are cached; writes are host-scoped.
@@ -91,6 +93,13 @@ export class RoomsService {
     if (query.smokingAllowed !== undefined) where.smokingAllowed = query.smokingAllowed;
     if (query.parking !== undefined) where.parking = query.parking;
     if (query.availableFrom) where.availableFrom = { lte: new Date(query.availableFrom) };
+
+    // 인원수 필터. 독채는 capacity 가 null 이라 이 조건에서 자연히 빠진다 —
+    // 정원 개념이 없는 매물을 "N명 가능"으로 셀 수는 없기 때문이다.
+    const minCapacity = Number(query.minCapacity);
+    if (Number.isFinite(minCapacity) && minCapacity > 0) {
+      where.capacity = { gte: minCapacity };
+    }
 
     // Date-range availability (날짜 기반 검색). A room is bookable for the
     // requested window when it has NO reservation that overlaps it. Overlap is
