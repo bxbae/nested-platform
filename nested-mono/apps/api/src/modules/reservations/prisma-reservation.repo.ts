@@ -99,6 +99,10 @@ export class PrismaReservationRepo implements ReservationRepo {
             images: { orderBy: { order: "asc" }, take: 1, select: { url: true } },
           },
         },
+        // Payment is 1:1 with Reservation (nullable — PENDING_PAYMENT rows have none yet).
+        payment: {
+          select: { id: true, provider: true, amount: true, status: true, createdAt: true },
+        },
       },
     });
     return rows.map((r: (typeof rows)[number]) => ({
@@ -109,6 +113,7 @@ export class PrismaReservationRepo implements ReservationRepo {
         region: r.room.region,
         image: r.room.images[0]?.url ?? null,
       },
+      payment: r.payment ?? null,
     }));
   }
 
