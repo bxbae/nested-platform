@@ -45,7 +45,8 @@ function adapt(r: ApiReview): HostReview {
   };
 }
 
-// GET /reviews/mine — reviews on every room I host
+// GET /reviews/received — reviews on every room I host.
+// (예전 경로는 /reviews/mine 이었으나, 그 경로는 "내가 쓴 리뷰"로 넘겼다.)
 export async function listHostReviews(): Promise<HostReview[]> {
   if (!USE_REAL_API) {
     return demoHostReviews().map((r, i) => ({
@@ -61,8 +62,45 @@ export async function listHostReviews(): Promise<HostReview[]> {
     }));
   }
   try {
-    const rows = await api.get<ApiReview[]>("/reviews/mine");
+    const rows = await api.get<ApiReview[]>("/reviews/received");
     return rows.map(adapt);
+  } catch {
+    return [];
+  }
+}
+
+// 내가 작성한 리뷰 (게스트 관점)
+export interface MyReview {
+  id: string;
+  roomId: string;
+  roomName: string;
+  region: string;
+  rating: number;
+  body: string;
+  date: string;
+  hostReply: string | null;
+}
+
+// GET /reviews/mine — 로그인한 사용자가 남긴 리뷰 목록
+export async function listMyReviews(): Promise<MyReview[]> {
+  if (!USE_REAL_API) return [];
+  try {
+    const rows = await api.get<
+      (ApiReview & { room?: { id: string; name: string; region: string } })[]
+    >("/reviews/mine");
+    return rows.map((r) => {
+      const d = new Date(r.createdAt);
+      return {
+        id: r.id,
+        roomId: r.room?.id ?? "",
+        roomName: r.room?.name?.trim() ?? "삭제된 숙소",
+        region: r.room?.region ?? "",
+        rating: r.rating,
+        body: r.body,
+        date: `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}`,
+        hostReply: r.hostReply ?? null,
+      };
+    });
   } catch {
     return [];
   }

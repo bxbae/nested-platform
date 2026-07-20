@@ -1,91 +1,108 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { myReviews } from "@/lib/me";
+import { useAuth } from "@/lib/api/useAuth";
+import { listMyReviews, type MyReview } from "@/lib/api/reviews";
 
+// 내가 작성한 리뷰 목록.
+//
+// 예전에는 lib/me 의 목업을 읽고 "수정" 버튼이 로컬 state 만 바꿨다 — 저장해도
+// 서버에는 아무것도 가지 않아, 새로고침하면 되돌아갔다. 서버에 리뷰 수정
+// API 가 없으므로 그 버튼은 뺐다. 있지도 않은 기능을 흉내 내기보다 실제
+// 데이터를 정확히 보여주는 편이 낫다.
 export default function MyReviews() {
-  const [reviews, setReviews] = useState(() => myReviews());
-  const [editing, setEditing] = useState<number | null>(null);
-  const [draft, setDraft] = useState("");
-  // Map each review's listing link to a real room id so it opens a live detail
-  // page instead of 404-ing on a demo id. Live rooms are round-robined.
-  const [liveIds, setLiveIds] = useState<string[]>([]);
+  const { isAuthenticated } = useAuth();
+  const [reviews, setReviews] = useState<MyReview[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/houses")
-      .then((r) => r.json())
-      .then((d) => {
-        const ids = (d.houses ?? []).map((h: { id: string }) => h.id);
-        if (ids.length > 0) setLiveIds(ids);
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+    let alive = true;
+    listMyReviews()
+      .then((rows) => {
+        if (alive) setReviews(rows);
       })
-      .catch(() => {});
-  }, []);
-
-  const linkFor = (index: number, fallbackId: string) =>
-    liveIds.length > 0 ? `/homes/${liveIds[index % liveIds.length]}` : `/homes/${fallbackId}`;
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isAuthenticated]);
 
   return (
     <div>
-      <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>리뷰 관리</h1>
+      <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>내 리뷰</h1>
       <p style={{ color: "var(--text-2)", marginBottom: 20 }}>
-        내가 작성한 후기 {reviews.length}개
+        {loading ? "불러오는 중…" : `내가 작성한 후기 ${reviews.length}개`}
       </p>
 
-      <div style={{ display: "grid", gap: 14 }}>
-        {reviews.map((r, i) => (
-          <div key={i} className="card" style={{ padding: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-              <div>
-                <Link href={linkFor(i, r.houseId)}>
-                  <strong style={{ fontSize: 15 }}>{r.houseName}</strong>
-                </Link>
-                <div style={{ fontSize: 12.5, color: "var(--warning)", marginTop: 3 }}>
-                  {"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}
-                  <span style={{ color: "var(--text-2)", marginLeft: 6 }}>{r.date}</span>
+      {!loading && !isAuthenticated && (
+        <div className="card" style={{ padding: 32, textAlign: "center" }}>
+          <p style={{ color: "var(--text-2)", marginBottom: 16 }}>
+            리뷰를 보려면 로그인이 필요해요.
+          </p>
+          <Link href="/?auth=1" className="btn btn-primary press">로그인</Link>
+        </div>
+      )}
+
+      {!loading && isAuthenticated && reviews.length === 0 && (
+        <div
+          className="card"
+          style={{
+            padding: 40, textAlign: "center", color: "var(--text-2)",
+            border: "1px dashed var(--border)", background: "transparent",
+          }}
+        >
+          아직 작성한 리뷰가 없어요. 이용을 마친 숙소에 첫 후기를 남겨보세요.
+        </div>
+      )}
+
+      {reviews.length > 0 && (
+        <div style={{ display: "grid", gap: 14 }}>
+          {reviews.map((r) => (
+            <div key={r.id} className="card" style={{ padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0 }}>
+                  {r.roomId ? (
+                    <Link href={`/homes/${r.roomId}`}>
+                      <strong style={{ fontSize: 15 }}>{r.roomName}</strong>
+                    </Link>
+                  ) : (
+                    <strong style={{ fontSize: 15, color: "var(--text-2)" }}>{r.roomName}</strong>
+                  )}
+                  <div style={{ fontSize: 12.5, color: "var(--warning)", marginTop: 3 }}>
+                    {"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}
+                    <span style={{ color: "var(--text-2)", marginLeft: 6 }}>
+                      {r.date}{r.region ? ` · ${r.region}` : ""}
+                    </span>
+                  </div>
                 </div>
               </div>
-              {editing !== i && (
-                <button
-                  className="btn btn-ghost press"
-                  style={{ fontSize: 13, padding: "6px 14px" }}
-                  onClick={() => { setEditing(i); setDraft(r.body); }}
+
+              <p style={{ fontSize: 14, marginTop: 12, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                {r.body}
+              </p>
+
+              {r.hostReply && (
+                <div
+                  style={{
+                    marginTop: 12, padding: 12, borderRadius: "var(--r-sm)",
+                    background: "var(--bg-2)", fontSize: 13.5, lineHeight: 1.6,
+                  }}
                 >
-                  수정
-                </button>
+                  <strong style={{ fontSize: 12.5, color: "var(--text-2)" }}>호스트 답글</strong>
+                  <p style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>{r.hostReply}</p>
+                </div>
               )}
             </div>
-
-            {editing === i ? (
-              <div style={{ marginTop: 12 }}>
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  rows={3}
-                  style={{ width: "100%", padding: 12, border: "1px solid var(--border)", borderRadius: "var(--r-sm)", resize: "vertical" }}
-                />
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button
-                    className="btn btn-primary press"
-                    style={{ fontSize: 13, padding: "8px 16px" }}
-                    onClick={() => {
-                      setReviews((prev) => prev.map((x, j) => (j === i ? { ...x, body: draft } : x)));
-                      setEditing(null);
-                    }}
-                  >
-                    저장
-                  </button>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => setEditing(null)}>
-                    취소
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p style={{ fontSize: 14, marginTop: 12, lineHeight: 1.6 }}>{r.body}</p>
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
