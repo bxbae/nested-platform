@@ -333,6 +333,46 @@ export class AuthService {
   // (some via RESTRICT), and other people's history shouldn't break because
   // someone left. Instead we anonymise the personal fields and mark the row
   // deleted. The account's contributions survive as "탈퇴한 사용자".
+  // GUEST → HOST. Anyone may list a room; the safety gate is that new listings
+  // start unpublished and an admin approves them (/admin/approvals), so opening
+  // this up doesn't put unvetted rooms in front of guests.
+  //
+  // Returns a fresh token pair: the caller's current JWT still carries the old
+  // role, and every guard reads the role from the token — without new tokens
+  // they'd stay a GUEST until the next login.
+  async becomeHost(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, role: true, createdAt: true, deletedAt: true, suspended: true },
+    });
+    if (!user || user.deletedAt) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+    }
+    if (user.suspended) {
+      throw new BadRequestException({ code: "ACCOUNT_SUSPENDED", message: "정지된 계정입니다." });
+    }
+    // Admins already outrank hosts — silently downgrading them would be a bug.
+    if (user.role === "ADMIN") {
+      throw new BadRequestException({
+        code: "ALREADY_PRIVILEGED",
+        message: "관리자 계정은 호스트 전환이 필요하지 않습니다.",
+      });
+    }
+    if (user.role === "HOST") {
+      throw new BadRequestException({ code: "ALREADY_HOST", message: "이미 호스트예요." });
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { role: "HOST" },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+
+    return this.issueTokens(
+      updated.id, updated.email, updated.role, updated.name, updated.createdAt,
+    );
+  }
+
   async deleteAccount(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

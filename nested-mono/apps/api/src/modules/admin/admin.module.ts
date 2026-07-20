@@ -110,6 +110,34 @@ export class AdminService {
     return this.prisma.user.update({ where: { id: userId }, data: { suspended } });
   }
 
+  // Change a member's role. Guests can promote themselves via
+  // POST /auth/become-host; this is the operational path — granting ADMIN, or
+  // demoting someone who shouldn't be hosting.
+  async setRole(adminId: string, userId: string, role: "GUEST" | "HOST" | "ADMIN") {
+    // Removing your own admin rights would lock you out of this very screen.
+    if (adminId === userId) {
+      throw new BadRequestException({
+        code: "CANNOT_CHANGE_OWN_ROLE",
+        message: "본인 계정의 역할은 변경할 수 없어요.",
+      });
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) {
+      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없어요." });
+    }
+    // The target keeps their old role until their token refreshes — guards read
+    // it from the JWT. Existing sessions are dropped so they re-authenticate.
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { role },
+        select: { id: true, role: true },
+      }),
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+    ]);
+    return updated;
+  }
+
   // listing approvals (숙소 승인)
   pendingRooms() {
     return this.prisma.room.findMany({
@@ -457,6 +485,7 @@ export class AdminService {
 
 const suspendSchema = z.object({ suspended: z.boolean() });
 const verifySchema = z.object({ verified: z.boolean() });
+const roleSchema = z.object({ role: z.enum(["GUEST", "HOST", "ADMIN"]) });
 const publishSchema = z.object({ published: z.boolean() });
 const reportStatusSchema = z.object({ status: z.enum(["RECEIVED", "IN_REVIEW", "RESOLVED"]) });
 
@@ -484,6 +513,16 @@ export class AdminController {
     @Body(new ZodValidationPipe(verifySchema)) dto: z.infer<typeof verifySchema>,
   ) {
     return this.admin.setVerified(id, dto.verified);
+  }
+
+  // PATCH /admin/members/:id/role — 역할 변경 (게스트 ↔ 호스트 ↔ 관리자)
+  @Patch("members/:id/role")
+  setRole(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(roleSchema)) dto: z.infer<typeof roleSchema>,
+  ) {
+    return this.admin.setRole(req.user.id, id, dto.role);
   }
 
   @Patch("members/:id/suspend")

@@ -149,6 +149,15 @@ export async function resetPassword(token: string, newPassword: string): Promise
 
 // DELETE /auth/me — soft-delete own account. Clears local auth on success so
 // the app drops to a logged-out state.
+// POST /auth/become-host — 게스트 → 호스트 전환.
+// The API returns a fresh token pair because guards read the role from the JWT;
+// storing it here means the user can list a room without logging in again.
+export async function becomeHost(): Promise<AuthUser> {
+  const res = await api.post<AuthTokens>("/auth/become-host");
+  authStore.set(res);
+  return res.user;
+}
+
 export async function deleteAccount(): Promise<void> {
   await api.delete("/auth/me");
   logout();

@@ -151,6 +151,16 @@ export class AuthController {
   }
 
   // DELETE /auth/me — soft-delete own account (anonymise + block login).
+  // POST /auth/become-host — GUEST 계정을 호스트로 전환.
+  // Responds with a new token pair so the client can act as a host immediately
+  // (guards read the role from the JWT, not the database).
+  @Post("become-host")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  becomeHost(@Req() req: any) {
+    return this.auth.becomeHost(req.user.id);
+  }
+
   @Delete("me")
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)

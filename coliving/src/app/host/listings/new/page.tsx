@@ -9,6 +9,8 @@ import { won } from "@/lib/format";
 import { computePrice } from "@/lib/pricing";
 import { ROOM_TYPE_LABELS, GENDER_LABELS, type RoomType, type GenderPolicy } from "@/lib/types";
 import { createRoom, REGION_COORDS } from "@/lib/api/rooms";
+import { becomeHost } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
 import { uploadImage } from "@/lib/api/storage";
 import { USE_REAL_API } from "@/lib/api/config";
 
@@ -41,6 +43,12 @@ export default function NewListing() {
   const [amenities, setAmenities] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Set when the API rejects the listing because the account is still a GUEST.
+  // We show an inline upgrade prompt instead of a dead-end error.
+  const [needsHost, setNeedsHost] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  // Kept so the upgrade prompt can resubmit exactly what the user filled in.
+  const [pendingForm, setPendingForm] = useState<ListingForm | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -137,13 +145,64 @@ export default function NewListing() {
       }
       setSubmitted(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "숙소를 등록하지 못했어요.");
+      // 403 = signed in, but not a host yet. Offer the upgrade rather than
+      // leaving the user stuck on an error they can't act on.
+      if (e instanceof ApiError && e.status === 403) {
+        setNeedsHost(true);
+        setPendingForm(form);
+        setError(null);
+      } else {
+        setError(e instanceof Error ? e.message : "숙소를 등록하지 못했어요.");
+      }
     } finally {
       setSaving(false);
     }
   }
+
+  // Promote to HOST and retry — the API hands back new tokens carrying the new
+  // role, so the very next request is authorised.
+  async function upgradeToHost() {
+    if (upgrading) return;
+    setUpgrading(true);
+    try {
+      await becomeHost();
+      setNeedsHost(false);
+      if (pendingForm) await submit(pendingForm);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "호스트 전환에 실패했어요.");
+    } finally {
+      setUpgrading(false);
+    }
+  }
   function toggleAmenity(a: string) {
     setAmenities((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
+  }
+
+  // The account is signed in but still a GUEST — offer the one-click upgrade
+  // rather than an error the user can do nothing about.
+  if (needsHost) {
+    return (
+      <div className="card" style={{ padding: 40, textAlign: "center", maxWidth: 460, margin: "40px auto" }}>
+        <strong style={{ fontSize: 18 }}>호스트로 전환해야 등록할 수 있어요</strong>
+        <p style={{ color: "var(--text-2)", marginTop: 8, lineHeight: 1.6 }}>
+          지금 계정은 게스트예요. 호스트로 전환하면 방금 입력한 내용 그대로 등록됩니다.
+          등록한 숙소는 관리자 승인 후 노출돼요.
+        </p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 18 }}>
+          <button
+            className="btn btn-primary press"
+            onClick={upgradeToHost}
+            disabled={upgrading}
+            style={{ opacity: upgrading ? 0.6 : 1 }}
+          >
+            {upgrading ? "전환 중…" : "호스트로 전환하고 등록"}
+          </button>
+          <button className="btn btn-ghost press" onClick={() => setNeedsHost(false)}>
+            돌아가기
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (submitted) {
