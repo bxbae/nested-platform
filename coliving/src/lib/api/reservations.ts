@@ -96,6 +96,8 @@ export async function requestBooking(input: {
   moveIn: string;
   months: number;
   couponCode?: string;
+  /** 함께 살 룸메이트. 지정하면 상대에게 수락 대기 초대가 걸린다. */
+  companionId?: string;
 }): Promise<CreatedBooking> {
   if (!USE_REAL_API) {
     const res = await fetch("/api/bookings", {
@@ -124,6 +126,7 @@ export async function requestBooking(input: {
       checkIn: input.moveIn,
       months: input.months,
       ...(input.couponCode ? { couponCode: input.couponCode } : {}),
+      ...(input.companionId ? { companionId: input.companionId } : {}),
     }
   );
   return { id: r.id, status: r.status, totalDueNow: r.totalDueNow };
@@ -158,6 +161,39 @@ export async function confirmBooking(input: {
     amount: input.amount,
   });
   return { id: r.id, status: r.status };
+}
+
+// ── 공동 예약 초대 (룸메이트와 함께) ─────────────────────────────────
+export type CompanionStatus = "PENDING" | "ACCEPTED" | "DECLINED";
+
+export interface CompanionInvite {
+  id: string;
+  roomId: string;
+  room: { id: string; name: string; region: string; image: string | null };
+  checkIn: string;
+  checkOut: string;
+  months: number;
+  companionStatus: CompanionStatus | null;
+  totalDueNow: number;
+  createdAt: string;
+}
+
+// GET /reservations/invites — 내가 룸메이트로 초대된 예약들
+export async function listCompanionInvites(): Promise<CompanionInvite[]> {
+  if (!USE_REAL_API) return [];
+  try {
+    return await api.get<CompanionInvite[]>("/reservations/invites");
+  } catch {
+    return [];
+  }
+}
+
+// PATCH /reservations/:id/companion — 초대 수락 / 거절
+export async function respondToInvite(
+  reservationId: string,
+  decision: "accept" | "decline",
+): Promise<void> {
+  await api.patch(`/reservations/${reservationId}/companion`, { decision });
 }
 
 export async function cancelBooking(reservationId: string): Promise<void> {

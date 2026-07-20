@@ -11,6 +11,7 @@ import {
   requestBooking as requestBookingApi,
   confirmBooking as confirmBookingApi,
 } from "@/lib/api/reservations";
+import { getMatches, type MatchCandidate } from "@/lib/api/match";
 
 type Step = "config" | "pay" | "done";
 
@@ -43,6 +44,12 @@ export function BookingWidget({ house }: { house: House }) {
   // the server — we only apply on click so every keystroke doesn't re-quote.
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState("");
+  // 룸메이트와 함께 예약. 성향 매칭에서 궁합이 맞는 상대만 고를 수 있다 —
+  // 아무나 지정하는 게 아니라 이미 잘 맞는다고 판단된 사람과 함께 사는 흐름.
+  const [withCompanion, setWithCompanion] = useState(false);
+  const [mates, setMates] = useState<MatchCandidate[]>([]);
+  const [matesLoading, setMatesLoading] = useState(false);
+  const [companionId, setCompanionId] = useState("");
 
   // check-out is derived from check-in + months (월 단위 예약)
   const checkOut = toISODate(addMonths(new Date(checkIn), months));
@@ -88,6 +95,25 @@ export function BookingWidget({ house }: { house: House }) {
   }, [checkAvailability]);
 
   // ── 예약 요청 → hold ──
+  // 체크박스를 켤 때만 매칭 목록을 불러온다 — 대부분의 예약은 혼자 하므로
+  // 화면 진입마다 부르면 불필요한 요청이 된다.
+  async function toggleCompanion(on: boolean) {
+    setWithCompanion(on);
+    if (!on) {
+      setCompanionId("");
+      return;
+    }
+    if (mates.length > 0) return;
+    setMatesLoading(true);
+    try {
+      setMates(await getMatches());
+    } catch {
+      setMates([]);
+    } finally {
+      setMatesLoading(false);
+    }
+  }
+
   async function requestBooking() {
     setBusy(true);
     setError("");
@@ -98,6 +124,7 @@ export function BookingWidget({ house }: { house: House }) {
         guestName: name || "게스트",
         moveIn: checkIn,
         months,
+        companionId: withCompanion && companionId ? companionId : undefined,
       });
       setHoldId(booking.id);
       setStep("pay");
@@ -216,6 +243,55 @@ export function BookingWidget({ house }: { house: House }) {
               <span style={{ fontSize: 13, color: "var(--primary)", fontWeight: 600 }}>
                 ✕ {avail.reason}
               </span>
+            )}
+          </div>
+
+          {/* 룸메이트와 함께 예약 (공동 예약) */}
+          <div style={{ marginTop: 14 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={withCompanion}
+                onChange={(e) => toggleCompanion(e.target.checked)}
+                style={{ width: 15, height: 15, cursor: "pointer" }}
+              />
+              룸메이트와 함께 살기
+            </label>
+
+            {withCompanion && (
+              <div style={{ marginTop: 8 }}>
+                {matesLoading ? (
+                  <p style={{ fontSize: 12.5, color: "var(--text-2)" }}>매칭된 상대를 불러오는 중…</p>
+                ) : mates.length === 0 ? (
+                  <p style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+                    아직 매칭된 상대가 없어요.{" "}
+                    <a href="/me/preference" style={{ color: "var(--primary)" }}>생활 성향 설문</a>을
+                    마치면 잘 맞는 룸메이트를 찾아드려요.
+                  </p>
+                ) : (
+                  <>
+                    <select
+                      value={companionId}
+                      onChange={(e) => setCompanionId(e.target.value)}
+                      aria-label="룸메이트 선택"
+                      style={{
+                        width: "100%", padding: "9px 12px", fontSize: 13.5,
+                        border: "1px solid var(--border)", borderRadius: "var(--r-sm)",
+                      }}
+                    >
+                      <option value="">룸메이트를 선택하세요</option>
+                      {mates.map((mate) => (
+                        <option key={mate.userId} value={mate.userId}>
+                          {mate.name} · 궁합 {mate.score}%
+                        </option>
+                      ))}
+                    </select>
+                    <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6, lineHeight: 1.6 }}>
+                      결제는 예약자인 내가 전액 진행하고, 상대에게는 수락 요청이 전달돼요.
+                    </p>
+                  </>
+                )}
+              </div>
             )}
           </div>
 
