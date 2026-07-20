@@ -18,13 +18,18 @@ import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
+import { NotificationsModule } from "../notifications/notifications.module";
+import { NotificationsGateway } from "../notifications/notifications.gateway";
 
 const CATEGORIES = ["NOTICE", "EVENT", "CHORE", "MARKET", "CHAT", "SEEKING"] as const;
 type Category = (typeof CATEGORIES)[number];
 
 @Injectable()
 export class CommunityService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsGateway: NotificationsGateway,
+  ) {}
 
   // Board listing. Pinned posts float to the top, then newest first.
   // `_count.comments` is what the UI shows as "💬 N replies".
@@ -127,13 +132,49 @@ export class CommunityService {
   }
 
   async addComment(authorId: string, postId: string, body: string) {
-    const exists = await this.prisma.post.findUnique({ where: { id: postId }, select: { id: true } });
-    if (!exists) throw new NotFoundException({ code: "POST_NOT_FOUND", message: "게시글을 찾을 수 없습니다." });
-
-    return this.prisma.comment.create({
-      data: { authorId, postId, body },
-      include: { author: { select: { id: true, name: true } } },
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { id: true, title: true, authorId: true },
     });
+
+    if (!post) {
+      throw new NotFoundException({
+        code: "POST_NOT_FOUND",
+        message: "게시글을 찾을 수 없습니다.",
+      });
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const comment = await tx.comment.create({
+        data: { authorId, postId, body },
+        include: { author: { select: { id: true, name: true } } },
+      });
+
+      let notification = null;
+
+      if (post.authorId !== authorId) {
+        notification = await tx.notification.create({
+          data: {
+            userId: post.authorId,
+            type: "MESSAGE",
+            title: "내 게시글에 새 댓글이 달렸어요",
+            body: `"${post.title}" 게시글에 새로운 댓글이 등록되었습니다.`,
+            targetUrl: `/community/${post.id}`,
+          },
+        });
+      }
+
+      return { comment, notification };
+    });
+
+    if (result.notification) {
+      this.notificationsGateway.emitToUser(
+        post.authorId,
+        result.notification,
+      );
+    }
+
+    return result.comment;
   }
 
   async removeComment(userId: string, commentId: string, role?: string) {
@@ -225,6 +266,7 @@ export class CommunityController {
 }
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [CommunityController],
   providers: [CommunityService],
 })
