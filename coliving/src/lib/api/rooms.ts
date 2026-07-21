@@ -107,6 +107,28 @@ export async function listMyRooms(): Promise<HostListing[]> {
   }));
 }
 
+// PATCH /rooms/:id — 호스트 본인 매물만. 서버가 소유권을 확인한다.
+// 사진·주소처럼 등록 흐름 전체가 필요한 항목은 제외하고, 자주 손보는 값만
+// 부분 수정으로 받는다.
+export interface UpdateRoomInput {
+  monthlyRent?: number;
+  deposit?: number;
+  cleaningFee?: number;
+  maintenanceFee?: number;
+  minStayMonths?: number;
+  availableFrom?: string; // ISO date
+  capacity?: number | null;
+}
+
+export async function updateRoom(id: string, input: UpdateRoomInput): Promise<void> {
+  await api.patch(`/rooms/${id}`, input);
+}
+
+// DELETE /rooms/:id — 예약이 걸려 있으면 서버가 거부한다.
+export async function deleteRoom(id: string): Promise<void> {
+  await api.delete(`/rooms/${id}`);
+}
+
 export async function getRoom(id: string): Promise<House> {
   if (USE_REAL_API) {
     const r = await api.get<ApiRoom>(`/rooms/${id}`, { auth: false });
