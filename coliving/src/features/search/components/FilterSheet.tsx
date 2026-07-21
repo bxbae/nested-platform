@@ -188,6 +188,25 @@ export function FilterSheet({
           </Section>
 
           {/* Gender */}
+          {/* 방 개수 — 미입력 매물은 조건을 만족하지 않아 제외된다 */}
+          <Section title="방 개수">
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[1, 2, 3, 4].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="chip"
+                  data-active={draft.minBedrooms === n}
+                  onClick={() =>
+                    set({ minBedrooms: draft.minBedrooms === n ? undefined : n })
+                  }
+                >
+                  {n}개 이상
+                </button>
+              ))}
+            </div>
+          </Section>
+
           {/* 인원수 — 독채는 정원이 없어 이 필터를 걸면 자연히 제외된다 */}
           <Section title="함께 지낼 인원">
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

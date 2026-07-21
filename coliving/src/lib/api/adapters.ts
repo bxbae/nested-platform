@@ -56,6 +56,7 @@ export function filtersToApiQuery(f: SearchParams): URLSearchParams {
   if (f.availableFrom) p.set("availableFrom", f.availableFrom);
   // Date-range availability — the API excludes rooms booked in this window.
   if (f.minCapacity) p.set("minCapacity", String(f.minCapacity));
+  if (f.minBedrooms) p.set("minBedrooms", String(f.minBedrooms));
   if (f.checkIn) p.set("checkIn", f.checkIn);
   if (f.checkOut) p.set("checkOut", f.checkOut);
   if (f.gender && f.gender !== "any") p.set("gender", GENDER_TO_API[f.gender]);
@@ -141,7 +142,8 @@ export function apiRoomToHouse(r: ApiRoom): House {
     cleaningFee: r.cleaningFee,
     maintenanceFee: r.maintenanceFee,
     roomType: fromApiRoomType(r.roomType),
-    bedrooms: 1,
+    // 서버가 내려주는 침실 개수. 미입력이면 null.
+    bedrooms: (r as { bedrooms?: number | null }).bedrooms ?? null,
     residents: 0,
     // 서버가 내려주는 정원. 독채는 null.
     capacity: (r as { capacity?: number | null }).capacity ?? null,

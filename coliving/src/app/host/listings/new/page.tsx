@@ -34,6 +34,8 @@ const listingSchema = z.object({
   address: z.string().min(5, "도로명 주소를 입력하세요."),
   // 독채가 아니면 필수. 아래 superRefine 에서 타입에 따라 갈린다.
   capacity: z.coerce.number().int().min(1).max(20).optional(),
+  // 침실 개수 — 선택 항목이라 비워도 등록된다.
+  bedrooms: z.coerce.number().int().min(1).max(10).optional(),
   verifiedByHost: z.literal(true, {
     errorMap: () => ({ message: "실제 매물임을 확인해주세요." }),
   }),
@@ -151,6 +153,7 @@ export default function NewListing() {
           minStayMonths: Number(form.minStay),
           // 독채는 정원을 보내지 않는다 (서버가 거부한다).
           capacity: form.roomType === "whole_house" ? null : Number(form.capacity),
+          bedrooms: form.bedrooms ? Number(form.bedrooms) : null,
           availableFrom: form.availableFrom,
           address: form.address,
           verifiedByHost: true,
@@ -403,6 +406,34 @@ export default function NewListing() {
 
       {/* 편의시설 */}
       <Section title="편의시설">
+        {/* 방 개수 — 편의시설과 함께 고르지만 태그가 아니라 숫자로 저장한다.
+            그래야 검색에서 "방 2개 이상" 같은 조건을 걸 수 있다. */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>
+            방 개수
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className="chip"
+                data-active={v.bedrooms === n}
+                onClick={() =>
+                  setValue("bedrooms", v.bedrooms === n ? undefined : n, {
+                    shouldDirty: true,
+                  })
+                }
+              >
+                {n}개{n === 5 ? " 이상" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>
+          시설
+        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {AMENITIES.map((a) => (
             <button key={a} type="button" className="chip" data-active={amenities.includes(a)} onClick={() => toggleAmenity(a)}>{a}</button>

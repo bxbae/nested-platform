@@ -30,7 +30,8 @@ export interface House {
   cleaningFee: number; // 청소비 (one-time, due at move-in)
   maintenanceFee: number; // 관리비 (monthly)
   roomType: RoomType;
-  bedrooms: number;
+  /** 침실 개수. 미입력이면 null. */
+  bedrooms: number | null;
   residents: number;
   /** 함께 지낼 수 있는 최대 인원. 독채는 정원 개념이 없어 null. */
   capacity: number | null;
@@ -154,6 +155,8 @@ export interface SearchParams {
   checkOut?: string; // ISO date
   /** 최소 수용 인원 — "N명 이상" */
   minCapacity?: number;
+  /** 최소 침실 개수 — "방 N개 이상" */
+  minBedrooms?: number;
   gender?: GenderPolicy;
   pets?: boolean; // if true, only pet-friendly
   smoking?: boolean; // if true, only smoking-allowed
