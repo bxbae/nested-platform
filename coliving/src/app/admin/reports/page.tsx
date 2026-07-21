@@ -29,6 +29,8 @@ const TARGET_LABEL: Record<string, string> = {
   REVIEW: "리뷰",
   USER: "사용자",
   MESSAGE: "메시지",
+  COMMUNITY_POST: "커뮤니티 게시글",
+  COMMUNITY_COMMENT: "커뮤니티 댓글",
 };
 
 // The next step in the flow, or null if already resolved.
@@ -233,6 +235,15 @@ export default function AdminReports() {
                     disabled={contextBusyId === r.id}
                   >
                     채팅 보기
+                  </button>
+                )}
+                {(r.targetType === "COMMUNITY_POST" || r.targetType === "COMMUNITY_COMMENT") && (
+                  <button
+                    className="chip"
+                    style={{ fontSize: 12, cursor: "pointer" }}
+                    onClick={() => window.open(r.targetType === "COMMUNITY_POST" ? `/community/${r.targetId}` : `/community`, "_blank", "noopener,noreferrer")}
+                  >
+                    원문 보기
                   </button>
                 )}
                 <button

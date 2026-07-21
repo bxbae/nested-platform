@@ -6,14 +6,15 @@ import type { Post } from "@/lib/types";
 import { useAuth } from "@/lib/api/useAuth";
 import { listPosts, createPost } from "@/lib/api/community";
 import { searchRooms } from "@/lib/api/rooms";
+import { getPreference, SURVEY, type PreferenceView } from "@/lib/api/preference";
 
 const categories = [
-  { id: "all", label: "All" },
-  { id: "notice", label: "Notices" },
-  { id: "event", label: "Events" },
-  { id: "chore", label: "Chores" },
-  { id: "market", label: "Market" },
-  { id: "chat", label: "Chat" },
+  { id: "all", label: "전체" },
+  { id: "notice", label: "공지" },
+  { id: "event", label: "이벤트" },
+  { id: "chore", label: "생활 분담" },
+  { id: "market", label: "중고거래" },
+  { id: "chat", label: "자유" },
   { id: "seeking", label: "방 구함" },
 ];
 
@@ -33,6 +34,8 @@ export default function Community() {
   const [showNew, setShowNew] = useState(false);
   const [draft, setDraft] = useState({ title: "", body: "", category: "chat" });
   const { isAuthenticated } = useAuth();
+  const [preference, setPreference] = useState<PreferenceView | null>(null);
+  const [sharedLifestyleFields, setSharedLifestyleFields] = useState<string[]>([]);
   // Posts hang off a room's board. The UI has no house picker yet, so we post
   // to the first available room — enough to exercise the real relation.
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -48,6 +51,7 @@ export default function Community() {
   }, [load]);
 
   useEffect(() => {
+    getPreference().then((p) => { setPreference(p); if (p?.isCompleted) setSharedLifestyleFields(["noise","cleanliness","smoking","pets"]); }).catch(() => setPreference(null));
     searchRooms({})
       .then((res) => setRoomId(res.items[0]?.id ?? null))
       .catch(() => setRoomId(null));
@@ -56,7 +60,7 @@ export default function Community() {
   async function submit() {
     if (!draft.title.trim() || !roomId) return;
     try {
-      await createPost({ roomId, ...draft });
+      await createPost({ roomId, ...draft, sharedLifestyleFields: draft.category === "seeking" ? sharedLifestyleFields : [] });
     } catch {
       return; // guard rejects when signed out; the button is hidden then anyway
     }
@@ -72,12 +76,12 @@ export default function Community() {
         <div>
           <span className="eyebrow">Seongsu Loom · house feed</span>
           <h1 className="display" style={{ fontSize: 40, marginTop: 8 }}>
-            Community
+            커뮤니티
           </h1>
         </div>
         {isAuthenticated ? (
           <button className="btn btn-primary" onClick={() => setShowNew((s) => !s)}>
-            {showNew ? "Close" : "New post"}
+            {showNew ? "닫기" : "글쓰기"}
           </button>
         ) : (
           <Link href="/?auth=1" className="btn btn-ghost press">
@@ -89,25 +93,25 @@ export default function Community() {
       {showNew && (
         <div className="card" style={{ padding: 20, marginTop: 20, display: "grid", gap: 14 }}>
           <div className="field">
-            <label>Title</label>
+            <label>제목 *</label>
             <input
               value={draft.title}
               onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              placeholder="What's going on?"
+              placeholder="어떤 이야기를 나누고 싶나요?"
             />
           </div>
           <div className="field">
-            <label>Details</label>
+            <label>내용 *</label>
             <textarea
               value={draft.body}
               onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-              placeholder="Add a little context for your housemates."
+              placeholder="상황과 필요한 정보를 자세히 작성해주세요."
               rows={3}
               style={{ padding: 11, border: "1px solid var(--border)", borderRadius: 8, resize: "vertical" }}
             />
           </div>
           <div className="field">
-            <label>Category</label>
+            <label>카테고리 *</label>
             <div style={{ display: "flex", gap: 7 }}>
               {categories.slice(1).map((c) => (
                 <button
@@ -121,9 +125,21 @@ export default function Community() {
               ))}
             </div>
           </div>
-          <button className="btn btn-primary" style={{ justifySelf: "start" }} onClick={submit}>
-            Post to the house
-          </button>
+          {draft.category === "seeking" && (
+            <div className="field">
+              <label>공개할 생활 성향</label>
+              {preference?.isCompleted ? (
+                <>
+                  <p style={{fontSize:12.5,color:"var(--text-2)",marginBottom:8}}>마이페이지에 저장된 성향입니다. 다시 입력하지 않고 공개할 항목만 선택하세요.</p>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
+                    {SURVEY.map(({axis,options})=>{const value=(preference as any)[axis];const label=options.find(o=>o.value===value)?.label??value;const checked=sharedLifestyleFields.includes(axis);return <button type="button" key={axis} className="chip" data-active={checked} onClick={()=>setSharedLifestyleFields(v=>checked?v.filter(x=>x!==axis):[...v,axis])}>{checked?"✓ ":""}{label}</button>})}
+                  </div>
+                </>
+              ) : <p style={{fontSize:13,color:"var(--text-2)"}}>생활 성향을 먼저 등록하면 방 구함 글에 자동으로 불러올 수 있습니다.</p>}
+            </div>
+          )}
+          <p style={{fontSize:12.5,color:"var(--text-2)"}}>실명, 전화번호, 이메일, 정확한 주소는 공개 글에 작성하지 마세요. 개인적인 대화는 Nested 메시지를 이용해주세요.</p>
+          <button className="btn btn-primary" style={{ justifySelf: "start" }} onClick={submit}>게시글 등록</button>
         </div>
       )}
 
@@ -138,7 +154,7 @@ export default function Community() {
 
       {/* Feed */}
       <div style={{ display: "grid", gap: 12 }}>
-        {loading && <div style={{ color: "var(--text-2)" }}>Loading feed…</div>}
+        {loading && <div style={{ color: "var(--text-2)" }}>게시글을 불러오는 중…</div>}
         {posts.map((p) => (
           <Link
             key={p.id}
@@ -176,7 +192,7 @@ export default function Community() {
             <p style={{ fontSize: 14.5, color: "var(--text-2)", marginTop: 6 }}>{p.body}</p>
             <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 13, color: "var(--text-2)" }}>
               <span>by {p.author}</span>
-              <span>💬 {p.replies} replies</span>
+              <span>💬 {p.replies}</span>
             </div>
           </Link>
         ))}

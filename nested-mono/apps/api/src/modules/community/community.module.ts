@@ -1,20 +1,21 @@
 import {
-  Controller,
-  Get,
-  Post as HttpPost,
-  Patch,
-  Delete,
   Body,
-  Param,
-  Query,
-  UseGuards,
-  Req,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
   Injectable,
   Module,
   NotFoundException,
-  ForbiddenException,
+  Param,
+  Patch,
+  Post as HttpPost,
+  Query,
+  Req,
+  UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
@@ -29,27 +30,42 @@ const CATEGORIES = [
   "CHAT",
   "SEEKING",
 ] as const;
+const STATUSES = ["OPEN", "IN_PROGRESS", "COMPLETED", "CLOSED"] as const;
+const LIFESTYLE_FIELDS = [
+  "noise",
+  "cleanliness",
+  "smoking",
+  "pets",
+  "visitors",
+  "sleep",
+  "sociability",
+  "sharedSpace",
+  "drinking",
+  "keywords",
+] as const;
 type Category = (typeof CATEGORIES)[number];
+type Status = (typeof STATUSES)[number];
 
 @Injectable()
 export class CommunityService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly notifications: NotificationsGateway,
   ) {}
 
-  // Board listing. Pinned posts float to the top, then newest first.
-  // `_count.comments` is what the UI shows as "💬 N replies".
-  // `q` does a case-insensitive keyword match on title/body — used by hosts to
-  // search "방 구함"(SEEKING) posts for suitable tenants.
-  async list(category?: string, q?: string) {
+  async list(category?: string, q?: string, status?: string) {
     const categoryWhere =
       category &&
       category !== "all" &&
       CATEGORIES.includes(category.toUpperCase() as Category)
         ? { category: category.toUpperCase() as Category }
         : {};
-
+    const statusWhere =
+      status &&
+      status !== "all" &&
+      STATUSES.includes(status.toUpperCase() as Status)
+        ? { status: status.toUpperCase() as Status }
+        : {};
     const keyword = q?.trim();
     const keywordWhere = keyword
       ? {
@@ -59,12 +75,13 @@ export class CommunityService {
           ],
         }
       : {};
-
     return this.prisma.post.findMany({
-      where: { ...categoryWhere, ...keywordWhere },
+      where: { ...categoryWhere, ...statusWhere, ...keywordWhere },
       orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
       include: {
-        author: { select: { id: true, name: true } },
+        author: {
+          select: { id: true, name: true, avatarColor: true, avatarUrl: true },
+        },
         _count: { select: { comments: true } },
       },
     });
@@ -74,11 +91,37 @@ export class CommunityService {
     const post = await this.prisma.post.findUnique({
       where: { id },
       include: {
-        author: { select: { id: true, name: true } },
-        comments: {
-          orderBy: { createdAt: "asc" },
-          include: { author: { select: { id: true, name: true } } },
+        author: {
+          select: { id: true, name: true, avatarColor: true, avatarUrl: true },
         },
+        comments: {
+          where: { parentId: null },
+          orderBy: { createdAt: "asc" },
+          include: {
+            author: {
+              select: {
+                id: true,
+                name: true,
+                avatarColor: true,
+                avatarUrl: true,
+              },
+            },
+            replies: {
+              orderBy: { createdAt: "asc" },
+              include: {
+                author: {
+                  select: {
+                    id: true,
+                    name: true,
+                    avatarColor: true,
+                    avatarUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        _count: { select: { comments: true } },
       },
     });
     if (!post)
@@ -91,8 +134,29 @@ export class CommunityService {
 
   async create(
     authorId: string,
-    dto: { roomId: string; category: Category; title: string; body: string },
+    dto: {
+      roomId: string;
+      category: Category;
+      title: string;
+      body: string;
+      status?: Status;
+      sharedLifestyleFields?: string[];
+    },
   ) {
+    const safeFields = (dto.sharedLifestyleFields ?? []).filter((v) =>
+      (LIFESTYLE_FIELDS as readonly string[]).includes(v),
+    );
+    let lifestyleSnapshot: Prisma.InputJsonObject | undefined;
+    if (dto.category === "SEEKING" && safeFields.length) {
+      const pref = await this.prisma.roommatePreference.findUnique({
+        where: { userId: authorId },
+      });
+      if (pref?.isCompleted) {
+        lifestyleSnapshot = Object.fromEntries(
+          safeFields.map((key) => [key, (pref as any)[key]]),
+        );
+      }
+    }
     return this.prisma.post.create({
       data: {
         authorId,
@@ -100,22 +164,20 @@ export class CommunityService {
         category: dto.category,
         title: dto.title,
         body: dto.body,
+        status: dto.status ?? "OPEN",
+        sharedLifestyleFields: safeFields,
+        lifestyleSnapshot,
       },
       include: {
-        author: { select: { id: true, name: true } },
+        author: {
+          select: { id: true, name: true, avatarColor: true, avatarUrl: true },
+        },
         _count: { select: { comments: true } },
       },
     });
   }
 
-  // Only the author can delete their own post.
-  // Edit a post. Only the author may edit — an admin moderating content should
-  // remove it, not silently rewrite what someone else said.
-  async update(
-    userId: string,
-    id: string,
-    dto: { category?: Category; title?: string; body?: string },
-  ) {
+  private async assertPostAuthor(userId: string, id: string) {
     const post = await this.prisma.post.findUnique({
       where: { id },
       select: { authorId: true },
@@ -125,19 +187,27 @@ export class CommunityService {
         code: "POST_NOT_FOUND",
         message: "게시글을 찾을 수 없습니다.",
       });
-    if (post.authorId !== userId) {
+    if (post.authorId !== userId)
       throw new ForbiddenException({
         code: "NOT_AUTHOR",
-        message: "본인이 쓴 글만 수정할 수 있습니다.",
+        message: "본인이 쓴 글만 변경할 수 있습니다.",
       });
-    }
+  }
+
+  async update(
+    userId: string,
+    id: string,
+    dto: {
+      category?: Category;
+      title?: string;
+      body?: string;
+      status?: Status;
+    },
+  ) {
+    await this.assertPostAuthor(userId, id);
     return this.prisma.post.update({
       where: { id },
-      data: {
-        ...(dto.category !== undefined ? { category: dto.category } : {}),
-        ...(dto.title !== undefined ? { title: dto.title } : {}),
-        ...(dto.body !== undefined ? { body: dto.body } : {}),
-      },
+      data: dto,
       include: {
         author: { select: { id: true, name: true } },
         _count: { select: { comments: true } },
@@ -145,8 +215,6 @@ export class CommunityService {
     });
   }
 
-  // Delete a post. The author can remove their own; an ADMIN can remove any
-  // post so reports (/admin/reports) can actually be acted on.
   async remove(userId: string, id: string, role?: string) {
     const post = await this.prisma.post.findUnique({
       where: { id },
@@ -157,75 +225,137 @@ export class CommunityService {
         code: "POST_NOT_FOUND",
         message: "게시글을 찾을 수 없습니다.",
       });
-    if (post.authorId !== userId && role !== "ADMIN") {
+    if (post.authorId !== userId && role !== "ADMIN")
       throw new ForbiddenException({
         code: "NOT_AUTHOR",
         message: "본인이 쓴 글만 삭제할 수 있습니다.",
       });
-    }
     await this.prisma.post.delete({ where: { id } });
     return { ok: true };
   }
 
-  async addComment(authorId: string, postId: string, body: string) {
+  async addComment(
+    authorId: string,
+    postId: string,
+    body: string,
+    parentId?: string,
+  ) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: { id: true, title: true, authorId: true },
     });
-
-    if (!post) {
+    if (!post)
       throw new NotFoundException({
         code: "POST_NOT_FOUND",
         message: "게시글을 찾을 수 없습니다.",
       });
+    let parent: {
+      id: string;
+      authorId: string;
+      parentId: string | null;
+    } | null = null;
+    if (parentId) {
+      parent = (await this.prisma.comment.findUnique({
+        where: { id: parentId },
+        select: {
+          id: true,
+          authorId: true,
+          parentId: true,
+          postId: true,
+        } as any,
+      })) as any;
+      if (!parent || (parent as any).postId !== postId)
+        throw new NotFoundException({
+          code: "COMMENT_NOT_FOUND",
+          message: "답글 대상 댓글을 찾을 수 없습니다.",
+        });
+      if (parent.parentId) parentId = parent.parentId; // 1단계 대댓글만 유지
     }
-
+    const notifyUserId =
+      parentId && parent?.authorId !== authorId
+        ? parent?.authorId
+        : post.authorId !== authorId
+          ? post.authorId
+          : null;
     const result = await this.prisma.$transaction(async (tx) => {
       const comment = await tx.comment.create({
-        data: { authorId, postId, body },
-        include: { author: { select: { id: true, name: true } } },
-      });
-
-      let notification = null;
-
-      if (post.authorId !== authorId) {
-        notification = await tx.notification.create({
-          data: {
-            userId: post.authorId,
-            type: "COMMENT",
-            title: "내 게시글에 새 댓글이 달렸어요",
-            body: `"${post.title}" 게시글에 새로운 댓글이 등록되었습니다.`,
-            targetUrl: `/community/${post.id}`,
+        data: { authorId, postId, body, parentId },
+        include: {
+          author: {
+            select: {
+              id: true,
+              name: true,
+              avatarColor: true,
+              avatarUrl: true,
+            },
           },
-        });
-      }
-
+          replies: true,
+        },
+      });
+      const notification = notifyUserId
+        ? await tx.notification.create({
+            data: {
+              userId: notifyUserId,
+              type: "COMMENT",
+              title: parentId
+                ? "내 댓글에 답글이 달렸어요"
+                : "내 게시글에 새 댓글이 달렸어요",
+              body: parentId
+                ? `“${post.title}” 게시글의 내 댓글에 답글이 등록되었습니다.`
+                : `“${post.title}” 게시글에 새로운 댓글이 등록되었습니다.`,
+              targetUrl: `/community/${post.id}`,
+            },
+          })
+        : null;
       return { comment, notification };
     });
-
-    if (result.notification) {
-      this.notificationsGateway.emitToUser(post.authorId, result.notification);
-    }
-
+    if (result.notification && notifyUserId)
+      this.notifications.emitToUser(notifyUserId, result.notification);
     return result.comment;
   }
 
-  async removeComment(userId: string, commentId: string, role?: string) {
-    const comment = await this.prisma.comment.findUnique({
+  async updateComment(userId: string, commentId: string, body: string) {
+    const c = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: { authorId: true },
     });
-    if (!comment)
+    if (!c)
       throw new NotFoundException({
         code: "COMMENT_NOT_FOUND",
         message: "댓글을 찾을 수 없습니다.",
       });
-    if (comment.authorId !== userId && role !== "ADMIN") {
+    if (c.authorId !== userId)
+      throw new ForbiddenException({
+        code: "NOT_AUTHOR",
+        message: "본인이 쓴 댓글만 수정할 수 있습니다.",
+      });
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: { body },
+      include: {
+        author: {
+          select: { id: true, name: true, avatarColor: true, avatarUrl: true },
+        },
+        replies: true,
+      },
+    });
+  }
+
+  async removeComment(userId: string, commentId: string, role?: string) {
+    const c = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { authorId: true },
+    });
+    if (!c)
+      throw new NotFoundException({
+        code: "COMMENT_NOT_FOUND",
+        message: "댓글을 찾을 수 없습니다.",
+      });
+    if (c.authorId !== userId && role !== "ADMIN")
       throw new ForbiddenException({
         code: "NOT_AUTHOR",
         message: "본인이 쓴 댓글만 삭제할 수 있습니다.",
       });
-    }
     await this.prisma.comment.delete({ where: { id: commentId } });
     return { ok: true };
   }
@@ -234,78 +364,76 @@ export class CommunityService {
 const createPostSchema = z.object({
   roomId: z.string().min(1),
   category: z.enum(CATEGORIES).default("CHAT"),
-  title: z.string().min(1).max(120),
-  body: z.string().min(1).max(5000),
+  title: z.string().trim().min(1).max(120),
+  body: z.string().trim().min(1).max(5000),
+  status: z.enum(STATUSES).optional(),
+  sharedLifestyleFields: z
+    .array(z.enum(LIFESTYLE_FIELDS))
+    .max(LIFESTYLE_FIELDS.length)
+    .optional(),
 });
-
 const updatePostSchema = z.object({
   category: z.enum(CATEGORIES).optional(),
-  title: z.string().min(1).max(120).optional(),
-  body: z.string().min(1).max(5000).optional(),
+  title: z.string().trim().min(1).max(120).optional(),
+  body: z.string().trim().min(1).max(5000).optional(),
+  status: z.enum(STATUSES).optional(),
 });
-
 const commentSchema = z.object({
-  body: z.string().min(1).max(2000),
+  body: z.string().trim().min(1).max(2000),
+  parentId: z.string().optional(),
 });
 
-// 커뮤니티 API — reads are public so the board is browsable while logged out;
-// writes require a session.
 @Controller("posts")
 export class CommunityController {
   constructor(private readonly community: CommunityService) {}
-
-  @Get()
-  list(@Query("category") category?: string, @Query("q") q?: string) {
-    return this.community.list(category, q);
+  @Get() list(
+    @Query("category") category?: string,
+    @Query("q") q?: string,
+    @Query("status") status?: string,
+  ) {
+    return this.community.list(category, q, status);
   }
-
-  @Get(":id")
-  get(@Param("id") id: string) {
+  @Get(":id") get(@Param("id") id: string) {
     return this.community.getById(id);
   }
-
-  @HttpPost()
-  @UseGuards(JwtAuthGuard)
-  create(
+  @HttpPost() @UseGuards(JwtAuthGuard) create(
     @Req() req: any,
     @Body(new ZodValidationPipe(createPostSchema)) dto: any,
   ) {
     return this.community.create(req.user.id, dto);
   }
-
-  // Declared before DELETE /:id so "comments" isn't captured as a post id.
-  @Delete("comments/:commentId")
-  @UseGuards(JwtAuthGuard)
-  removeComment(@Req() req: any, @Param("commentId") commentId: string) {
-    return this.community.removeComment(req.user.id, commentId, req.user.role);
+  @Patch("comments/:commentId") @UseGuards(JwtAuthGuard) updateComment(
+    @Req() req: any,
+    @Param("commentId") id: string,
+    @Body(new ZodValidationPipe(commentSchema.pick({ body: true }))) dto: any,
+  ) {
+    return this.community.updateComment(req.user.id, id, dto.body);
   }
-
-  // PATCH /posts/:id — edit your own post
-  @Patch(":id")
-  @UseGuards(JwtAuthGuard)
-  update(
+  @Delete("comments/:commentId") @UseGuards(JwtAuthGuard) removeComment(
+    @Req() req: any,
+    @Param("commentId") id: string,
+  ) {
+    return this.community.removeComment(req.user.id, id, req.user.role);
+  }
+  @Patch(":id") @UseGuards(JwtAuthGuard) update(
     @Req() req: any,
     @Param("id") id: string,
-    @Body(new ZodValidationPipe(updatePostSchema))
-    dto: z.infer<typeof updatePostSchema>,
+    @Body(new ZodValidationPipe(updatePostSchema)) dto: any,
   ) {
     return this.community.update(req.user.id, id, dto);
   }
-
-  @Delete(":id")
-  @UseGuards(JwtAuthGuard)
-  remove(@Req() req: any, @Param("id") id: string) {
+  @Delete(":id") @UseGuards(JwtAuthGuard) remove(
+    @Req() req: any,
+    @Param("id") id: string,
+  ) {
     return this.community.remove(req.user.id, id, req.user.role);
   }
-
-  @HttpPost(":id/comments")
-  @UseGuards(JwtAuthGuard)
-  addComment(
+  @HttpPost(":id/comments") @UseGuards(JwtAuthGuard) addComment(
     @Req() req: any,
     @Param("id") id: string,
     @Body(new ZodValidationPipe(commentSchema)) dto: any,
   ) {
-    return this.community.addComment(req.user.id, id, dto.body);
+    return this.community.addComment(req.user.id, id, dto.body, dto.parentId);
   }
 }
 
