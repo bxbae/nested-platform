@@ -13,12 +13,12 @@ import {
 } from "@/lib/landing";
 import { loadHouses } from "@/lib/houses-source";
 import type { House } from "@/lib/types";
+import { getPersonalizedRooms } from "@/lib/api/rooms"; // 개인화 숙소 추천
+import { PersonalizedSection } from "@/components/PersonalizedSection";
 
 // Always render on demand so the recommended list reflects live DB rooms.
 export const dynamic = "force-dynamic";
 
-// Recommended homes come from the same source as the browse page
-// (live backend when enabled, else demo seed) via the shared module.
 async function loadRecommended(limit = 4): Promise<House[]> {
   try {
     const all = await loadHouses();
@@ -179,10 +179,11 @@ export default async function Home() {
         </div>
       </section>
 
+      <PersonalizedSection />
       {/* ── 4. 추천 숙소 ── */}
       <section className="section" style={{ paddingTop: 40, paddingBottom: 40 }}>
         <div className="wrap">
-          <SectionHead
+        <SectionHead
             eyebrow="추천 숙소"
             title="이번 주 추천하는 집"
             href="/search"

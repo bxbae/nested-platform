@@ -153,3 +153,24 @@ export async function getSimilarRooms(id: string): Promise<(House & { reasons: s
   const rows = await api.get<(ApiRoom & { reasons: string[] })[]>(`/rooms/${id}/similar`, { auth: false });
   return rows.map((r) => ({ ...apiRoomToHouse(r), reasons: r.reasons ?? [] }));
 }
+
+// GET /rooms/personalized — 개인화 숙소 추천
+// 찜 목록 기반으로 스코어링한 숙소 목록 + 로그인한 사용자 이름을 같이 받아온다.
+// 이름은 홈 화면에서 "OOO님을 위한 숙소 추천!"이라는 타이틀을 만드는 데 쓰인다.
+// 백엔드(rooms.service.ts의 getPersonalizedRooms())가 배열이 아니라
+// { rooms, userName } 객체를 반환하므로, 그 형태를 그대로 따른다.
+// 데모 모드(USE_REAL_API=false)나 비로그인 상태에서는 빈 결과로 처리.
+export async function getPersonalizedRooms(): Promise<{
+  rooms: (House & { personalizedReason: string | null })[];
+  userName: string | null;
+}> {
+  if (!USE_REAL_API) return { rooms: [], userName: null };
+  const res = await api.get<{
+    rooms: (ApiRoom & { personalizedReason: string | null })[];
+    userName: string | null;
+  }>("/rooms/personalized");
+  return {
+    rooms: res.rooms.map((r) => ({ ...apiRoomToHouse(r), personalizedReason: r.personalizedReason })),
+    userName: res.userName,
+  };
+}
