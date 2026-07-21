@@ -121,7 +121,11 @@ export interface SettlementRow {
   roomName: string;
   guestName: string;
   checkIn: string;
+  checkOut: string;
   months: number;
+  occupants: number;
+  monthlyRent: number;
+  deposit: number;
   gross: number;
   commission: number;
   net: number;
@@ -134,11 +138,22 @@ export interface SettlementSummary {
   totalNet: number;
   scheduledNet: number;
   paidNet: number;
+  totalDeposit: number;
+  totalOccupants: number;
 }
 
 export async function getHostSettlements(): Promise<SettlementSummary> {
   if (!USE_REAL_API) {
-    return { rows: [], totalGross: 0, totalCommission: 0, totalNet: 0, scheduledNet: 0, paidNet: 0 };
+    return {
+      rows: [],
+      totalGross: 0,
+      totalCommission: 0,
+      totalNet: 0,
+      scheduledNet: 0,
+      paidNet: 0,
+      totalDeposit: 0,
+      totalOccupants: 0,
+    };
   }
   return api.get<SettlementSummary>("/host/settlements");
 }
