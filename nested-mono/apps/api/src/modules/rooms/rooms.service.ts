@@ -51,20 +51,48 @@ function occupancyInclude() {
         checkIn: { lte: now },
         checkOut: { gt: now },
       },
-      select: { checkOut: true },
-      take: 1,
+      // 거주 인원을 세려면 전부 필요하다 — 한 방에 여러 예약이 있을 수 있고,
+      // 공동 예약은 동반자까지 포함해야 한다.
+      select: { checkOut: true, companionId: true, companionStatus: true },
     },
   };
 }
 
 /** 조회 결과에 occupied / availableAgainFrom 을 얹고 원본 관계는 걷어낸다. */
-function withOccupancy<T extends { reservations?: { checkOut: Date }[] }>(room: T) {
+type OccupancyReservation = {
+  checkOut: Date;
+  companionId: string | null;
+  companionStatus: string | null;
+};
+
+/**
+ * occupied / availableAgainFrom / residents 를 얹고 원본 관계는 걷어낸다.
+ *
+ * residents 는 지금 그 방에 실제로 살고 있는 사람 수다. 예약 1건당 예약자
+ * 1명이고, 공동 예약에서 동반자가 수락(ACCEPTED)했으면 1명을 더 센다.
+ * 초대 대기(PENDING)나 거절(DECLINED)은 아직 살고 있는 게 아니므로 빼야 한다.
+ */
+function withOccupancy<T extends { reservations?: OccupancyReservation[] }>(room: T) {
   const { reservations, ...rest } = room;
-  const current = reservations?.[0];
+  const current = reservations ?? [];
+
+  const residents = current.reduce((sum, r) => {
+    return sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0);
+  }, 0);
+
+  // 가장 늦게 끝나는 예약이 곧 다시 입주 가능한 시점이다.
+  // 초기값을 null 로 두면 빈 배열도 자연히 처리되고, 인덱스 접근이 없어
+  // 컴파일러가 undefined 를 걱정할 일도 없다.
+  const availableAgainFrom = current.reduce<Date | null>(
+    (latest, r) => (latest === null || r.checkOut > latest ? r.checkOut : latest),
+    null,
+  );
+
   return {
     ...rest,
-    occupied: Boolean(current),
-    availableAgainFrom: current ? current.checkOut : null,
+    occupied: current.length > 0,
+    availableAgainFrom,
+    residents,
   };
 }
 
@@ -248,6 +276,7 @@ export class RoomsService {
           orderBy: { createdAt: "desc" },
           include: { author: { select: { name: true, avatarColor: true } } },
         },
+        ...occupancyInclude(),
       },
     });
     if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
@@ -263,7 +292,14 @@ export class RoomsService {
     // leave the server for a public listing view — guests only ever see the
     // approximate lat/lng (rendered as a privacy circle on the map).
     const { address: _address, ...publicRoom } = room;
-    const result = { ...publicRoom, rating, reviewCount, reviewList: room.reviews };
+    // 현재 거주 인원 · 입주 가능 여부를 얹는다. 캐시가 60초라 예약 직후
+    // 잠깐은 이전 값이 보일 수 있지만, 그 정도 지연은 감수할 만하다.
+    const result = {
+      ...withOccupancy(publicRoom),
+      rating,
+      reviewCount,
+      reviewList: room.reviews,
+    };
     await this.redis.cacheSet(cacheKey, result, 60);
     return result;
   }
