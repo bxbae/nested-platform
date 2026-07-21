@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Socket } from "socket.io-client";
 import { useAuth } from "@/lib/api/useAuth";
 import {
@@ -17,6 +18,7 @@ import {
 } from "@/lib/api/messages";
 import { uploadImage } from "@/lib/api/storage";
 import { createChatSocket } from "@/lib/api/socket";
+import { reportMessage } from "@/lib/api/reports";
 
 type Conversation =
   | { kind: "room"; id: string; raw: ApiChatRoom }
@@ -46,11 +48,20 @@ export default function MessagesPage() {
   // 사용자가 확인 후 "보내기"를 눌러야 실제로 업로드+전송한다.
   const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null);
   const pendingImageRef = useRef<{ file: File; previewUrl: string } | null>(null);
+  // 신고 팝업 상태
+  const [reportTargetId, setReportTargetId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportDone, setReportDone] = useState(false);
+  const [portalMounted, setPortalMounted] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const messageBottomRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => setPortalMounted(true), []);
 
   // 언마운트 시 남아있는 미리보기 objectURL을 정리한다.
   useEffect(() => {
@@ -309,6 +320,39 @@ export default function MessagesPage() {
       element.scrollHeight - element.scrollTop - element.clientHeight < 100;
   }
 
+  // 상대방 메시지 옆 "신고" 버튼 → 팝업 열기
+  function openReportModal(messageId: string) {
+    setReportTargetId(messageId);
+    setReportReason("");
+    setReportError(null);
+    setReportDone(false);
+  }
+
+  function closeReportModal() {
+    if (reportSubmitting) return;
+    setReportTargetId(null);
+  }
+
+  // 신고 접수: 백엔드가 Report(targetType=MESSAGE)로 저장하고,
+  // 관리자는 /admin/reports 화면에서 그대로 조회/처리한다.
+  async function submitReport() {
+    if (!reportTargetId || reportSubmitting) return;
+    if (!reportReason.trim()) {
+      setReportError("신고 사유를 입력해주세요.");
+      return;
+    }
+    setReportSubmitting(true);
+    setReportError(null);
+    try {
+      await reportMessage(reportTargetId, reportReason.trim());
+      setReportDone(true);
+    } catch (cause) {
+      setReportError(cause instanceof Error ? cause.message : "신고 접수에 실패했습니다.");
+    } finally {
+      setReportSubmitting(false);
+    }
+  }
+
   if (loading) {
     return <p style={{ color: "var(--text-2)" }}>메시지를 불러오는 중…</p>;
   }
@@ -422,7 +466,29 @@ export default function MessagesPage() {
                             </div>
                           </div>
 
-                          {!mine && <span style={{ marginBottom: 2, color: "var(--text-2)", fontSize: 10.5 }}>{formatMessageTime(message.createdAt)}</span>}
+                          {!mine && (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, marginBottom: 2 }}>
+                              <span style={{ color: "var(--text-2)", fontSize: 10.5 }}>{formatMessageTime(message.createdAt)}</span>
+                              <button
+                                type="button"
+                                aria-label="메시지 신고"
+                                title="신고"
+                                onClick={() => openReportModal(message.id)}
+                                style={{
+                                  border: "none",
+                                  background: "none",
+                                  padding: 0,
+                                  color: "var(--text-2)",
+                                  fontSize: 10.5,
+                                  cursor: "pointer",
+                                  textDecoration: "underline",
+                                  textUnderlineOffset: 2,
+                                }}
+                              >
+                                신고
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </Fragment>
                     );
@@ -496,6 +562,125 @@ export default function MessagesPage() {
           )}
         </div>
       )}
+
+      {portalMounted &&
+        reportTargetId &&
+        createPortal(
+          <ReportMessageModal
+            reason={reportReason}
+            onReasonChange={setReportReason}
+            submitting={reportSubmitting}
+            error={reportError}
+            done={reportDone}
+            onCancel={closeReportModal}
+            onSubmit={() => void submitReport()}
+          />,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+// 메시지 신고 팝업. 접수되면 Report(targetType=MESSAGE)로 저장되고,
+// 관리자는 /admin/reports 화면에서 그대로 조회·처리한다.
+function ReportMessageModal({
+  reason,
+  onReasonChange,
+  submitting,
+  error,
+  done,
+  onCancel,
+  onSubmit,
+}: {
+  reason: string;
+  onReasonChange: (value: string) => void;
+  submitting: boolean;
+  error: string | null;
+  done: boolean;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 380,
+          background: "var(--surface, #fff)",
+          border: "1px solid var(--border, #ebebeb)",
+          borderRadius: 20,
+          padding: 24,
+          boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+        }}
+      >
+        {done ? (
+          <>
+            <strong style={{ display: "block", fontSize: 16, marginBottom: 8 }}>신고가 접수됐어요</strong>
+            <p style={{ fontSize: 13.5, color: "var(--text-2)", marginBottom: 20 }}>
+              운영팀이 확인 후 처리할게요. 신고해주셔서 감사합니다.
+            </p>
+            <button className="btn btn-primary press" onClick={onCancel} style={{ width: "100%" }}>
+              확인
+            </button>
+          </>
+        ) : (
+          <>
+            <strong style={{ display: "block", fontSize: 16, marginBottom: 4 }}>메시지 신고</strong>
+            <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 14 }}>
+              신고 사유를 알려주시면 운영팀이 확인 후 조치할게요.
+            </p>
+            <textarea
+              value={reason}
+              onChange={(event) => onReasonChange(event.target.value)}
+              placeholder="예: 스팸/광고, 욕설·비방, 사기 의심 등"
+              rows={4}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                padding: "10px 12px",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                fontSize: 14,
+                fontFamily: "inherit",
+              }}
+            />
+            {error && <p style={{ fontSize: 12.5, color: "var(--primary)", marginTop: 8 }}>{error}</p>}
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-ghost press"
+                onClick={onCancel}
+                disabled={submitting}
+                style={{ flex: 1 }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary press"
+                onClick={onSubmit}
+                disabled={submitting || !reason.trim()}
+                style={{ flex: 1 }}
+              >
+                {submitting ? "접수 중…" : "신고하기"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
