@@ -8,6 +8,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { AuthModal } from "./AuthModal";
 import { useAuth } from "@/lib/api/useAuth";
 import { NotificationBell } from "./NotificationBell";
+import { MessageBell } from "./MessageBell";
 
 const links = [
   { href: "/search", label: "숙소 검색" },
@@ -202,6 +203,7 @@ export function Nav() {
                 {user?.name ?? "마이"}
               </Link>
 
+              <MessageBell />
               <NotificationBell />
 
               <button

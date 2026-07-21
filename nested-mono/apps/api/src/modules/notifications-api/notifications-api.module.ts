@@ -18,6 +18,12 @@ export class NotificationsApiService {
     return this.prisma.notification.count({ where: { userId, read: false } });
   }
 
+  unreadMessageCount(userId: string) {
+    return this.prisma.notification.count({
+      where: { userId, type: "MESSAGE", read: false },
+    });
+  }
+
   markRead(userId: string, id: string) {
     return this.prisma.notification.updateMany({ where: { id, userId }, data: { read: true } });
   }
@@ -40,6 +46,11 @@ export class NotificationsApiController {
       this.svc.unreadCount(req.user.id),
     ]);
     return { items, unread };
+  }
+
+  @Get("messages/unread-count")
+  async messageUnreadCount(@Req() req: any) {
+    return { unread: await this.svc.unreadMessageCount(req.user.id) };
   }
 
   @Patch(":id/read")
