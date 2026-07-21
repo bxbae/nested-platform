@@ -29,6 +29,8 @@ export class PrismaReservationRepo implements ReservationRepo {
       where: { id: roomId },
       select: {
         id: true,
+        name: true,
+        hostId: true,
         monthlyRent: true,
         deposit: true,
         cleaningFee: true,
@@ -40,10 +42,16 @@ export class PrismaReservationRepo implements ReservationRepo {
   }
 
   async findCouponByCode(code: string): Promise<CouponRecord | null> {
-    return this.prisma.coupon.findUnique({ where: { code } }) as Promise<CouponRecord | null>;
+    return this.prisma.coupon.findUnique({
+      where: { code },
+    }) as Promise<CouponRecord | null>;
   }
 
-  async findOverlapping(roomId: string, checkIn: Date, checkOut: Date): Promise<ReservationRecord[]> {
+  async findOverlapping(
+    roomId: string,
+    checkIn: Date,
+    checkOut: Date,
+  ): Promise<ReservationRecord[]> {
     return this.prisma.reservation.findMany({
       where: {
         roomId,
@@ -56,7 +64,7 @@ export class PrismaReservationRepo implements ReservationRepo {
   }
 
   async createHold(
-    data: Omit<ReservationRecord, "id" | "createdAt">
+    data: Omit<ReservationRecord, "id" | "createdAt">,
   ): Promise<ReservationRecord> {
     // Serializable transaction: re-check overlap under lock, then insert.
     return this.prisma.$transaction(
@@ -78,7 +86,7 @@ export class PrismaReservationRepo implements ReservationRepo {
         }
         return tx.reservation.create({ data });
       },
-      { isolationLevel: "Serializable" }
+      { isolationLevel: "Serializable" },
     );
   }
 
@@ -96,12 +104,22 @@ export class PrismaReservationRepo implements ReservationRepo {
             id: true,
             name: true,
             region: true,
-            images: { orderBy: { order: "asc" }, take: 1, select: { url: true } },
+            images: {
+              orderBy: { order: "asc" },
+              take: 1,
+              select: { url: true },
+            },
           },
         },
         // Payment is 1:1 with Reservation (nullable — PENDING_PAYMENT rows have none yet).
         payment: {
-          select: { id: true, provider: true, amount: true, status: true, createdAt: true },
+          select: {
+            id: true,
+            provider: true,
+            amount: true,
+            status: true,
+            createdAt: true,
+          },
         },
       },
     });
@@ -129,7 +147,11 @@ export class PrismaReservationRepo implements ReservationRepo {
             id: true,
             name: true,
             region: true,
-            images: { orderBy: { order: "asc" }, take: 1, select: { url: true } },
+            images: {
+              orderBy: { order: "asc" },
+              take: 1,
+              select: { url: true },
+            },
           },
         },
         guest: { select: { id: true, name: true, avatarColor: true } },
@@ -172,11 +194,21 @@ export class PrismaReservationRepo implements ReservationRepo {
             id: true,
             name: true,
             region: true,
-            images: { orderBy: { order: "asc" }, take: 1, select: { url: true } },
+            images: {
+              orderBy: { order: "asc" },
+              take: 1,
+              select: { url: true },
+            },
           },
         },
         payment: {
-          select: { id: true, provider: true, amount: true, status: true, createdAt: true },
+          select: {
+            id: true,
+            provider: true,
+            amount: true,
+            status: true,
+            createdAt: true,
+          },
         },
       },
     });
@@ -202,7 +234,10 @@ export class PrismaReservationRepo implements ReservationRepo {
     });
   }
 
-  async updateStatus(id: string, status: ReservationStatus): Promise<ReservationRecord> {
+  async updateStatus(
+    id: string,
+    status: ReservationStatus,
+  ): Promise<ReservationRecord> {
     return this.prisma.reservation.update({ where: { id }, data: { status } });
   }
 

@@ -296,11 +296,13 @@ export class CommunityService {
         ? await tx.notification.create({
             data: {
               userId: notifyUserId,
-              type: "MESSAGE",
+              type: "COMMENT",
               title: parentId
                 ? "내 댓글에 답글이 달렸어요"
                 : "내 게시글에 새 댓글이 달렸어요",
-              body: `“${post.title}”에서 새로운 대화가 시작되었습니다.`,
+              body: parentId
+                ? `“${post.title}” 게시글의 내 댓글에 답글이 등록되었습니다.`
+                : `“${post.title}” 게시글에 새로운 댓글이 등록되었습니다.`,
               targetUrl: `/community/${post.id}`,
             },
           })

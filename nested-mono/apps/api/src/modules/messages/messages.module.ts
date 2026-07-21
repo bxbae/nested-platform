@@ -15,8 +15,8 @@ import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
-import { NotificationsModule } from "../notifications/notifications.module";
-import { NotificationsGateway } from "../notifications/notifications.gateway";
+import { JwtModule } from "@nestjs/jwt";
+import { MessageEventsGateway } from "./message-events.gateway";
 
 function orderedPair(firstId: string, secondId: string): [string, string] {
   return firstId < secondId ? [firstId, secondId] : [secondId, firstId];
@@ -26,7 +26,7 @@ function orderedPair(firstId: string, secondId: string): [string, string] {
 export class MessagesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notificationsGateway: NotificationsGateway,
+    private readonly messageEvents: MessageEventsGateway,
   ) {}
 
   listRooms(userId: string) {
@@ -70,9 +70,16 @@ export class MessagesService {
     data: { body?: string; imageUrl?: string },
   ) {
     const chatRoom = await this.assertRoomMember(chatRoomId, senderId);
+
     const recipientId =
       chatRoom.guestId === senderId ? chatRoom.hostId : chatRoom.guestId;
-    return this.createRoomMessage(chatRoomId, senderId, recipientId, data);
+
+    const message = await this.createRoomMessage(chatRoomId, senderId, data);
+
+    this.messageEvents.emitChanged(senderId);
+    this.messageEvents.emitChanged(recipientId);
+
+    return message;
   }
 
   async openRoom(guestId: string, roomId: string, hostId: string) {
@@ -161,9 +168,7 @@ export class MessagesService {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       other:
-        row.participantAId === userId
-          ? row.participantB
-          : row.participantA,
+        row.participantAId === userId ? row.participantB : row.participantA,
       messages: row.messages,
     }));
   }
@@ -182,10 +187,7 @@ export class MessagesService {
       throw new NotFoundException("상대방을 찾을 수 없습니다.");
     }
 
-    const [participantAId, participantBId] = orderedPair(
-      userId,
-      targetUserId,
-    );
+    const [participantAId, participantBId] = orderedPair(userId, targetUserId);
 
     return this.prisma.directConversation.upsert({
       where: {
@@ -213,16 +215,14 @@ export class MessagesService {
       conversationId,
       senderId,
     );
+
     const recipientId =
       conversation.participantAId === senderId
         ? conversation.participantBId
         : conversation.participantAId;
-    const preview =
-      data.body?.trim().slice(0, 80) ||
-      (data.imageUrl ? "사진을 보냈습니다." : "새 메시지가 도착했습니다.");
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const message = await tx.directMessage.create({
+    const message = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.directMessage.create({
         data: {
           conversationId,
           senderId,
@@ -233,25 +233,21 @@ export class MessagesService {
       });
 
       await tx.directConversation.update({
-        where: { id: conversationId },
-        data: { updatedAt: new Date() },
-      });
-
-      const notification = await tx.notification.create({
+        where: {
+          id: conversationId,
+        },
         data: {
-          userId: recipientId,
-          type: "MESSAGE",
-          title: "새 메시지가 도착했어요",
-          body: preview,
-          targetUrl: `/me/messages?direct=${conversationId}`,
+          updatedAt: new Date(),
         },
       });
 
-      return { message, notification };
+      return created;
     });
 
-    this.notificationsGateway.emitToUser(recipientId, result.notification);
-    return result.message;
+    this.messageEvents.emitChanged(senderId);
+    this.messageEvents.emitChanged(recipientId);
+
+    return message;
   }
 
   async markDirectRead(conversationId: string, userId: string) {
@@ -275,55 +271,81 @@ export class MessagesService {
       ),
     );
 
-    await this.prisma.notification.updateMany({
-      where: {
-        userId,
-        type: "MESSAGE",
-        read: false,
-        targetUrl: `/me/messages?direct=${conversationId}`,
-      },
-      data: { read: true },
-    });
+    this.messageEvents.emitChanged(userId);
 
     return { updated: unread.length };
   }
 
-  private async createRoomMessage(
+  async unreadCount(userId: string) {
+    const [roomUnread, directUnread] = await Promise.all([
+      this.prisma.message.count({
+        where: {
+          senderId: {
+            not: userId,
+          },
+          NOT: {
+            readBy: {
+              has: userId,
+            },
+          },
+          chatRoom: {
+            OR: [
+              {
+                guestId: userId,
+              },
+              {
+                hostId: userId,
+              },
+            ],
+          },
+        },
+      }),
+
+      this.prisma.directMessage.count({
+        where: {
+          senderId: {
+            not: userId,
+          },
+          NOT: {
+            readBy: {
+              has: userId,
+            },
+          },
+          conversation: {
+            OR: [
+              {
+                participantAId: userId,
+              },
+              {
+                participantBId: userId,
+              },
+            ],
+          },
+        },
+      }),
+    ]);
+
+    return {
+      roomUnread,
+      directUnread,
+      total: roomUnread + directUnread,
+    };
+  }
+
+  private createRoomMessage(
     chatRoomId: string,
     senderId: string,
-    recipientId: string,
     data: { body?: string; imageUrl?: string },
   ) {
-    const preview =
-      data.body?.trim().slice(0, 80) ||
-      (data.imageUrl ? "사진을 보냈습니다." : "새 메시지가 도착했습니다.");
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const message = await tx.message.create({
-        data: {
-          chatRoomId,
-          senderId,
-          body: data.body,
-          imageUrl: data.imageUrl,
-          readBy: [senderId],
-        },
-      });
-
-      const notification = await tx.notification.create({
-        data: {
-          userId: recipientId,
-          type: "MESSAGE",
-          title: "새 메시지가 도착했어요",
-          body: preview,
-          targetUrl: `/me/messages?room=${chatRoomId}`,
-        },
-      });
-
-      return { message, notification };
+    return this.prisma.message.create({
+      data: {
+        chatRoomId,
+        senderId,
+        body: data.body,
+        imageUrl: data.imageUrl,
+        readBy: [senderId],
+      },
     });
-
-    this.notificationsGateway.emitToUser(recipientId, result.notification);
-    return result.message;
   }
 
   private async assertRoomMember(chatRoomId: string, userId: string) {
@@ -402,11 +424,7 @@ export class MessagesController {
     @Req() req: any,
     @Body(new ZodValidationPipe(openAsHostSchema)) dto: any,
   ) {
-    return this.messages.openRoomAsHost(
-      req.user.id,
-      dto.roomId,
-      dto.guestId,
-    );
+    return this.messages.openRoomAsHost(req.user.id, dto.roomId, dto.guestId);
   }
 
   @Get("direct")
@@ -440,11 +458,13 @@ export class MessagesController {
   }
 
   @Post("direct/:conversationId/read")
-  readDirect(
-    @Req() req: any,
-    @Param("conversationId") conversationId: string,
-  ) {
+  readDirect(@Req() req: any, @Param("conversationId") conversationId: string) {
     return this.messages.markDirectRead(conversationId, req.user.id);
+  }
+
+  @Get("unread-count")
+  unreadCount(@Req() req: any) {
+    return this.messages.unreadCount(req.user.id);
   }
 
   @Get(":chatRoomId")
@@ -463,8 +483,9 @@ export class MessagesController {
 }
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [JwtModule.register({})],
   controllers: [MessagesController],
-  providers: [MessagesService],
+  providers: [MessagesService, MessageEventsGateway],
+  exports: [MessageEventsGateway],
 })
 export class MessagesModule {}

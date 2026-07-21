@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Optional,
   NotFoundException,
   ForbiddenException,
   ConflictException,
@@ -16,7 +17,13 @@ import type {
   ReservationStatus,
   CouponRecord,
 } from "./ports";
-import type { QuoteDto, CreateReservationDto, ConfirmPaymentDto } from "./dto/reservation.dto";
+import type {
+  QuoteDto,
+  CreateReservationDto,
+  ConfirmPaymentDto,
+} from "./dto/reservation.dto";
+import { PrismaService } from "../../prisma/prisma.service";
+import { NotificationsGateway } from "../notifications/notifications.gateway";
 
 // DI tokens for the ports (bound to Prisma/PSP impls in the module).
 export const RESERVATION_REPO = Symbol("RESERVATION_REPO");
@@ -25,14 +32,27 @@ export const PAYMENT_GATEWAY = Symbol("PAYMENT_GATEWAY");
 @Injectable()
 export class ReservationsService {
   constructor(
-    @Inject(RESERVATION_REPO) private readonly repo: ReservationRepo,
-    @Inject(PAYMENT_GATEWAY) private readonly payments: PaymentGateway
+    @Inject(RESERVATION_REPO)
+    private readonly repo: ReservationRepo,
+
+    @Inject(PAYMENT_GATEWAY)
+    private readonly payments: PaymentGateway,
+
+    @Optional()
+    private readonly prisma?: PrismaService,
+
+    @Optional()
+    private readonly notificationsGateway?: NotificationsGateway,
   ) {}
 
   // ── QUOTE ── price preview. No writes, no side effects.
   async quote(dto: QuoteDto): Promise<PriceBreakdown & { checkOut: Date }> {
     const room = await this.repo.findRoom(dto.roomId);
-    if (!room) throw new NotFoundException({ code: "ROOM_NOT_FOUND", message: "숙소를 찾을 수 없습니다." });
+    if (!room)
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
 
     if (dto.months < room.minStayMonths) {
       throw new UnprocessableEntityException({
@@ -51,7 +71,11 @@ export class ReservationsService {
     // as bookable and then the reservation would fail with 409 — the user saw
     // "예약 가능한 날짜입니다" followed by "이미 예약되었습니다".
     const checkOut = addMonths(dto.checkIn, dto.months);
-    const overlaps = await this.repo.findOverlapping(dto.roomId, dto.checkIn, checkOut);
+    const overlaps = await this.repo.findOverlapping(
+      dto.roomId,
+      dto.checkIn,
+      checkOut,
+    );
     if (overlaps.length > 0) {
       throw new ConflictException({
         code: "DATES_UNAVAILABLE",
@@ -59,7 +83,10 @@ export class ReservationsService {
       });
     }
 
-    const discount = await this.resolveDiscount(dto.couponCode, room.monthlyRent);
+    const discount = await this.resolveDiscount(
+      dto.couponCode,
+      room.monthlyRent,
+    );
     const breakdown = computePrice({
       monthlyRent: room.monthlyRent,
       deposit: room.deposit,
@@ -72,9 +99,16 @@ export class ReservationsService {
   }
 
   // ── CREATE ── holds inventory as PENDING_PAYMENT. Rejects overlaps (409).
-  async create(dto: CreateReservationDto, guestId: string): Promise<ReservationRecord> {
+  async create(
+    dto: CreateReservationDto,
+    guestId: string,
+  ): Promise<ReservationRecord> {
     const room = await this.repo.findRoom(dto.roomId);
-    if (!room) throw new NotFoundException({ code: "ROOM_NOT_FOUND", message: "숙소를 찾을 수 없습니다." });
+    if (!room)
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
 
     if (dto.companionId === guestId) {
       throw new BadRequestException({
@@ -86,7 +120,11 @@ export class ReservationsService {
     const checkOut = addMonths(dto.checkIn, dto.months);
 
     // Pre-check overlap (the repo re-checks under a serializable lock on insert).
-    const overlaps = await this.repo.findOverlapping(dto.roomId, dto.checkIn, checkOut);
+    const overlaps = await this.repo.findOverlapping(
+      dto.roomId,
+      dto.checkIn,
+      checkOut,
+    );
     if (overlaps.length > 0) {
       throw new ConflictException({
         code: "DATES_UNAVAILABLE",
@@ -94,7 +132,10 @@ export class ReservationsService {
       });
     }
 
-    const discount = await this.resolveDiscount(dto.couponCode, room.monthlyRent);
+    const discount = await this.resolveDiscount(
+      dto.couponCode,
+      room.monthlyRent,
+    );
     const price = computePrice({
       monthlyRent: room.monthlyRent,
       deposit: room.deposit,
@@ -129,7 +170,11 @@ export class ReservationsService {
       // P2003 = foreign key violation: the guest id in the token no longer
       // maps to a User row (e.g. account removed). Ask them to sign in again
       // rather than surfacing a raw 500.
-      if (e && typeof e === "object" && (e as { code?: string }).code === "P2003") {
+      if (
+        e &&
+        typeof e === "object" &&
+        (e as { code?: string }).code === "P2003"
+      ) {
         throw new UnauthorizedException({
           code: "ACCOUNT_NOT_FOUND",
           message: "세션이 만료되었어요. 다시 로그인한 뒤 예약해주세요.",
@@ -140,16 +185,29 @@ export class ReservationsService {
   }
 
   // ── CONFIRM PAYMENT ── verify with PSP that `dueNow` was actually paid.
-  async confirmPayment(dto: ConfirmPaymentDto, guestId: string): Promise<ReservationRecord> {
+  async confirmPayment(
+    dto: ConfirmPaymentDto,
+    guestId: string,
+  ): Promise<ReservationRecord> {
     const reservation = await this.repo.findById(dto.reservationId);
-    if (!reservation) throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+    if (!reservation)
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
     if (reservation.guestId !== guestId) {
-      throw new BadRequestException({ code: "FORBIDDEN", message: "본인의 예약만 결제할 수 있습니다." });
+      throw new BadRequestException({
+        code: "FORBIDDEN",
+        message: "본인의 예약만 결제할 수 있습니다.",
+      });
     }
     if (reservation.status !== "PENDING_PAYMENT") {
       // idempotent: already confirmed → return as-is; otherwise it's a bad state
       if (reservation.status === "CONFIRMED") return reservation;
-      throw new ConflictException({ code: "BAD_STATE", message: "결제할 수 없는 예약 상태입니다." });
+      throw new ConflictException({
+        code: "BAD_STATE",
+        message: "결제할 수 없는 예약 상태입니다.",
+      });
     }
 
     // The amount we expect is the authoritative server figure, not the client's.
@@ -166,20 +224,55 @@ export class ReservationsService {
       expectedAmount: reservation.totalDueNow,
     });
 
-    if (!verification.ok || verification.paidAmount !== reservation.totalDueNow) {
+    if (
+      !verification.ok ||
+      verification.paidAmount !== reservation.totalDueNow
+    ) {
       throw new UnprocessableEntityException({
         code: "PAYMENT_UNVERIFIED",
         message: verification.reason ?? "결제 검증에 실패했습니다.",
       });
     }
 
-    return this.repo.updateStatus(reservation.id, "CONFIRMED");
+    const room = await this.repo.findRoom(reservation.roomId);
+
+    if (!room) {
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
+    }
+
+    const confirmedReservation = await this.repo.updateStatus(
+      reservation.id,
+      "CONFIRMED",
+    );
+
+    if (room.hostId !== guestId && this.prisma && this.notificationsGateway) {
+      const notification = await this.prisma.notification.create({
+        data: {
+          userId: room.hostId,
+          type: "RESERVATION_REQUESTED",
+          title: "새 예약이 들어왔어요",
+          body: `"${room.name}" 숙소에 새로운 예약이 접수되었습니다.`,
+          targetUrl: "/host/reservations",
+        },
+      });
+
+      this.notificationsGateway.emitToUser(room.hostId, notification);
+    }
+
+    return confirmedReservation;
   }
 
   // ── helpers ──
   async getById(id: string): Promise<ReservationRecord> {
     const r = await this.repo.findById(id);
-    if (!r) throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+    if (!r)
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
     return r;
   }
 
@@ -193,7 +286,10 @@ export class ReservationsService {
   ): Promise<ReservationRecord> {
     const r = await this.repo.findById(id);
     if (!r) {
-      throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
     }
     if (r.companionId !== userId) {
       throw new ForbiddenException({
@@ -207,7 +303,10 @@ export class ReservationsService {
         message: "이미 응답한 초대입니다.",
       });
     }
-    return this.repo.updateCompanionStatus(id, decision === "accept" ? "ACCEPTED" : "DECLINED");
+    return this.repo.updateCompanionStatus(
+      id,
+      decision === "accept" ? "ACCEPTED" : "DECLINED",
+    );
   }
 
   // 내가 동반자로 초대된 예약 목록
@@ -216,30 +315,122 @@ export class ReservationsService {
   }
 
   async cancel(id: string, guestId: string): Promise<ReservationRecord> {
-    const r = await this.repo.findById(id);
-    if (!r) throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
-    if (r.guestId !== guestId) {
-      throw new ForbiddenException({ code: "FORBIDDEN", message: "본인 예약만 취소할 수 있습니다." });
+    const reservation = await this.repo.findById(id);
+
+    if (!reservation) {
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
     }
-    return this.repo.updateStatus(id, "CANCELLED_BY_GUEST");
+
+    if (reservation.guestId !== guestId) {
+      throw new ForbiddenException({
+        code: "FORBIDDEN",
+        message: "본인의 예약만 취소할 수 있습니다.",
+      });
+    }
+
+    // 같은 취소 요청이 반복되어도 알림을 중복 생성하지 않는다.
+    if (reservation.status === "CANCELLED_BY_GUEST") {
+      return reservation;
+    }
+
+    const room = await this.repo.findRoom(reservation.roomId);
+
+    if (!room) {
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
+    }
+
+    const cancelledReservation = await this.repo.updateStatus(
+      id,
+      "CANCELLED_BY_GUEST",
+    );
+
+    if (room.hostId !== guestId && this.prisma && this.notificationsGateway) {
+      const notification = await this.prisma.notification.create({
+        data: {
+          userId: room.hostId,
+          type: "RESERVATION_CANCELLED",
+          title: "예약이 취소되었어요",
+          body: `"${room.name}" 숙소의 예약이 게스트에 의해 취소되었습니다.`,
+          targetUrl: "/host/reservations",
+        },
+      });
+
+      this.notificationsGateway.emitToUser(room.hostId, notification);
+    }
+
+    return cancelledReservation;
   }
 
   // Guest requests an early checkout on a CONFIRMED reservation. This doesn't
   // end the stay yet — it flips to EARLY_CHECKOUT_REQUESTED and waits for the
   // host to approve or reject.
-  async requestEarlyCheckout(id: string, guestId: string): Promise<ReservationRecord> {
-    const r = await this.repo.findById(id);
-    if (!r) throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
-    if (r.guestId !== guestId) {
-      throw new ForbiddenException({ code: "FORBIDDEN", message: "본인 예약만 요청할 수 있습니다." });
-    }
-    if (r.status !== "CONFIRMED") {
-      throw new BadRequestException({
-        code: "NOT_CONFIRMED",
-        message: "이용 중인(확정) 예약만 조기 퇴실을 요청할 수 있습니다.",
+  async requestEarlyCheckout(
+    id: string,
+    guestId: string,
+  ): Promise<ReservationRecord> {
+    const reservation = await this.repo.findById(id);
+
+    if (!reservation) {
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
       });
     }
-    return this.repo.updateStatus(id, "EARLY_CHECKOUT_REQUESTED");
+
+    if (reservation.guestId !== guestId) {
+      throw new ForbiddenException({
+        code: "FORBIDDEN",
+        message: "본인의 예약만 조기 퇴실을 요청할 수 있습니다.",
+      });
+    }
+
+    // 같은 요청이 다시 들어와도 알림을 중복 생성하지 않는다.
+    if (reservation.status === "EARLY_CHECKOUT_REQUESTED") {
+      return reservation;
+    }
+
+    if (reservation.status !== "CONFIRMED") {
+      throw new BadRequestException({
+        code: "NOT_CONFIRMED",
+        message: "확정된 예약만 조기 퇴실을 요청할 수 있습니다.",
+      });
+    }
+
+    const room = await this.repo.findRoom(reservation.roomId);
+
+    if (!room) {
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
+    }
+
+    const updatedReservation = await this.repo.updateStatus(
+      id,
+      "EARLY_CHECKOUT_REQUESTED",
+    );
+
+    if (room.hostId !== guestId && this.prisma && this.notificationsGateway) {
+      const notification = await this.prisma.notification.create({
+        data: {
+          userId: room.hostId,
+          type: "EARLY_CHECKOUT_REQUESTED",
+          title: "조기 퇴실 요청이 들어왔어요",
+          body: `"${room.name}" 숙소의 게스트가 조기 퇴실을 요청했습니다.`,
+          targetUrl: "/host/reservations",
+        },
+      });
+
+      this.notificationsGateway.emitToUser(room.hostId, notification);
+    }
+
+    return updatedReservation;
   }
 
   // Host approves or rejects an early-checkout request.
@@ -248,13 +439,20 @@ export class ReservationsService {
   async decideEarlyCheckout(
     id: string,
     hostId: string,
-    decision: "approve" | "reject"
+    decision: "approve" | "reject",
   ): Promise<ReservationRecord> {
     const r = await this.repo.findById(id);
-    if (!r) throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+    if (!r)
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
     const ownerId = await this.repo.findRoomHostId(id);
     if (ownerId !== hostId) {
-      throw new ForbiddenException({ code: "NOT_HOST", message: "본인 숙소의 예약만 처리할 수 있습니다." });
+      throw new ForbiddenException({
+        code: "NOT_HOST",
+        message: "본인 숙소의 예약만 처리할 수 있습니다.",
+      });
     }
     if (r.status !== "EARLY_CHECKOUT_REQUESTED") {
       throw new BadRequestException({
@@ -264,7 +462,7 @@ export class ReservationsService {
     }
     return this.repo.updateStatus(
       id,
-      decision === "approve" ? "EARLY_CHECKOUT_APPROVED" : "CONFIRMED"
+      decision === "approve" ? "EARLY_CHECKOUT_APPROVED" : "CONFIRMED",
     );
   }
 
@@ -284,7 +482,7 @@ export class ReservationsService {
   async updateStatusAsHost(
     id: string,
     hostId: string,
-    status: ReservationStatus
+    status: ReservationStatus,
   ): Promise<ReservationRecord> {
     const allowed: ReservationStatus[] = [
       "CONFIRMED",
@@ -300,7 +498,10 @@ export class ReservationsService {
     }
     const ownerId = await this.repo.findRoomHostId(id);
     if (ownerId === null) {
-      throw new NotFoundException({ code: "RESERVATION_NOT_FOUND", message: "예약을 찾을 수 없습니다." });
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
     }
     if (ownerId !== hostId) {
       throw new ForbiddenException({
@@ -311,10 +512,17 @@ export class ReservationsService {
     return this.repo.updateStatus(id, status);
   }
 
-  private async resolveDiscount(code: string | undefined, spend: number): Promise<number> {
+  private async resolveDiscount(
+    code: string | undefined,
+    spend: number,
+  ): Promise<number> {
     if (!code) return 0;
     const coupon = await this.repo.findCouponByCode(code);
-    if (!coupon) throw new UnprocessableEntityException({ code: "COUPON_INVALID", message: "쿠폰이 유효하지 않습니다." });
+    if (!coupon)
+      throw new UnprocessableEntityException({
+        code: "COUPON_INVALID",
+        message: "쿠폰이 유효하지 않습니다.",
+      });
     assertCouponUsable(coupon);
     return couponDiscount(coupon, spend);
   }
@@ -323,10 +531,16 @@ export class ReservationsService {
 function assertCouponUsable(c: CouponRecord) {
   const now = new Date();
   if (now < c.validFrom || now > c.validTo) {
-    throw new UnprocessableEntityException({ code: "COUPON_EXPIRED", message: "쿠폰 사용 기간이 아닙니다." });
+    throw new UnprocessableEntityException({
+      code: "COUPON_EXPIRED",
+      message: "쿠폰 사용 기간이 아닙니다.",
+    });
   }
   if (c.usageLimit != null && c.usedCount >= c.usageLimit) {
-    throw new UnprocessableEntityException({ code: "COUPON_EXHAUSTED", message: "쿠폰이 모두 소진되었습니다." });
+    throw new UnprocessableEntityException({
+      code: "COUPON_EXHAUSTED",
+      message: "쿠폰이 모두 소진되었습니다.",
+    });
   }
 }
 
