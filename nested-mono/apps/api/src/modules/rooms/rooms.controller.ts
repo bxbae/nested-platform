@@ -93,6 +93,12 @@ export class RoomsController {
     return this.rooms.listForHost(req.user.id);
   }
 
+  @Get('personalized')
+  @UseGuards(JwtAuthGuard)
+  getPersonalized(@Req() req: any) {
+    return this.rooms.getPersonalizedRooms(req.user.id);
+  }
+
   @Get(":id")
   findOne(@Param("id") id: string) {
     return this.rooms.findOne(id);

@@ -342,7 +342,7 @@ export class RoomsService {
   //   - 가격 차이가 적을수록          : 최대 +25점 (5만원 차이당 1점씩 감점)
   //   - 성별 정책(genderPolicy) 일치  : +15점
   //   - 겹치는 편의시설 1개당         : +10점 (최대 +30점)
-    async findSimilar(roomId: string, limit = 4){
+  async findSimilar(roomId: string, limit = 4){
     // 1) 기준이 되는 숙소(target) 정보를 가져온다.
     // amenities(편의시설)까지 같이 가져와야 뒤에서 겹치는 개수를 셀 수 있음.
     const target = await this.prisma.room.findUnique({
@@ -415,6 +415,116 @@ export class RoomsService {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
       .map((s) => ({ ...s.room, reasons: s.reasons }));
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 개인화 숙소 추천
+  // ═══════════════════════════════════════════════════════════
+  // 1) 찜 목록 기반으로 규칙 기반 점수를 매겨 후보 10개를 추린다.
+  // 2) 그 후보들에 대해 AI가 자연어 추천 한줄평을 붙인다 (아래 explainPersonalized).
+  async getPersonalizedRooms(userId: string, limit = 10) {
+    const favorites = await this.prisma.favorite.findMany({
+      where: { userId },
+      include: { room: true },
+    });
+  
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+  
+    if (favorites.length === 0) return { rooms: [], userName: user?.name ?? null };
+  
+    const preferredTypes = new Set(favorites.map((f) => f.room.roomType));
+    const preferredRegions = new Set(favorites.map((f) => f.room.region));
+    const favoriteIds = new Set(favorites.map((f) => f.roomId));
+    const avgRent = favorites.reduce((sum, f) => sum + f.room.monthlyRent, 0) / favorites.length;
+  
+    const candidates = await this.prisma.room.findMany({
+      where: { published: true, id: { notIn: [...favoriteIds] } },
+      include: { images: true },
+      take: 50,
+    });
+  
+    // 점수를 매기면서, "왜 이 점수를 줬는지"도 reasons 배열에 같이 기록한다.
+    // (유사 숙소 추천 만들 때와 완전히 같은 패턴)
+    const scored = candidates.map((room) => {
+      let score = 0;
+      const reasons: string[] = [];
+  
+      if (preferredTypes.has(room.roomType)) {
+        score += 20;
+        reasons.push("평소 관심 있으시던 방 종류");
+      }
+      if (preferredRegions.has(room.region)) {
+        score += 15;
+        reasons.push("자주 찾으신 지역");
+      }
+      const rentDiff = Math.abs(room.monthlyRent - avgRent);
+      score += Math.max(0, 15 - rentDiff / 50000);
+      if (rentDiff < 100000) {
+        reasons.push("찜하신 곳들과 비슷한 가격대");
+      }
+  
+      return { room, score, reasons };
+    });
+  
+    const top = scored.sort((a, b) => b.score - a.score).slice(0, limit);
+  
+    // AI 호출 없이, 근거 배열을 그대로 문장으로 조합.
+    // 겹치는 게 하나도 없는 예외적인 경우(순수 랜덤 노출)를 대비한 기본 문구도 준비.
+    return {
+      rooms: top.map(({ room, reasons }) => ({
+        ...room,
+        personalizedReason:
+          reasons.length > 0 ? `${reasons.join(", ")}라 추천드려요!` : "새로운 스타일의 숙소를 추천드려요",
+      })),
+      userName: user?.name ?? null,
+    };
+  }
+
+  // 찜 목록(사용자가 좋아하는 것들)과 추천 후보들을 Claude API에 같이 보여주고,
+  // 후보마다 "왜 이 사용자에게 맞는지" 한 문장씩 자연어로 받아온다.
+  // 응답이 실패하거나 형식이 안 맞으면 조용히 빈 값 처리 (개인화는 "있으면 좋은" 기능이라
+  // 이 부분이 실패해도 추천 목록 자체는 정상적으로 화면에 뜨게 함).
+  private async explainPersonalized(
+    favoriteRooms: { name: string; roomType: string; region: string }[],
+    candidates: { id: string; name: string; roomType: string; region: string; monthlyRent: number }[],
+  ): Promise<Record<string, string>> {
+    if (candidates.length === 0) return {};
+
+    const prompt = `
+사용자가 찜한 숙소들: ${favoriteRooms.map((r) => `${r.name}(${r.roomType}, ${r.region})`).join(', ')}
+
+아래 추천 후보 숙소마다, 왜 이 사용자에게 어울리는지 한국어로 한 문장씩(15자 내외) 만들어줘.
+반드시 JSON 객체만 출력해. 형식: {"숙소id": "이유 문장", ...}
+
+후보:
+${candidates.map((c) => `${c.id}: ${c.name}(${c.roomType}, ${c.region}, 월${c.monthlyRent}원)`).join('\n')}
+`.trim();
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': process.env.ANTHROPIC_API_KEY ?? '',
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 500,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      const data: any = await res.json();
+      const text = data.content?.[0]?.text ?? '{}';
+      // 혹시 모델이 ```json 코드블록으로 감싸서 응답하면 벗겨내기
+      const clean = text.replace(/```json|```/g, '').trim();
+      return JSON.parse(clean);
+    } catch {
+      return {}; // 실패해도 추천 목록 자체는 살아있어야 하므로 조용히 빈 값
+    }
   }
 
 }
