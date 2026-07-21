@@ -16,7 +16,7 @@ export function ProfileHeader() {
   const [needsUrlInput, setNeedsUrlInput] = useState(false);
   const [manualUrl, setManualUrl] = useState("");
 
-  const name = user?.name || currentUser.name;
+  const name = user?.nicknameCompleted === false ? "닉네임 설정 필요" : (user?.name || currentUser.name);
   const email = user?.email || currentUser.email;
   const role =
     user?.role === "HOST" ? "호스트" : user ? "게스트" : currentUser.role;

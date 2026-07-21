@@ -8,6 +8,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { AuthModal } from "./AuthModal";
 import { useAuth } from "@/lib/api/useAuth";
 import { NotificationBell } from "./NotificationBell";
+import { MessageBell } from "./MessageBell";
 
 const links = [
   { href: "/search", label: "숙소 검색" },
@@ -197,11 +198,12 @@ export function Nav() {
                     fontWeight: 700,
                   }}
                 >
-                  {(user?.name ?? user?.email ?? "U").charAt(0).toUpperCase()}
+                  {(user?.nicknameCompleted === false ? "닉" : (user?.name ?? user?.email ?? "U")).charAt(0).toUpperCase()}
                 </span>
-                {user?.name ?? "마이"}
+                {user?.nicknameCompleted === false ? "닉네임 설정" : (user?.name ?? "마이")}
               </Link>
 
+              <MessageBell />
               <NotificationBell />
 
               <button

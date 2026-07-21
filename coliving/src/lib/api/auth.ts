@@ -18,7 +18,8 @@ function demoTokens(email: string, name?: string): AuthTokens {
       id: "demo-user",
       email,
       role: "USER",
-      name: name ?? email.split("@")[0],
+      name: name ?? `사용자${Math.random().toString(36).slice(2, 8)}`,
+      nicknameCompleted: Boolean(name?.trim()),
     },
   };
 }
@@ -99,6 +100,7 @@ interface ApiMe {
   email: string;
   role: string;
   name?: string | null;
+  nicknameCompleted?: boolean;
   bio?: string | null;
   avatarColor?: string;
   avatarUrl?: string | null;
@@ -112,6 +114,7 @@ function toAuthUser(me: ApiMe): AuthUser {
     email: me.email,
     role: me.role,
     name: me.name ?? undefined,
+    nicknameCompleted: me.nicknameCompleted ?? true,
     bio: me.bio ?? null,
     avatarColor: me.avatarColor,
     avatarUrl: me.avatarUrl ?? null,

@@ -12,9 +12,6 @@ import { Server, Socket } from "socket.io";
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtService } from "@nestjs/jwt";
 
-// Realtime chat gateway. Event names match the frontend Socket.io client:
-//   message:send / message:new / message:read / typing
-// Scales horizontally via the Redis adapter wired in main.ts.
 @Injectable()
 @WebSocketGateway({ namespace: "/chat", cors: { origin: true } })
 export class ChatGateway implements OnGatewayConnection {
@@ -50,10 +47,7 @@ export class ChatGateway implements OnGatewayConnection {
 
       const chatRoom = await this.prisma.chatRoom.findUnique({
         where: { id: roomId },
-        select: {
-          guestId: true,
-          hostId: true,
-        },
+        select: { guestId: true, hostId: true },
       });
 
       const isParticipant =
@@ -65,10 +59,7 @@ export class ChatGateway implements OnGatewayConnection {
       }
 
       await client.join(roomId);
-
-      client.emit("chat:ready", {
-        roomId,
-      });
+      client.emit("chat:ready", { roomId });
     } catch {
       client.disconnect();
     }
@@ -77,11 +68,7 @@ export class ChatGateway implements OnGatewayConnection {
   @SubscribeMessage("message:send")
   async onSend(
     @MessageBody()
-    data: {
-      roomId: string;
-      body?: string;
-      imageUrl?: string;
-    },
+    data: { roomId: string; body?: string; imageUrl?: string },
     @ConnectedSocket() client: Socket,
   ) {
     const senderId = client.data.userId as string | undefined;
@@ -139,25 +126,10 @@ export class ChatGateway implements OnGatewayConnection {
     const result = await this.prisma.message.updateMany({
       where: {
         chatRoomId: data.roomId,
-
-        // 상대방이 보낸 메시지만 읽음 처리
-        senderId: {
-          not: userId,
-        },
-
-        // 이미 읽은 메시지는 다시 처리하지 않음
-        NOT: {
-          readBy: {
-            has: userId,
-          },
-        },
+        senderId: { not: userId },
+        NOT: { readBy: { has: userId } },
       },
-      data: {
-        // readBy 배열에 현재 로그인 사용자의 ID 추가
-        readBy: {
-          push: userId,
-        },
-      },
+      data: { readBy: { push: userId } },
     });
 
     if (result.count > 0) {
@@ -168,9 +140,7 @@ export class ChatGateway implements OnGatewayConnection {
       });
     }
 
-    return {
-      updatedCount: result.count,
-    };
+    return { updatedCount: result.count };
   }
 
   @SubscribeMessage("typing")
@@ -188,8 +158,6 @@ export class ChatGateway implements OnGatewayConnection {
       throw new WsException("대화방 참여자만 입력 상태를 전송할 수 있습니다.");
     }
 
-    client.to(data.roomId).emit("typing", {
-      userId,
-    });
+    client.to(data.roomId).emit("typing", { userId });
   }
 }

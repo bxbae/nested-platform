@@ -26,11 +26,16 @@ export default function Settings() {
   }, [user]);
 
   async function save() {
-    if (saving || !name.trim()) return;
+    if (saving) return;
+    const nickname = name.trim();
+    if (nickname.length < 2) {
+      setError("닉네임은 2자 이상 입력해주세요.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      await updateProfile({ name: name.trim(), bio: bio.trim() });
+      await updateProfile({ name: nickname, bio: bio.trim() });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
@@ -57,8 +62,19 @@ export default function Settings() {
       <section className="card" style={{ padding: 22, marginBottom: 18 }}>
         <strong style={{ fontSize: 16, display: "block", marginBottom: 16 }}>프로필 정보</strong>
         <div style={{ display: "grid", gap: 14 }}>
-          <Field label="이름">
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
+          <Field label="닉네임 *">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              minLength={2}
+              maxLength={20}
+              placeholder="예: 조용한고양이"
+              autoComplete="nickname"
+            />
+            <p style={{ fontSize: 12, lineHeight: 1.55, color: "var(--text-2)", marginTop: 5 }}>
+              닉네임은 룸메이트 매칭, 프로필, 친구 목록 및 메시지에서 다른 사용자에게 공개됩니다.
+              개인정보 보호를 위해 실명, 이메일, 전화번호가 포함되지 않은 별명을 사용해주세요.
+            </p>
           </Field>
 
           {/* Email is read-only: changing it needs a verification flow we don't
@@ -101,7 +117,7 @@ export default function Settings() {
         className="btn btn-primary press"
         style={{ width: "100%", justifyContent: "center" }}
         onClick={save}
-        disabled={saving || !name.trim()}
+        disabled={saving || name.trim().length < 2}
       >
         {saving ? "저장 중…" : saved ? "저장되었습니다 ✓" : "변경사항 저장"}
       </button>

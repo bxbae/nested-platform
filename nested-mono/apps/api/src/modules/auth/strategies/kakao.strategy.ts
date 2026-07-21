@@ -18,7 +18,7 @@ export class KakaoStrategy extends PassportStrategy(Strategy, "kakao") {
   async validate(_accessToken: string, _refreshToken: string, profile: any, done: (e: any, u?: any) => void) {
     const kakaoAccount = profile._json?.kakao_account;
     const email = kakaoAccount?.email ?? `kakao_${profile.id}@users.nested.kr`;
-    const name = profile.displayName ?? kakaoAccount?.profile?.nickname ?? "Kakao User";
+    const name = profile.displayName ?? kakaoAccount?.profile?.nickname ?? "";
     const tokens = await this.auth.validateOAuthUser({
       provider: "kakao",
       providerId: String(profile.id),

@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
+import { addFriend, getFriendStatus } from "@/lib/api/friends";
+import { openDirectConversation } from "@/lib/api/messages";
 import { getMatchDetail, type MatchDetail } from "@/lib/api/match";
 
 interface MatchDetailModalProps {
@@ -15,6 +18,9 @@ export default function MatchDetailModal({
   const [detail, setDetail] = useState<MatchDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isFriend, setIsFriend] = useState(false);
+  const [friendBusy, setFriendBusy] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if (!userId) {
@@ -38,6 +44,8 @@ export default function MatchDetailModal({
         if (!alive) return;
 
         setDetail(data);
+        const status = await getFriendStatus(targetUserId);
+        if (alive) setIsFriend(status.isFriend);
       } catch (loadError) {
         if (!alive) return;
 
@@ -120,7 +128,7 @@ export default function MatchDetailModal({
         {!loading && !error && detail && (
           <div style={contentGridStyle}>
             <ProfileSection detail={detail} />
-            <MatchAnalysisSection detail={detail} />
+            <MatchAnalysisSection detail={detail} isFriend={isFriend} friendBusy={friendBusy} onAddFriend={async () => { setFriendBusy(true); try { await addFriend(detail.userId); setIsFriend(true); } finally { setFriendBusy(false); } }} onViewProfile={() => router.push(`/users/${encodeURIComponent(detail.userId)}`)} onMessage={async () => { const conversation = await openDirectConversation(detail.userId); router.push(`/me/messages?direct=${encodeURIComponent(conversation.id)}`); }} />
           </div>
         )}
       </section>
@@ -190,94 +198,36 @@ function ProfileSection({ detail }: { detail: MatchDetail }) {
   );
 }
 
-function MatchAnalysisSection({ detail }: { detail: MatchDetail }) {
+function MatchAnalysisSection({
+  detail,
+  isFriend,
+  friendBusy,
+  onAddFriend,
+  onViewProfile,
+  onMessage,
+}: {
+  detail: MatchDetail;
+  isFriend: boolean;
+  friendBusy: boolean;
+  onAddFriend: () => Promise<void>;
+  onViewProfile: () => void;
+  onMessage: () => Promise<void>;
+}) {
   return (
     <section style={analysisSectionStyle}>
       <div style={scoreGridStyle}>
         <ScoreBox icon="♥" label="매칭 점수" value={`${detail.score}%`} />
-
-        <ScoreBox
-          icon="✓"
-          label="생활 성향 일치"
-          value={`${detail.exactMatchCount}/${detail.totalAxisCount}`}
-        />
-
-        <ScoreBox
-          icon="★"
-          label="중요 조건 일치"
-          value={`${detail.importantMatchCount}/${detail.totalImportantCount}`}
-        />
+        <ScoreBox icon="✓" label="생활 성향 일치" value={`${detail.exactMatchCount}/${detail.totalAxisCount}`} />
+        <ScoreBox icon="★" label="중요 조건 일치" value={`${detail.importantMatchCount}/${detail.totalImportantCount}`} />
       </div>
-
       <div>
         <h3 style={sectionTitleStyle}>왜 잘 맞나요?</h3>
-
-        {detail.reasons.length > 0 ? (
-          <div
-            style={{
-              display: "grid",
-              gap: 11,
-            }}
-          >
-            {detail.reasons.map((reason) => (
-              <div key={reason} style={reasonRowStyle}>
-                <span aria-hidden="true" style={checkIconStyle}>
-                  ✓
-                </span>
-
-                <span>{reason}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p style={metaTextStyle}>일부 생활 성향에서 공통점이 있습니다.</p>
-        )}
+        {detail.reasons.length > 0 ? <div style={{ display: "grid", gap: 11 }}>{detail.reasons.map((reason) => <div key={reason} style={reasonRowStyle}><span aria-hidden="true" style={checkIconStyle}>✓</span><span>{reason}</span></div>)}</div> : <p style={metaTextStyle}>일부 생활 성향에서 공통점이 있습니다.</p>}
       </div>
-
-      {detail.adjustmentPoints.length > 0 && (
-        <div style={warningBoxStyle}>
-          <h3
-            style={{
-              ...sectionTitleStyle,
-              marginBottom: 9,
-            }}
-          >
-            조율이 필요한 부분
-          </h3>
-
-          <div
-            style={{
-              display: "grid",
-              gap: 8,
-            }}
-          >
-            {detail.adjustmentPoints.map((point) => (
-              <div key={point} style={warningRowStyle}>
-                <span aria-hidden="true">⚠</span>
-
-                <span>{point}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {detail.adjustmentPoints.length > 0 && <div style={warningBoxStyle}><h3 style={{ ...sectionTitleStyle, marginBottom: 9 }}>조율이 필요한 부분</h3><div style={{ display: "grid", gap: 8 }}>{detail.adjustmentPoints.map((point) => <div key={point} style={warningRowStyle}><span aria-hidden="true">⚠</span><span>{point}</span></div>)}</div></div>}
       <div style={actionRowStyle}>
-        <button type="button" style={secondaryButtonStyle}>
-          ♡ 찜 목록 추가
-        </button>
-
-        <button
-          type="button"
-          style={primaryButtonStyle}
-          onClick={() => {
-            window.location.href = `/me/messages?userId=${encodeURIComponent(
-              detail.userId,
-            )}`;
-          }}
-        >
-          메시지 보내기
-        </button>
+        {isFriend ? <button type="button" style={secondaryButtonStyle} onClick={onViewProfile}>✓ 친구 · 프로필 보기</button> : <button type="button" style={secondaryButtonStyle} disabled={friendBusy} onClick={() => void onAddFriend()}>{friendBusy ? "추가 중…" : "+ 친구 추가"}</button>}
+        <button type="button" style={primaryButtonStyle} onClick={() => void onMessage()}>메시지 보내기</button>
       </div>
     </section>
   );
