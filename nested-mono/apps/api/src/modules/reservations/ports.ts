@@ -9,7 +9,8 @@ export type ReservationStatus =
   | "COMPLETED"
   | "NO_SHOW"
   | "EARLY_CHECKOUT_REQUESTED"
-  | "EARLY_CHECKOUT_APPROVED";
+  | "EARLY_CHECKOUT_APPROVED"
+  | "EXTENSION_REQUESTED";
 
 export interface RoomRecord {
   id: string;
@@ -45,6 +46,8 @@ export interface ReservationRecord {
   discount: number;
   totalDueNow: number;
   createdAt: Date;
+  // 연장 요청 시 게스트가 원한 개월 수 (대기 중에만 값 존재)
+  extensionMonths?: number | null;
 }
 
 export interface CouponRecord {
@@ -81,6 +84,12 @@ export interface ReservationRepo {
   listByHost(hostId: string): Promise<ReservationForHost[]>;
   /** The host that owns the room this reservation is for (ownership checks). */
   findRoomHostId(reservationId: string): Promise<string | null>;
+  /** 연장 요청 저장: 상태를 EXTENSION_REQUESTED 로 바꾸고 원하는 개월 수를 기록 */
+  requestExtension(id: string, months: number): Promise<ReservationRecord>;
+  /** 연장 확정: checkOut 을 months 만큼 미루고 총 개월 수를 늘린 뒤 CONFIRMED 복귀 */
+  applyExtension(id: string, months: number): Promise<ReservationRecord>;
+  /** 연장 요청 취소/거절: 요청 개월 수를 지우고 CONFIRMED 복귀 */
+  clearExtension(id: string): Promise<ReservationRecord>;
   updateStatus(
     id: string,
     status: ReservationStatus,

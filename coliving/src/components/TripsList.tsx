@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Booking } from "@/lib/types";
 import { won } from "@/lib/format";
-import { listMyBookings, cancelBooking, requestEarlyCheckout } from "@/lib/api/reservations";
+import { listMyBookings, cancelBooking, requestEarlyCheckout, requestExtension } from "@/lib/api/reservations";
 
 export function TripsList({ bare = false }: { bare?: boolean }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -47,6 +47,28 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
       /* ignore; reload restores authoritative state */
     }
     load();
+  }
+
+  // Ask the host to extend the contract by N months.
+  async function extend(id: string, months: number) {
+    setBookings((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, rawStatus: "EXTENSION_REQUESTED", extensionMonths: months } : b))
+    );
+    try {
+      await requestExtension(id, months);
+    } catch {
+      /* ignore; reload restores authoritative state */
+    }
+    load();
+  }
+
+  // Days until the contract ends (null when unknown).
+  function daysLeft(checkOut?: string): number | null {
+    if (!checkOut) return null;
+    const end = new Date(checkOut + "T00:00:00");
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.ceil((end.getTime() - today.getTime()) / 86400000);
   }
 
   return (
@@ -143,6 +165,40 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
               </div>
 
               {!cancelled && (
+                <>
+                {/* Contract ending soon → prompt to extend (14 days out). */}
+                {(() => {
+                  const left = daysLeft(b.checkOut);
+                  if (b.rawStatus !== "CONFIRMED" || left === null || left < 0 || left > 14) return null;
+                  return (
+                    <div
+                      style={{
+                        marginTop: 14,
+                        padding: "12px 14px",
+                        borderRadius: "var(--r-sm)",
+                        background: "var(--secondary-soft, #f2fbfa)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 8 }}>
+                        계약 종료까지 {left}일 남았습니다. 연장하시겠습니까?
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {[1, 3, 6, 12].map((m) => (
+                          <button
+                            key={m}
+                            className="btn btn-ghost"
+                            style={{ fontSize: 12.5, padding: "6px 12px" }}
+                            onClick={() => extend(b.id, m)}
+                          >
+                            {m}개월 연장
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
                   <button
                     className="btn btn-ghost"
@@ -172,7 +228,13 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
                       조기 퇴실 승인됨
                     </span>
                   )}
+                  {b.rawStatus === "EXTENSION_REQUESTED" && (
+                    <span style={{ fontSize: 12.5, color: "var(--primary)" }}>
+                      {b.extensionMonths}개월 연장 요청됨 · 호스트 승인 대기
+                    </span>
+                  )}
                 </div>
+                </>
               )}
             </div>
           );

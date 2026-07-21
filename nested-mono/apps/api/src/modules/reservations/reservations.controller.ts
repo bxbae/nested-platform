@@ -20,6 +20,8 @@ import {
   confirmPaymentSchema,
   hostStatusSchema,
   earlyCheckoutSchema,
+  extensionRequestSchema,
+  extensionDecisionSchema,
   type QuoteDto,
   type CreateReservationDto,
   companionResponseSchema,
@@ -27,6 +29,8 @@ import {
   type ConfirmPaymentDto,
   type HostStatusDto,
   type EarlyCheckoutDto,
+  type ExtensionRequestDto,
+  type ExtensionDecisionDto,
 } from "./dto/reservation.dto";
 
 // Pulls the authenticated user's id off req.user (populated by JwtAuthGuard).
@@ -156,5 +160,29 @@ export class ReservationsController {
     @CurrentGuest() hostId: string
   ) {
     return this.service.decideEarlyCheckout(id, hostId, dto.decision);
+  }
+
+  // PATCH /reservations/:id/extension — guest requests a contract extension.
+  @Patch("reservations/:id/extension")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  requestExtension(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(extensionRequestSchema)) dto: ExtensionRequestDto,
+    @CurrentGuest() guestId: string
+  ) {
+    return this.service.requestExtension(id, guestId, dto.months);
+  }
+
+  // PATCH /reservations/:id/extension/decision — host approves/rejects.
+  @Patch("reservations/:id/extension/decision")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  decideExtension(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(extensionDecisionSchema)) dto: ExtensionDecisionDto,
+    @CurrentGuest() hostId: string
+  ) {
+    return this.service.decideExtension(id, hostId, dto.decision);
   }
 }

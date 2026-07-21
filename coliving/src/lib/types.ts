@@ -127,6 +127,8 @@ export interface Booking {
   serviceFeeRate: number; // e.g. 0.05
   status: "hold" | "paid" | "cancelled";
   rawStatus?: string; // original server status, for states the 3-way map collapses
+  checkOut?: string;  // YYYY-MM-DD — used for the contract D-day countdown
+  extensionMonths?: number | null; // pending extension request, if any
   createdAt: string;
 }
 

@@ -47,6 +47,7 @@ enum ReservationStatus {
   NO_SHOW
   EARLY_CHECKOUT_REQUESTED
   EARLY_CHECKOUT_APPROVED
+  EXTENSION_REQUESTED
 }
 
 enum PaymentStatus {
@@ -275,6 +276,8 @@ model Reservation {
   totalDueNow          Int
   payment              Payment?
   settlement           Settlement?
+  // 게스트가 요청한 연장 개월 수 (승인 대기 중에만 값이 있음)
+  extensionMonths      Int?
   tenantReview         TenantReview?
   createdAt            DateTime          @default(now())
 
