@@ -65,6 +65,7 @@ export interface AdminReport {
   reason: string;
   status: ReportStatus;
   createdAt: string;
+  reporterId: string;
   reporterName: string;
 }
 
@@ -77,6 +78,69 @@ export async function listReports(status?: ReportStatus): Promise<AdminReport[]>
 // PATCH /admin/reports/:id — move a report through RECEIVED → IN_REVIEW → RESOLVED.
 export async function setReportStatus(id: string, status: ReportStatus): Promise<void> {
   await api.patch(`/admin/reports/${id}`, { status });
+}
+
+// ── Report context / chat view / notify (신고 상세 · 채팅 보기 · 알림) ──
+
+export interface ReportAccountRef {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface ReportChatRef {
+  kind: "ROOM" | "DIRECT";
+  id: string;
+}
+
+export interface ReportContext {
+  reporter: ReportAccountRef;
+  reported: ReportAccountRef | null;
+  chat: ReportChatRef | null;
+}
+
+// GET /admin/reports/:id/context
+export async function getReportContext(reportId: string): Promise<ReportContext> {
+  return api.get<ReportContext>(`/admin/reports/${reportId}/context`);
+}
+
+export interface AdminChatMessage {
+  id: string;
+  senderId: string;
+  body: string | null;
+  imageUrl: string | null;
+  createdAt: string;
+}
+
+export interface AdminRoomChat {
+  guest: ReportAccountRef;
+  host: ReportAccountRef;
+  messages: AdminChatMessage[];
+}
+
+export interface AdminDirectChat {
+  participantA: ReportAccountRef;
+  participantB: ReportAccountRef;
+  messages: AdminChatMessage[];
+}
+
+// GET /admin/chat/rooms/:id — 신고된 메시지가 속한 채팅방 전체 보기
+export async function getRoomChat(chatRoomId: string): Promise<AdminRoomChat> {
+  return api.get<AdminRoomChat>(`/admin/chat/rooms/${chatRoomId}`);
+}
+
+// GET /admin/chat/direct/:id — 신고된 메시지가 속한 1:1 다이렉트 대화 전체 보기
+export async function getDirectChat(conversationId: string): Promise<AdminDirectChat> {
+  return api.get<AdminDirectChat>(`/admin/chat/direct/${conversationId}`);
+}
+
+// POST /admin/reports/:id/notify — 신고자/피신고자에게 처리 알림 전송
+export async function notifyReportParty(
+  reportId: string,
+  target: "REPORTER" | "REPORTED",
+  message?: string,
+): Promise<void> {
+  await api.post(`/admin/reports/${reportId}/notify`, { target, message });
 }
 
 export type ActivityTier = "SEED" | "REGULAR" | "TRUSTED";

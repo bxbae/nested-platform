@@ -10,9 +10,13 @@ import { useCallback, useEffect, useState } from "react";
 import {
   listReports,
   setReportStatus,
+  getReportContext,
+  notifyReportParty,
   type AdminReport,
   type ReportStatus,
+  type ReportContext,
 } from "@/lib/api/admin";
+import ReportChatModal from "./ReportChatModal";
 
 const STATUS_LABEL: Record<ReportStatus, string> = {
   RECEIVED: "접수",
@@ -48,6 +52,13 @@ export default function AdminReports() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // 신고 상세 컨텍스트(신고자/피신고자 계정, 연결된 채팅 위치) — 신고건별로
+  // 필요할 때 한 번만 조회해 캐시해둔다.
+  const [contexts, setContexts] = useState<Record<string, ReportContext>>({});
+  const [contextBusyId, setContextBusyId] = useState<string | null>(null);
+  const [chatTarget, setChatTarget] = useState<ReportContext["chat"]>(null);
+  const [notifyBusyKey, setNotifyBusyKey] = useState<string | null>(null);
+
   const load = useCallback(async (status: ReportStatus | "ALL") => {
     setLoading(true);
     setError(null);
@@ -82,6 +93,63 @@ export default function AdminReports() {
       setError(e instanceof Error ? e.message : "상태를 변경하지 못했어요.");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  // 신고건의 컨텍스트(신고자/피신고자 계정 + 연결된 채팅 위치)를 필요 시점에
+  // 가져와 캐시한다. 이미 가져온 적이 있으면 그대로 재사용.
+  const ensureContext = useCallback(
+    async (r: AdminReport): Promise<ReportContext | null> => {
+      if (contexts[r.id]) return contexts[r.id];
+      setContextBusyId(r.id);
+      setError(null);
+      try {
+        const ctx = await getReportContext(r.id);
+        setContexts((prev) => ({ ...prev, [r.id]: ctx }));
+        return ctx;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "신고 상세 정보를 불러오지 못했어요.");
+        return null;
+      } finally {
+        setContextBusyId(null);
+      }
+    },
+    [contexts],
+  );
+
+  async function viewChat(r: AdminReport) {
+    const ctx = await ensureContext(r);
+    if (ctx?.chat) setChatTarget(ctx.chat);
+  }
+
+  async function viewAccount(r: AdminReport, which: "reporter" | "reported") {
+    const ctx = await ensureContext(r);
+    const account = which === "reporter" ? ctx?.reporter : ctx?.reported;
+    if (account) {
+      window.open(`/users/${account.id}`, "_blank", "noopener,noreferrer");
+    } else if (ctx) {
+      setError("피신고자 계정을 확인할 수 없어요.");
+    }
+  }
+
+  async function notify(r: AdminReport, target: "REPORTER" | "REPORTED") {
+    const ctx = await ensureContext(r);
+    const account = target === "REPORTER" ? ctx?.reporter : ctx?.reported;
+    if (!ctx || !account) {
+      setError("알림을 받을 계정을 확인할 수 없어요.");
+      return;
+    }
+    if (!confirm(`${account.name}님에게 신고 처리 알림을 보낼까요?`)) return;
+
+    const key = `${r.id}:${target}`;
+    setNotifyBusyKey(key);
+    setError(null);
+    try {
+      await notifyReportParty(r.id, target);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "알림을 보내지 못했어요.");
+    } finally {
+      setNotifyBusyKey(null);
     }
   }
 
@@ -136,7 +204,7 @@ export default function AdminReports() {
 
               <p style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 10 }}>{r.reason}</p>
 
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, color: "var(--text-2)" }}>
                   신고자 {r.reporterName} · 대상 ID {r.targetId.slice(0, 8)}…
                 </span>
@@ -155,10 +223,57 @@ export default function AdminReports() {
                   <span style={{ fontSize: 12, color: "var(--text-2)" }}>완료됨</span>
                 )}
               </div>
+
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                {r.targetType === "MESSAGE" && (
+                  <button
+                    className="chip"
+                    style={{ fontSize: 12, cursor: "pointer" }}
+                    onClick={() => void viewChat(r)}
+                    disabled={contextBusyId === r.id}
+                  >
+                    채팅 보기
+                  </button>
+                )}
+                <button
+                  className="chip"
+                  style={{ fontSize: 12, cursor: "pointer" }}
+                  onClick={() => void viewAccount(r, "reporter")}
+                  disabled={contextBusyId === r.id}
+                >
+                  신고자 계정 조회
+                </button>
+                <button
+                  className="chip"
+                  style={{ fontSize: 12, cursor: "pointer" }}
+                  onClick={() => void viewAccount(r, "reported")}
+                  disabled={contextBusyId === r.id}
+                >
+                  피신고자 계정 조회
+                </button>
+                <button
+                  className="chip"
+                  style={{ fontSize: 12, cursor: "pointer" }}
+                  onClick={() => void notify(r, "REPORTER")}
+                  disabled={contextBusyId === r.id || notifyBusyKey === `${r.id}:REPORTER`}
+                >
+                  {notifyBusyKey === `${r.id}:REPORTER` ? "전송 중…" : "신고자에게 처리 알림"}
+                </button>
+                <button
+                  className="chip"
+                  style={{ fontSize: 12, cursor: "pointer" }}
+                  onClick={() => void notify(r, "REPORTED")}
+                  disabled={contextBusyId === r.id || notifyBusyKey === `${r.id}:REPORTED`}
+                >
+                  {notifyBusyKey === `${r.id}:REPORTED` ? "전송 중…" : "피신고자에게 처리 알림"}
+                </button>
+              </div>
             </div>
           );
         })}
       </div>
+
+      <ReportChatModal chat={chatTarget} onClose={() => setChatTarget(null)} />
     </div>
   );
 }
