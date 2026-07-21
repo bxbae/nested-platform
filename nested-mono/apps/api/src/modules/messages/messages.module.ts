@@ -31,10 +31,36 @@ export class MessagesService {
     const rooms = await this.prisma.chatRoom.findMany({
       where: { OR: [{ guestId: userId }, { hostId: userId }] },
       include: {
-        room: { select: { name: true } },
-        // Host-side views (문의함) need to show who's asking, not just an id.
-        guest: { select: { id: true, name: true, avatarColor: true } },
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+        room: {
+          select: {
+            name: true,
+          },
+        },
+
+        guest: {
+          select: {
+            id: true,
+            name: true,
+            avatarColor: true,
+            avatarUrl: true,
+          },
+        },
+
+        host: {
+          select: {
+            id: true,
+            name: true,
+            avatarColor: true,
+            avatarUrl: true,
+          },
+        },
+
+        messages: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -109,10 +135,7 @@ export class MessagesService {
       return { message, notification };
     });
 
-    this.notificationsGateway.emitToUser(
-      recipientId,
-      result.notification,
-    );
+    this.notificationsGateway.emitToUser(recipientId, result.notification);
 
     return result.message;
   }

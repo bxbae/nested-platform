@@ -70,6 +70,10 @@ export class ChatGateway implements OnGatewayConnection {
       }
 
       await client.join(roomId);
+
+      client.emit("chat:ready", {
+        roomId,
+      });
     } catch {
       client.disconnect();
     }
@@ -164,18 +168,41 @@ export class ChatGateway implements OnGatewayConnection {
       throw new WsException("대화방 참여자만 읽음 처리할 수 있습니다.");
     }
 
-    await this.prisma.message.updateMany({
+    const result = await this.prisma.message.updateMany({
       where: {
         chatRoomId: data.roomId,
-        NOT: { readBy: { has: userId } },
+
+        // 상대방이 보낸 메시지만 읽음 처리
+        senderId: {
+          not: userId,
+        },
+
+        // 이미 읽은 메시지는 다시 처리하지 않음
+        NOT: {
+          readBy: {
+            has: userId,
+          },
+        },
       },
-      data: {},
+      data: {
+        // readBy 배열에 현재 로그인 사용자의 ID 추가
+        readBy: {
+          push: userId,
+        },
+      },
     });
 
-    this.server.to(data.roomId).emit("message:read", {
-      roomId: data.roomId,
-      userId,
-    });
+    if (result.count > 0) {
+      this.server.to(data.roomId).emit("message:read", {
+        roomId: data.roomId,
+        userId,
+        updatedCount: result.count,
+      });
+    }
+
+    return {
+      updatedCount: result.count,
+    };
   }
 
   @SubscribeMessage("typing")
