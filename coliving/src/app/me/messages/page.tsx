@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Socket } from "socket.io-client";
 import { useAuth } from "@/lib/api/useAuth";
 import {
   listChatRooms,
   listMessages,
-  sendMessage,
   listDirectConversations,
   listDirectMessages,
   sendDirectMessage,
@@ -16,16 +16,18 @@ import {
   type ApiDirectMessage,
 } from "@/lib/api/messages";
 import { uploadImage } from "@/lib/api/storage";
+import { createChatSocket } from "@/lib/api/socket";
 
 type Conversation =
-  | { kind: "room"; id: string; title: string; subtitle: string; raw: ApiChatRoom }
-  | { kind: "direct"; id: string; title: string; subtitle: string; raw: ApiDirectConversation };
+  | { kind: "room"; id: string; raw: ApiChatRoom }
+  | { kind: "direct"; id: string; raw: ApiDirectConversation };
 
 type UnifiedMessage = {
   id: string;
   senderId: string;
   body: string | null;
   imageUrl: string | null;
+  readBy?: string[];
   createdAt: string;
 };
 
@@ -41,67 +43,67 @@ export default function MessagesPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const messageBottomRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const socketRef = useRef<Socket | null>(null);
 
-  const conversations = useMemo<Conversation[]>(() => {
-    const rooms: Conversation[] = roomChats.map((room) => ({
-      kind: "room",
-      id: room.id,
-      title: room.room?.name ?? "숙소 문의",
-      subtitle: room.messages?.[0]?.body ?? "대화를 시작해보세요.",
-      raw: room,
-    }));
-    const directs: Conversation[] = directChats.map((conversation) => ({
-      kind: "direct",
-      id: conversation.id,
-      title: conversation.other?.name ?? "친구",
-      subtitle: conversation.messages?.[0]?.body ?? "대화를 시작해보세요.",
-      raw: conversation,
-    }));
-    return [...directs, ...rooms];
-  }, [roomChats, directChats]);
+  const conversations = useMemo<Conversation[]>(
+    () => [
+      ...directChats.map((raw) => ({ kind: "direct" as const, id: raw.id, raw })),
+      ...roomChats.map((raw) => ({ kind: "room" as const, id: raw.id, raw })),
+    ],
+    [directChats, roomChats],
+  );
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [rooms, directs] = await Promise.all([
-        listChatRooms(),
-        listDirectConversations(),
-      ]);
-      if (!alive) return;
-      setRoomChats(rooms);
-      setDirectChats(directs);
+      try {
+        const [rooms, directs] = await Promise.all([
+          listChatRooms(),
+          listDirectConversations(),
+        ]);
+        if (!alive) return;
+        setRoomChats(rooms);
+        setDirectChats(directs);
 
-      const params = new URLSearchParams(window.location.search);
-      const wantedRoom = params.get("room");
-      const wantedDirect = params.get("direct");
-      const all: Conversation[] = [
-        ...directs.map((conversation) => ({
-          kind: "direct" as const,
-          id: conversation.id,
-          title: conversation.other?.name ?? "친구",
-          subtitle: conversation.messages?.[0]?.body ?? "대화를 시작해보세요.",
-          raw: conversation,
-        })),
-        ...rooms.map((room) => ({
-          kind: "room" as const,
-          id: room.id,
-          title: room.room?.name ?? "숙소 문의",
-          subtitle: room.messages?.[0]?.body ?? "대화를 시작해보세요.",
-          raw: room,
-        })),
-      ];
-      setActive(
-        all.find((item) =>
-          item.kind === "direct"
-            ? item.id === wantedDirect
-            : item.id === wantedRoom,
-        ) ?? all[0] ?? null,
-      );
-      setLoading(false);
+        const params = new URLSearchParams(window.location.search);
+        const wantedRoom = params.get("room");
+        const wantedDirect = params.get("direct");
+        const all: Conversation[] = [
+          ...directs.map((raw) => ({ kind: "direct" as const, id: raw.id, raw })),
+          ...rooms.map((raw) => ({ kind: "room" as const, id: raw.id, raw })),
+        ];
+
+        setActive(
+          all.find((item) =>
+            item.kind === "direct"
+              ? item.id === wantedDirect
+              : item.id === wantedRoom,
+          ) ?? all[0] ?? null,
+        );
+      } finally {
+        if (alive) setLoading(false);
+      }
     })();
+
     return () => {
       alive = false;
     };
+  }, []);
+
+  const loadActiveThread = useCallback(async (conversation: Conversation) => {
+    const result =
+      conversation.kind === "direct"
+        ? await listDirectMessages(conversation.id)
+        : await listMessages(conversation.id);
+    setMessages(result as UnifiedMessage[]);
+
+    if (conversation.kind === "direct") {
+      await markDirectConversationRead(conversation.id);
+      window.dispatchEvent(new Event("messages:read"));
+    }
   }, []);
 
   useEffect(() => {
@@ -109,41 +111,111 @@ export default function MessagesPage() {
       setMessages([]);
       return;
     }
-    let alive = true;
-    const load = async () => {
-      const result =
-        active.kind === "direct"
-          ? await listDirectMessages(active.id)
-          : await listMessages(active.id);
-      if (!alive) return;
-      setMessages(result as UnifiedMessage[]);
-      if (active.kind === "direct") {
-        await markDirectConversationRead(active.id);
-        window.dispatchEvent(new Event("messages:read"));
-      }
+
+    void loadActiveThread(active);
+
+    if (active.kind !== "direct") return;
+    const timer = window.setInterval(() => void loadActiveThread(active), 3000);
+    return () => window.clearInterval(timer);
+  }, [active, loadActiveThread]);
+
+  useEffect(() => {
+    if (!active || active.kind !== "room") return;
+
+    const roomId = active.id;
+    const socket = createChatSocket(roomId);
+    socketRef.current = socket;
+
+    const markMessagesAsRead = () => socket.emit("message:read", { roomId });
+    const handleReady = (data: { roomId: string }) => {
+      if (data.roomId === roomId) markMessagesAsRead();
     };
-    void load();
-    const timer = window.setInterval(() => void load(), 3000);
+    const handleNew = (message: ApiMessage) => {
+      setMessages((prev) =>
+        prev.some((item) => item.id === message.id) ? prev : [...prev, message],
+      );
+      markMessagesAsRead();
+    };
+    const handleRead = (data: { roomId: string; userId: string }) => {
+      if (data.roomId !== roomId) return;
+      setMessages((prev) =>
+        prev.map((message) => {
+          if (message.senderId === data.userId) return message;
+          const readBy = message.readBy ?? [];
+          return readBy.includes(data.userId)
+            ? message
+            : { ...message, readBy: [...readBy, data.userId] };
+        }),
+      );
+      window.dispatchEvent(new Event("messages:read"));
+    };
+
+    socket.on("chat:ready", handleReady);
+    socket.on("message:new", handleNew);
+    socket.on("message:read", handleRead);
+
     return () => {
-      alive = false;
-      window.clearInterval(timer);
+      socket.off("chat:ready", handleReady);
+      socket.off("message:new", handleNew);
+      socket.off("message:read", handleRead);
+      socket.disconnect();
+      if (socketRef.current === socket) socketRef.current = null;
     };
   }, [active]);
 
+  useEffect(() => {
+    shouldStickToBottomRef.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      messageBottomRef.current?.scrollIntoView({ block: "end" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active?.id]);
+
+  useEffect(() => {
+    if (!shouldStickToBottomRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      messageBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages]);
+
   async function submit(body?: string, imageUrl?: string) {
-    if (!active || sending) return;
-    if (!body?.trim() && !imageUrl) return;
+    if (!active || sending || (!body?.trim() && !imageUrl)) return;
     setSending(true);
     setError(null);
+    shouldStickToBottomRef.current = true;
+
     try {
-      const created =
-        active.kind === "direct"
-          ? await sendDirectMessage(active.id, body?.trim(), imageUrl)
-          : await sendMessage(active.id, body?.trim(), imageUrl);
+      if (active.kind === "direct") {
+        const created = await sendDirectMessage(active.id, body?.trim(), imageUrl);
+        setMessages((prev) =>
+          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+        );
+        setDraft("");
+        return;
+      }
+
+      const socket = socketRef.current;
+      if (!socket?.connected) {
+        throw new Error("채팅 서버에 연결되지 않았어요. 잠시 후 다시 시도해주세요.");
+      }
+
+      const created = await new Promise<ApiMessage>((resolve, reject) => {
+        socket.timeout(5000).emit(
+          "message:send",
+          { roomId: active.id, body: body?.trim(), imageUrl },
+          (socketError: Error | null, message?: ApiMessage) => {
+            if (socketError || !message) {
+              reject(socketError ?? new Error("메시지를 보내지 못했어요."));
+              return;
+            }
+            resolve(message);
+          },
+        );
+      });
+
       setMessages((prev) =>
-        prev.some((message) => message.id === created.id)
-          ? prev
-          : [...prev, created as UnifiedMessage],
+        prev.some((item) => item.id === created.id) ? prev : [...prev, created],
       );
       setDraft("");
     } catch (cause) {
@@ -157,6 +229,7 @@ export default function MessagesPage() {
     const file = files?.[0];
     if (!file || uploading) return;
     setUploading(true);
+    setError(null);
     try {
       const url = await uploadImage(file, "chat");
       await submit(undefined, url);
@@ -168,104 +241,207 @@ export default function MessagesPage() {
     }
   }
 
-  if (loading) return <p>메시지를 불러오는 중…</p>;
+  function handleMessageScroll() {
+    const element = messageListRef.current;
+    if (!element) return;
+    shouldStickToBottomRef.current =
+      element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+  }
+
+  if (loading) {
+    return <p style={{ color: "var(--text-2)" }}>메시지를 불러오는 중…</p>;
+  }
+
+  const counterpart = getCounterpart(active, user?.id);
+  const counterpartName = counterpart.name;
+  const counterpartColor = counterpart.avatarColor ?? "var(--primary)";
+  const counterpartAvatarUrl = counterpart.avatarUrl;
+  const otherUserId = counterpart.id;
 
   return (
     <div>
       <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>메시지</h1>
+
       {conversations.length === 0 ? (
-        <div className="card" style={{ padding: 40, textAlign: "center" }}>
-          아직 대화가 없습니다.
+        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}>
+          아직 대화가 없어요.
         </div>
       ) : (
         <div className="inquiry-split">
           <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
-            {conversations.map((conversation) => (
-              <button
-                key={`${conversation.kind}:${conversation.id}`}
-                className="card press"
-                onClick={() => setActive(conversation)}
-                style={{
-                  padding: 14,
-                  textAlign: "left",
-                  border:
-                    active?.id === conversation.id && active.kind === conversation.kind
-                      ? "2px solid var(--primary)"
-                      : "1px solid var(--border)",
-                }}
-              >
-                <strong>{conversation.title}</strong>
-                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 4 }}>
-                  {conversation.kind === "direct" ? "친구 메시지" : "숙소 문의"}
-                </div>
-                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {conversation.subtitle}
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="card" style={{ padding: 20, minHeight: 520, display: "flex", flexDirection: "column" }}>
-            <div style={{ paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
-              <strong>{active?.title}</strong>
-              <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
-                {active?.kind === "direct" ? "친구와의 대화" : "숙소 관련 대화"}
-              </div>
-            </div>
-
-            <div style={{ flex: 1, display: "grid", gap: 10, alignContent: "start", padding: "16px 0" }}>
-              {messages.length === 0 && <p style={{ color: "var(--text-2)" }}>첫 메시지를 보내보세요.</p>}
-              {messages.map((message) => {
-                const mine = message.senderId === user?.id;
-                return (
-                  <div
-                    key={message.id}
-                    style={{
-                      justifySelf: mine ? "end" : "start",
-                      maxWidth: "80%",
-                      background: mine ? "var(--primary)" : "var(--bg-2)",
-                      color: mine ? "#fff" : "var(--text)",
-                      padding: message.imageUrl ? 4 : "10px 14px",
-                      borderRadius: "var(--r-md)",
-                    }}
-                  >
-                    {message.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={message.imageUrl} alt="전송된 이미지" style={{ maxWidth: 220, maxHeight: 220, borderRadius: 10, display: "block" }} />
-                    ) : (
-                      message.body
-                    )}
-                    <div style={{ fontSize: 10.5, opacity: 0.7, marginTop: 3, textAlign: mine ? "right" : "left" }}>
-                      {timeAgo(message.createdAt)}
+            {conversations.map((conversation) => {
+              const meta = getConversationMeta(conversation, user?.id);
+              return (
+                <button
+                  key={`${conversation.kind}:${conversation.id}`}
+                  onClick={() => setActive(conversation)}
+                  className="card press"
+                  style={{
+                    padding: 14,
+                    textAlign: "left",
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "flex-start",
+                    border:
+                      active?.id === conversation.id && active.kind === conversation.kind
+                        ? "1.5px solid var(--text)"
+                        : "1px solid var(--border)",
+                  }}
+                >
+                  <Avatar name={meta.name} color={meta.color} url={meta.avatarUrl} size={40} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <strong style={{ fontSize: 14 }}>{meta.name}</strong>
+                    <div style={{ fontSize: 12, color: "var(--text-2)" }}>
+                      {conversation.kind === "direct" ? "친구 메시지" : meta.context}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {meta.preview}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button className="press" type="button" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                {uploading ? "…" : "🖼️"}
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => void onPickImage(event.target.files)} />
-              <input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submit(draft); }} placeholder="메시지를 입력하세요" style={{ flex: 1 }} />
-              <button className="btn btn-primary" disabled={!draft.trim() || sending} onClick={() => void submit(draft)}>
-                {sending ? "전송 중…" : "보내기"}
-              </button>
-            </div>
-            {error && <p style={{ color: "var(--primary)", fontSize: 13 }}>{error}</p>}
+                </button>
+              );
+            })}
           </div>
+
+          {active && (
+            <div className="card" style={{ padding: 0, display: "flex", flexDirection: "column", height: "min(72vh, 720px)", minHeight: 520, overflow: "hidden" }}>
+              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: "1px solid var(--border)", background: "#fff" }}>
+                <Avatar name={counterpartName} color={counterpartColor} url={counterpartAvatarUrl} size={42} />
+                <div style={{ minWidth: 0 }}>
+                  <strong style={{ display: "block", fontSize: 16 }}>{counterpartName}</strong>
+                  <span style={{ display: "block", marginTop: 2, fontSize: 12.5, color: "var(--text-2)" }}>
+                    {active.kind === "direct" ? "친구와의 대화" : active.raw.room?.name ?? "숙소 관련 대화"}
+                  </span>
+                </div>
+              </div>
+
+              <div ref={messageListRef} onScroll={handleMessageScroll} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "18px 18px 24px", background: "var(--bg-2)" }}>
+                {messages.length === 0 && (
+                  <div style={{ height: "100%", display: "grid", placeItems: "center", color: "var(--text-2)", fontSize: 14 }}>
+                    첫 메시지를 보내보세요.
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gap: 9, alignContent: "start" }}>
+                  {messages.map((message, index) => {
+                    const mine = message.senderId === user?.id;
+                    const previous = messages[index - 1];
+                    const showDate = !previous || dateKey(previous.createdAt) !== dateKey(message.createdAt);
+                    const samePreviousSender = !showDate && previous?.senderId === message.senderId;
+                    const showAvatar = !mine && !samePreviousSender;
+                    const isRead = mine && Boolean(otherUserId && (message.readBy ?? []).includes(otherUserId));
+
+                    return (
+                      <Fragment key={message.id}>
+                        {showDate && (
+                          <div style={{ display: "flex", justifyContent: "center", margin: index === 0 ? "2px 0 12px" : "18px 0 12px" }}>
+                            <span style={{ padding: "6px 11px", borderRadius: 999, background: "rgba(0,0,0,.07)", color: "var(--text-2)", fontSize: 11.5 }}>
+                              {formatDateLabel(message.createdAt)}
+                            </span>
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 7 }}>
+                          {!mine && <div style={{ width: 34, flexShrink: 0 }}>{showAvatar && <Avatar name={counterpartName} color={counterpartColor} url={counterpartAvatarUrl} size={34} />}</div>}
+
+                          {mine && (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginBottom: 2, color: "var(--text-2)", fontSize: 10.5 }}>
+                              {!isRead && <span style={{ color: "var(--primary)", fontWeight: 800 }}>1</span>}
+                              <span>{formatMessageTime(message.createdAt)}</span>
+                            </div>
+                          )}
+
+                          <div style={{ minWidth: 0, maxWidth: "min(72%, 420px)" }}>
+                            {!mine && showAvatar && <div style={{ margin: "0 0 5px 3px", color: "var(--text-2)", fontSize: 11.5 }}>{counterpartName}</div>}
+                            <div style={{ background: mine ? "var(--primary)" : "#fff", color: mine ? "#fff" : "var(--text)", padding: message.imageUrl ? 4 : "10px 13px", borderRadius: mine ? "16px 16px 4px 16px" : "16px 16px 16px 4px", border: mine ? "none" : "1px solid var(--border)", fontSize: 14, lineHeight: 1.45, wordBreak: "break-word" }}>
+                              {message.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={message.imageUrl} alt="전송된 사진" style={{ maxWidth: 240, maxHeight: 280, borderRadius: 12, display: "block", objectFit: "cover" }} />
+                              ) : message.body}
+                            </div>
+                          </div>
+
+                          {!mine && <span style={{ marginBottom: 2, color: "var(--text-2)", fontSize: 10.5 }}>{formatMessageTime(message.createdAt)}</span>}
+                        </div>
+                      </Fragment>
+                    );
+                  })}
+                  <div ref={messageBottomRef} />
+                </div>
+              </div>
+
+              <div style={{ flexShrink: 0, padding: "12px 14px", borderTop: "1px solid var(--border)", background: "#fff" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button type="button" className="press" aria-label="이미지 전송" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ width: 38, height: 38, borderRadius: 999, background: "var(--bg-2)" }}>
+                    {uploading ? "…" : "🖼️"}
+                  </button>
+                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => void onPickImage(event.target.files)} />
+                  <input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(draft); } }} placeholder="메시지를 입력하세요" style={{ flex: 1, minWidth: 0 }} />
+                  <button className="btn btn-primary press" onClick={() => void submit(draft)} disabled={!draft.trim() || sending}>
+                    {sending ? "전송 중…" : "보내기"}
+                  </button>
+                </div>
+                {error && <p style={{ fontSize: 13, color: "var(--primary)", margin: "8px 0 0" }}>{error}</p>}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function timeAgo(iso: string) {
-  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (minutes < 1) return "방금";
-  if (minutes < 60) return `${minutes}분 전`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  return `${Math.floor(hours / 24)}일 전`;
+function getCounterpart(active: Conversation | null, currentUserId?: string) {
+  if (!active) return { id: "", name: "상대방", avatarColor: null as string | null, avatarUrl: null as string | null };
+  if (active.kind === "direct") {
+    return {
+      id: active.raw.other?.id ?? "",
+      name: active.raw.other?.name ?? "친구",
+      avatarColor: active.raw.other?.avatarColor ?? null,
+      avatarUrl: active.raw.other?.avatarUrl ?? null,
+    };
+  }
+  const other = active.raw.hostId === currentUserId ? active.raw.guest : active.raw.host;
+  return {
+    id: other?.id ?? (active.raw.hostId === currentUserId ? active.raw.guestId : active.raw.hostId),
+    name: other?.name ?? (active.raw.hostId === currentUserId ? "게스트" : "호스트"),
+    avatarColor: other?.avatarColor ?? null,
+    avatarUrl: other?.avatarUrl ?? null,
+  };
+}
+
+function getConversationMeta(conversation: Conversation, currentUserId?: string) {
+  const counterpart = getCounterpart(conversation, currentUserId);
+  const last = conversation.raw.messages?.[0] as ApiMessage | ApiDirectMessage | undefined;
+  return {
+    name: conversation.kind === "direct" ? counterpart.name : conversation.raw.room?.name ?? "숙소",
+    context: conversation.kind === "direct" ? "친구 메시지" : counterpart.name,
+    preview: last?.imageUrl ? "📷 사진" : last?.body ?? "아직 메시지가 없어요",
+    color: counterpart.avatarColor ?? "var(--primary)",
+    avatarUrl: counterpart.avatarUrl,
+  };
+}
+
+function Avatar({ name, color, url, size }: { name: string; color: string; url: string | null; size: number }) {
+  return url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt={`${name} 프로필`} style={{ width: size, height: size, borderRadius: 999, flexShrink: 0, objectFit: "cover" }} />
+  ) : (
+    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: 999, flexShrink: 0, background: color, display: "grid", placeItems: "center", color: "#fff", fontWeight: 700 }}>
+      {name.charAt(0)}
+    </span>
+  );
+}
+
+function dateKey(iso: string) {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function formatDateLabel(iso: string) {
+  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(iso));
+}
+
+function formatMessageTime(iso: string) {
+  return new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(new Date(iso));
 }

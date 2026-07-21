@@ -57,52 +57,53 @@ enum PaymentStatus {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  passwordHash String?       // null for OAuth-only accounts
-  name         String
-  role         Role          @default(GUEST)
-  provider     String?       // "google" | null
-  providerId   String?
-  avatarColor  String        @default("#FF5A5F")
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String? // null for OAuth-only accounts
+  name          String
+  role          Role      @default(GUEST)
+  provider      String? // "google" | null
+  providerId    String?
+  avatarColor   String    @default("#FF5A5F")
   // Profile photo (S3 URL). null → fall back to the avatarColor circle.
-  avatarUrl    String?
-  bio          String?       // self-introduction (스토리보드 1-1 자기소개)
-  age          Int?          // optional, shown as "25세" on the profile card
-  job          String?       // optional occupation label (e.g. "학생")
-  suspended    Boolean       @default(false)
+  avatarUrl     String?
+  bio           String? // self-introduction (스토리보드 1-1 자기소개)
+  age           Int? // optional, shown as "25세" on the profile card
+  job           String? // optional occupation label (e.g. "학생")
+  suspended     Boolean   @default(false)
   // Timestamp of email ownership confirmation. null = unverified.
   // Login is blocked while null (when a mail provider is configured).
   emailVerified DateTime?
   // Set by an admin once identity has been checked (신분증·연락처 확인).
   // Distinct from emailVerified, which only proves the address works.
-  verifiedAt   DateTime?
+  verifiedAt    DateTime?
   // Set when the user deletes their own account. Distinct from `suspended`,
   // which is an admin action. Non-null means the account is gone: login is
   // blocked and the personal fields above have been anonymised.
-  deletedAt    DateTime?
-  createdAt    DateTime      @default(now())
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
 
-  listings     Room[]        @relation("HostRooms")
-  reservations Reservation[]
+  listings              Room[]                   @relation("HostRooms")
+  reservations          Reservation[]
   // 내가 동반자로 초대된 예약들
-  companionReservations Reservation[] @relation("ReservationCompanion")
-  reviews      Review[]
-  messages     Message[]
-  sessions     RefreshToken[]
-  resetTokens  PasswordResetToken[]
-  verificationTokens EmailVerificationToken[]
-  hostProfile  HostProfile?
-  properties   Property[]     @relation("HostProperties")
-  notifications Notification[]
-  wishlists    Wishlist[]
-  favorites    Favorite[]
-  reportsMade  Report[]       @relation("Reporter")
-  chatRooms    ChatRoom[]     @relation("GuestChatRooms")
-  settlements  Settlement[]
-  posts        Post[]
-  comments     Comment[]
-  preference   RoommatePreference?
+  companionReservations Reservation[]            @relation("ReservationCompanion")
+  reviews               Review[]
+  messages              Message[]
+  sessions              RefreshToken[]
+  resetTokens           PasswordResetToken[]
+  verificationTokens    EmailVerificationToken[]
+  hostProfile           HostProfile?
+  properties            Property[]               @relation("HostProperties")
+  notifications         Notification[]
+  wishlists             Wishlist[]
+  favorites             Favorite[]
+  reportsMade           Report[]                 @relation("Reporter")
+  chatRooms             ChatRoom[]               @relation("GuestChatRooms")
+  hostChatRooms         ChatRoom[]               @relation("HostChatRooms")
+  settlements           Settlement[]
+  posts                 Post[]
+  comments              Comment[]
+  preference            RoommatePreference?
 
   friendshipsA Friendship[] @relation("FriendshipUserA")
   friendshipsB Friendship[] @relation("FriendshipUserB")
@@ -129,13 +130,13 @@ model RefreshToken {
 // Only the SHA-256 hash is stored: a leaked database must not hand an attacker
 // working reset links. The raw token exists only in the email we send.
 model PasswordResetToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime? // set on use, so a link can't be replayed
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
@@ -144,23 +145,23 @@ model PasswordResetToken {
 // only the SHA-256 hash is stored; the raw token lives only in the email.
 // Confirming a token stamps User.emailVerified and burns the row.
 model EmailVerificationToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime? // set on use, so a link can't be replayed
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
 
 model Room {
-  id             String       @id @default(cuid())
+  id             String          @id @default(cuid())
   hostId         String
-  host           User         @relation("HostRooms", fields: [hostId], references: [id])
+  host           User            @relation("HostRooms", fields: [hostId], references: [id])
   propertyId     String?
-  property       Property?    @relation(fields: [propertyId], references: [id])
+  property       Property?       @relation(fields: [propertyId], references: [id])
   name           String
   region         String
   // Street address the host attests to. Kept private (never returned by the
@@ -169,22 +170,22 @@ model Room {
   lat            Float
   lng            Float
   // Host attested this is a real listing they're authorised to rent.
-  verifiedByHost Boolean      @default(false)
+  verifiedByHost Boolean         @default(false)
   roomType       RoomType
   // 함께 지낼 수 있는 최대 인원. 독채(WHOLE_HOUSE)는 통째로 빌리므로 정원
   // 개념이 없어 null 로 둔다. 나머지 타입은 등록 시 필수.
   capacity       Int?
-  genderPolicy   GenderPolicy @default(ANY)
+  genderPolicy   GenderPolicy    @default(ANY)
   monthlyRent    Int
   deposit        Int
   cleaningFee    Int
   maintenanceFee Int
-  minStayMonths  Int          @default(3)
+  minStayMonths  Int             @default(3)
   availableFrom  DateTime
-  petsAllowed    Boolean      @default(false)
-  smokingAllowed Boolean      @default(false)
-  parking        Boolean      @default(false)
-  published      Boolean      @default(false)
+  petsAllowed    Boolean         @default(false)
+  smokingAllowed Boolean         @default(false)
+  parking        Boolean         @default(false)
+  published      Boolean         @default(false)
   images         Image[]
   reservations   Reservation[]
   reviews        Review[]
@@ -193,7 +194,7 @@ model Room {
   chatRooms      ChatRoom[]
   favorites      Favorite[]
   posts          Post[]
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime        @default(now())
 
   @@index([region])
   @@index([hostId])
@@ -243,32 +244,32 @@ model Image {
 }
 
 model Reservation {
-  id             String            @id @default(cuid())
-  roomId         String
-  room           Room              @relation(fields: [roomId], references: [id])
-  guestId        String
-  guest          User              @relation(fields: [guestId], references: [id])
+  id                   String            @id @default(cuid())
+  roomId               String
+  room                 Room              @relation(fields: [roomId], references: [id])
+  guestId              String
+  guest                User              @relation(fields: [guestId], references: [id])
   // ── 공동 예약 (룸메이트와 함께 방 예약) ──
   // guest 가 대표자이자 결제자다. companion 은 함께 살 상대이며, 비용은
   // 대표자가 전액 결제하고 둘 사이 정산은 서비스 밖에서 이뤄진다.
-  companionId    String?
-  companion      User?             @relation("ReservationCompanion", fields: [companionId], references: [id])
-  companionStatus CompanionStatus?
+  companionId          String?
+  companion            User?             @relation("ReservationCompanion", fields: [companionId], references: [id])
+  companionStatus      CompanionStatus?
   companionRespondedAt DateTime?
-  checkIn        DateTime
-  checkOut       DateTime
-  months         Int
-  status         ReservationStatus @default(PENDING_PAYMENT)
-  monthlyRent    Int
-  deposit        Int
-  cleaningFee    Int
-  maintenanceFee Int
-  serviceFee     Int
-  discount       Int               @default(0)
-  totalDueNow    Int
-  payment        Payment?
-  settlement     Settlement?
-  createdAt      DateTime          @default(now())
+  checkIn              DateTime
+  checkOut             DateTime
+  months               Int
+  status               ReservationStatus @default(PENDING_PAYMENT)
+  monthlyRent          Int
+  deposit              Int
+  cleaningFee          Int
+  maintenanceFee       Int
+  serviceFee           Int
+  discount             Int               @default(0)
+  totalDueNow          Int
+  payment              Payment?
+  settlement           Settlement?
+  createdAt            DateTime          @default(now())
 
   // DB-level guard against double-booking is enforced with an exclusion
   // constraint on (roomId, tstzrange(checkIn, checkOut)) via a migration.
@@ -281,7 +282,7 @@ model Payment {
   id            String        @id @default(cuid())
   reservationId String        @unique
   reservation   Reservation   @relation(fields: [reservationId], references: [id])
-  provider      String        // TOSS | PORTONE | STRIPE
+  provider      String // TOSS | PORTONE | STRIPE
   providerTxnId String
   amount        Int
   status        PaymentStatus @default(PENDING)
@@ -307,7 +308,7 @@ model Message {
   senderId   String
   sender     User     @relation(fields: [senderId], references: [id])
   body       String?
-  imageUrl   String?  // S3 key served via CloudFront
+  imageUrl   String? // S3 key served via CloudFront
   readBy     String[] @default([])
   createdAt  DateTime @default(now())
 
@@ -363,7 +364,7 @@ model DirectMessage {
 model Coupon {
   id          String   @id @default(cuid())
   code        String   @unique
-  type        String   // FIXED | PERCENT
+  type        String // FIXED | PERCENT
   value       Int
   maxDiscount Int?
   minSpend    Int      @default(0)
@@ -475,6 +476,7 @@ model ChatRoom {
   guestId   String
   guest     User      @relation("GuestChatRooms", fields: [guestId], references: [id])
   hostId    String
+  host      User      @relation("HostChatRooms", fields: [hostId], references: [id])
   messages  Message[]
   createdAt DateTime  @default(now())
 
@@ -569,63 +571,63 @@ model Comment {
 // so the nine answers are required (non-null) on a completed row.
 
 enum NoiseSensitivity {
-  QUIET      // 조용한 환경 선호
-  MODERATE   // 보통
-  LIVELY     // 활기찬 분위기도 괜찮음
+  QUIET // 조용한 환경 선호
+  MODERATE // 보통
+  LIVELY // 활기찬 분위기도 괜찮음
 }
 
 enum CleanlinessLevel {
-  VERY_TIDY  // 매우 깔끔하게 유지
-  MODERATE   // 적당히
-  RELAXED    // 느슨한 편
+  VERY_TIDY // 매우 깔끔하게 유지
+  MODERATE // 적당히
+  RELAXED // 느슨한 편
 }
 
 enum SmokingPreference {
   NON_SMOKING_ONLY // 비흡연 환경만 가능
-  OUTDOOR_OK       // 실외 흡연은 괜찮음
-  SMOKING_OK       // 흡연 무관
+  OUTDOOR_OK // 실외 흡연은 괜찮음
+  SMOKING_OK // 흡연 무관
 }
 
 enum PetPreference {
-  NO_PETS      // 반려동물 불가
-  CONDITIONAL  // 조건부 가능
-  PETS_OK      // 반려동물 환영
+  NO_PETS // 반려동물 불가
+  CONDITIONAL // 조건부 가능
+  PETS_OK // 반려동물 환영
 }
 
 enum VisitorPolicy {
   PRIOR_AGREEMENT // 사전 협의 필요
-  OCCASIONAL_OK   // 가끔은 괜찮음
-  FREQUENT_OK     // 자유롭게 허용
+  OCCASIONAL_OK // 가끔은 괜찮음
+  FREQUENT_OK // 자유롭게 허용
 }
 
 enum SleepPattern {
   EARLY_BIRD // 아침형
-  FLEXIBLE   // 유동적
-  NIGHT_OWL  // 저녁형
+  FLEXIBLE // 유동적
+  NIGHT_OWL // 저녁형
 }
 
 enum Sociability {
-  PRIVATE   // 각자 생활 선호
-  BALANCED  // 적당히
-  SOCIAL    // 자주 어울림
+  PRIVATE // 각자 생활 선호
+  BALANCED // 적당히
+  SOCIAL // 자주 어울림
 }
 
 enum SharedSpaceStyle {
-  MINIMAL  // 최소한만 사용
+  MINIMAL // 최소한만 사용
   MODERATE // 보통
   COMMUNAL // 함께 자주 사용
 }
 
 enum DrinkingHabit {
-  NON_DRINKER    // 거의 안 함
+  NON_DRINKER // 거의 안 함
   SOCIAL_DRINKER // 가끔
-  FREQUENT       // 자주
+  FREQUENT // 자주
 }
 
 model RoommatePreference {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   noise       NoiseSensitivity
   cleanliness CleanlinessLevel
@@ -638,16 +640,16 @@ model RoommatePreference {
   drinking    DrinkingHabit
 
   // Free-text answer from the subjective step (스토리보드 1-3), optional.
-  intro       String?
+  intro    String?
   // Keywords extracted from `intro` by a rule-based dictionary (no API cost
   // in the MVP; swappable for an LLM later without changing this shape).
-  keywords    String[] @default([])
+  keywords String[] @default([])
 
   // True once the survey is submitted. /match entry checks this flag.
-  isCompleted Boolean  @default(false)
+  isCompleted Boolean @default(false)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ── Notices & banners (관리자 콘텐츠) ─────────────────────────────────
@@ -669,11 +671,11 @@ model Notice {
 model Banner {
   id        String   @id @default(cuid())
   title     String
-  color     String                    // 배경색 (hex, e.g. "#FF5A5F")
-  position  String                    // 노출 위치 (예: "메인 상단")
-  linkUrl   String?                   // 클릭 시 이동 (선택)
-  active    Boolean  @default(true)   // 노출 여부 (홈 공개 조회가 이 값으로 필터)
-  order     Int      @default(0)      // 정렬 순서 (낮을수록 먼저)
+  color     String // 배경색 (hex, e.g. "#FF5A5F")
+  position  String // 노출 위치 (예: "메인 상단")
+  linkUrl   String? // 클릭 시 이동 (선택)
+  active    Boolean  @default(true) // 노출 여부 (홈 공개 조회가 이 값으로 필터)
+  order     Int      @default(0) // 정렬 순서 (낮을수록 먼저)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -15,9 +15,6 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 import { JwtService } from "@nestjs/jwt";
 
-// Realtime chat gateway. Event names match the frontend Socket.io client:
-//   message:send / message:new / message:read / typing
-// Scales horizontally via the Redis adapter wired in main.ts.
 @Injectable()
 @WebSocketGateway({ namespace: "/chat", cors: { origin: true } })
 export class ChatGateway implements OnGatewayConnection {
@@ -40,12 +37,9 @@ export class ChatGateway implements OnGatewayConnection {
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub: string }>(
-        token,
-        {
-          secret: process.env.JWT_ACCESS_SECRET ?? "dev-access-secret",
-        },
-      );
+      const payload = await this.jwtService.verifyAsync<{ sub: string }>(token, {
+        secret: process.env.JWT_ACCESS_SECRET ?? "dev-access-secret",
+      });
 
       client.data.userId = payload.sub;
 
@@ -55,10 +49,7 @@ export class ChatGateway implements OnGatewayConnection {
 
       const chatRoom = await this.prisma.chatRoom.findUnique({
         where: { id: roomId },
-        select: {
-          guestId: true,
-          hostId: true,
-        },
+        select: { guestId: true, hostId: true },
       });
 
       const isParticipant =
@@ -70,6 +61,7 @@ export class ChatGateway implements OnGatewayConnection {
       }
 
       await client.join(roomId);
+      client.emit("chat:ready", { roomId });
     } catch {
       client.disconnect();
     }
@@ -78,11 +70,7 @@ export class ChatGateway implements OnGatewayConnection {
   @SubscribeMessage("message:send")
   async onSend(
     @MessageBody()
-    data: {
-      roomId: string;
-      body?: string;
-      imageUrl?: string;
-    },
+    data: { roomId: string; body?: string; imageUrl?: string },
     @ConnectedSocket() client: Socket,
   ) {
     const senderId = client.data.userId as string | undefined;
@@ -137,7 +125,6 @@ export class ChatGateway implements OnGatewayConnection {
     });
 
     this.server.to(data.roomId).emit("message:new", result.message);
-
     this.notificationsGateway.emitToUser(recipientId, result.notification);
 
     await this.notifications.add("push", {
@@ -164,27 +151,34 @@ export class ChatGateway implements OnGatewayConnection {
       throw new WsException("대화방 참여자만 읽음 처리할 수 있습니다.");
     }
 
-    const unreadMessages = await this.prisma.message.findMany({
+    const result = await this.prisma.message.updateMany({
       where: {
         chatRoomId: data.roomId,
+        senderId: { not: userId },
         NOT: { readBy: { has: userId } },
       },
-      select: { id: true, readBy: true },
+      data: { readBy: { push: userId } },
     });
 
-    await this.prisma.$transaction(
-      unreadMessages.map((message) =>
-        this.prisma.message.update({
-          where: { id: message.id },
-          data: { readBy: [...message.readBy, userId] },
-        }),
-      ),
-    );
-
-    this.server.to(data.roomId).emit("message:read", {
-      roomId: data.roomId,
-      userId,
+    await this.prisma.notification.updateMany({
+      where: {
+        userId,
+        type: "MESSAGE",
+        read: false,
+        targetUrl: `/me/messages?room=${data.roomId}`,
+      },
+      data: { read: true },
     });
+
+    if (result.count > 0) {
+      this.server.to(data.roomId).emit("message:read", {
+        roomId: data.roomId,
+        userId,
+        updatedCount: result.count,
+      });
+    }
+
+    return { updatedCount: result.count };
   }
 
   @SubscribeMessage("typing")
@@ -202,8 +196,6 @@ export class ChatGateway implements OnGatewayConnection {
       throw new WsException("대화방 참여자만 입력 상태를 전송할 수 있습니다.");
     }
 
-    client.to(data.roomId).emit("typing", {
-      userId,
-    });
+    client.to(data.roomId).emit("typing", { userId });
   }
 }

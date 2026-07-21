@@ -10,6 +10,7 @@ export interface ApiMessage {
   id: string;
   chatRoomId: string;
   senderId: string;
+  readBy: string[];
   body: string | null;
   imageUrl: string | null;
   createdAt: string;
@@ -21,9 +22,26 @@ export interface ApiChatRoom {
   guestId: string;
   hostId: string;
   createdAt: string;
-  room: { name: string };
-  guest?: { id: string; name: string; avatarColor: string | null };
-  messages: ApiMessage[]; // last message only (take: 1)
+
+  room: {
+    name: string;
+  };
+
+  guest: {
+    id: string;
+    name: string;
+    avatarColor: string;
+    avatarUrl: string | null;
+  };
+
+  host: {
+    id: string;
+    name: string;
+    avatarColor: string;
+    avatarUrl: string | null;
+  };
+
+  messages: ApiMessage[];
 }
 
 // GET /messages/rooms — my conversations, newest first
@@ -62,13 +80,19 @@ export async function sendMessage(
 
 // POST /messages/rooms — get-or-create the thread with a listing's host.
 // Used by the "호스트에게 문의" button on a room page.
-export async function openChatRoom(roomId: string, hostId: string): Promise<ApiChatRoom> {
+export async function openChatRoom(
+  roomId: string,
+  hostId: string,
+): Promise<ApiChatRoom> {
   return api.post<ApiChatRoom>("/messages/rooms", { roomId, hostId });
 }
 
 // POST /messages/rooms/as-host — the host starts a chat with a guest, choosing
 // one of their own listings. Used by "채팅 시작" on the 입주 희망자 찾기 page.
-export async function openChatRoomAsHost(roomId: string, guestId: string): Promise<ApiChatRoom> {
+export async function openChatRoomAsHost(
+  roomId: string,
+  guestId: string,
+): Promise<ApiChatRoom> {
   return api.post<ApiChatRoom>("/messages/rooms/as-host", { roomId, guestId });
 }
 
