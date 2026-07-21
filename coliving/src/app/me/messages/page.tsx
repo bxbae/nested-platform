@@ -42,11 +42,22 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 전송 전 미리보기: 파일을 고르면 바로 업로드하지 않고 여기 담아뒀다가
+  // 사용자가 확인 후 "보내기"를 눌러야 실제로 업로드+전송한다.
+  const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const pendingImageRef = useRef<{ file: File; previewUrl: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const messageBottomRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const socketRef = useRef<Socket | null>(null);
+
+  // 언마운트 시 남아있는 미리보기 objectURL을 정리한다.
+  useEffect(() => {
+    return () => {
+      if (pendingImageRef.current) URL.revokeObjectURL(pendingImageRef.current.previewUrl);
+    };
+  }, []);
 
   const conversations = useMemo<Conversation[]>(
     () => [
@@ -171,6 +182,19 @@ export default function MessagesPage() {
     return () => window.cancelAnimationFrame(frame);
   }, [active?.id]);
 
+  // 대화방을 바꾸면 이전 방에서 고르던 사진 미리보기는 버린다.
+  useEffect(() => {
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  }, [active?.id]);
+
+  useEffect(() => {
+    pendingImageRef.current = pendingImage;
+  }, [pendingImage]);
+
+
   useEffect(() => {
     if (!shouldStickToBottomRef.current) return;
     const frame = window.requestAnimationFrame(() => {
@@ -180,7 +204,7 @@ export default function MessagesPage() {
   }, [messages]);
 
   async function submit(body?: string, imageUrl?: string) {
-    if (!active || sending || (!body?.trim() && !imageUrl)) return;
+    if (!active || sending || (!body?.trim() && !imageUrl)) return false;
     setSending(true);
     setError(null);
     shouldStickToBottomRef.current = true;
@@ -192,7 +216,7 @@ export default function MessagesPage() {
           prev.some((item) => item.id === created.id) ? prev : [...prev, created],
         );
         setDraft("");
-        return;
+        return true;
       }
 
       const socket = socketRef.current;
@@ -218,27 +242,64 @@ export default function MessagesPage() {
         prev.some((item) => item.id === created.id) ? prev : [...prev, created],
       );
       setDraft("");
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "메시지를 보내지 못했습니다.");
+      return false;
     } finally {
       setSending(false);
     }
   }
 
-  async function onPickImage(files: FileList | null) {
+  // 파일을 고르면 미리보기만 준비하고, 실제 업로드는 하지 않는다.
+  function onPickImage(files: FileList | null) {
     const file = files?.[0];
-    if (!file || uploading) return;
+    if (!file) return;
+    setError(null);
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return { file, previewUrl: URL.createObjectURL(file) };
+    });
+  }
+
+  // 미리보기에서 X를 눌러 전송을 취소한다.
+  function cancelPendingImage() {
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  // 미리보기 중인 사진을 실제로 업로드하고, 입력 중인 텍스트가 있으면
+  // 캡션으로 함께 보낸다. 전송에 성공했을 때만 미리보기를 지운다.
+  async function sendPendingImage() {
+    if (!pendingImage || uploading || sending) return;
     setUploading(true);
     setError(null);
     try {
-      const url = await uploadImage(file, "chat");
-      await submit(undefined, url);
+      const url = await uploadImage(pendingImage.file, "chat");
+      const ok = await submit(draft.trim() || undefined, url);
+      if (ok) {
+        URL.revokeObjectURL(pendingImage.previewUrl);
+        setPendingImage(null);
+        if (fileRef.current) fileRef.current.value = "";
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "이미지를 보내지 못했습니다.");
     } finally {
       setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
     }
+  }
+
+  // 입력창의 "보내기"/Enter는 대기 중인 사진이 있으면 사진(+캡션)을,
+  // 없으면 기존처럼 텍스트만 보낸다.
+  async function handleSend() {
+    if (pendingImage) {
+      await sendPendingImage();
+      return;
+    }
+    await submit(draft);
   }
 
   function handleMessageScroll() {
@@ -371,14 +432,62 @@ export default function MessagesPage() {
               </div>
 
               <div style={{ flexShrink: 0, padding: "12px 14px", borderTop: "1px solid var(--border)", background: "#fff" }}>
+                {pendingImage && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 10px" }}>
+                    <div style={{ position: "relative", flexShrink: 0 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={pendingImage.previewUrl}
+                        alt="보낼 사진 미리보기"
+                        style={{ width: 72, height: 72, borderRadius: 12, objectFit: "cover", border: "1px solid var(--border)", display: "block" }}
+                      />
+                      <button
+                        type="button"
+                        aria-label="사진 취소"
+                        onClick={cancelPendingImage}
+                        disabled={uploading}
+                        style={{
+                          position: "absolute",
+                          top: -6,
+                          right: -6,
+                          width: 20,
+                          height: 20,
+                          borderRadius: 999,
+                          background: "rgba(0,0,0,0.65)",
+                          color: "#fff",
+                          fontSize: 11,
+                          lineHeight: "20px",
+                          textAlign: "center",
+                          border: "none",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                      {uploading ? "전송 중…" : "사진을 확인하고 보내기를 눌러주세요."}
+                    </span>
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <button type="button" className="press" aria-label="이미지 전송" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ width: 38, height: 38, borderRadius: 999, background: "var(--bg-2)" }}>
-                    {uploading ? "…" : "🖼️"}
+                    🖼️
                   </button>
-                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => void onPickImage(event.target.files)} />
-                  <input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(draft); } }} placeholder="메시지를 입력하세요" style={{ flex: 1, minWidth: 0 }} />
-                  <button className="btn btn-primary press" onClick={() => void submit(draft)} disabled={!draft.trim() || sending}>
-                    {sending ? "전송 중…" : "보내기"}
+                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => onPickImage(event.target.files)} />
+                  <input
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        void handleSend();
+                      }
+                    }}
+                    placeholder={pendingImage ? "사진과 함께 보낼 메시지 (선택)" : "메시지를 입력하세요"}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                  <button className="btn btn-primary press" onClick={() => void handleSend()} disabled={(!draft.trim() && !pendingImage) || sending || uploading}>
+                    {sending || uploading ? "전송 중…" : "보내기"}
                   </button>
                 </div>
                 {error && <p style={{ fontSize: 13, color: "var(--primary)", margin: "8px 0 0" }}>{error}</p>}
