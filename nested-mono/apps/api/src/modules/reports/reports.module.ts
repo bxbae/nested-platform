@@ -1,139 +1,52 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  Injectable,
-  Module,
-  NotFoundException,
-  Post,
-  Req,
-  UseGuards,
-} from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Injectable, Module, NotFoundException, Post, Req, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
 
-// ReportTargetType (schema.prisma) 과 동일한 값.
-const REPORT_TARGET_TYPES = ["ROOM", "REVIEW", "USER", "MESSAGE"] as const;
-type ReportTargetType = (typeof REPORT_TARGET_TYPES)[number];
-
-const createReportSchema = z.object({
-  targetType: z.enum(REPORT_TARGET_TYPES),
-  targetId: z.string().min(1),
-  reason: z.string().trim().min(1, "신고 사유를 입력해주세요.").max(500),
-});
+const TYPES = ["ROOM", "REVIEW", "USER", "MESSAGE", "COMMUNITY_POST", "COMMUNITY_COMMENT"] as const;
+type TargetType = (typeof TYPES)[number];
+const schema = z.object({ targetType: z.enum(TYPES), targetId: z.string().min(1), reason: z.string().trim().min(1).max(500) });
 
 @Injectable()
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 메시지 신고: 채팅방/다이렉트 대화 양쪽 테이블에서 메시지를 찾아
-  //  - 신고자가 그 대화의 참여자인지
-  //  - 본인이 보낸 메시지를 스스로 신고하는 건 아닌지
-  // 를 확인한다.
-  private async assertCanReportMessage(reporterId: string, messageId: string) {
-    const roomMessage = await this.prisma.message.findUnique({
-      where: { id: messageId },
-      select: {
-        senderId: true,
-        chatRoom: { select: { guestId: true, hostId: true } },
-      },
-    });
-
-    if (roomMessage) {
-      const isParticipant =
-        roomMessage.chatRoom.guestId === reporterId ||
-        roomMessage.chatRoom.hostId === reporterId;
-
-      if (!isParticipant) {
-        throw new ForbiddenException({
-          code: "NOT_CONVERSATION_MEMBER",
-          message: "대화 참여자만 신고할 수 있습니다.",
-        });
+  private async reportedUserId(reporterId: string, type: TargetType, id: string): Promise<string | null> {
+    if (type === "USER") return id;
+    if (type === "COMMUNITY_POST") {
+      const row = await this.prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+      if (!row) throw new NotFoundException("게시글을 찾을 수 없습니다.");
+      return row.authorId;
+    }
+    if (type === "COMMUNITY_COMMENT") {
+      const row = await this.prisma.comment.findUnique({ where: { id }, select: { authorId: true } });
+      if (!row) throw new NotFoundException("댓글을 찾을 수 없습니다.");
+      return row.authorId;
+    }
+    if (type === "MESSAGE") {
+      const room = await this.prisma.message.findUnique({ where: { id }, select: { senderId: true, chatRoom: { select: { guestId: true, hostId: true } } } });
+      if (room) {
+        if (![room.chatRoom.guestId, room.chatRoom.hostId].includes(reporterId)) throw new ForbiddenException("대화 참여자만 신고할 수 있습니다.");
+        return room.senderId;
       }
-      if (roomMessage.senderId === reporterId) {
-        throw new ForbiddenException({
-          code: "CANNOT_REPORT_SELF",
-          message: "본인 메시지는 신고할 수 없습니다.",
-        });
-      }
-      return;
+      const direct = await this.prisma.directMessage.findUnique({ where: { id }, select: { senderId: true, conversation: { select: { participantAId: true, participantBId: true } } } });
+      if (!direct) throw new NotFoundException("메시지를 찾을 수 없습니다.");
+      if (![direct.conversation.participantAId, direct.conversation.participantBId].includes(reporterId)) throw new ForbiddenException("대화 참여자만 신고할 수 있습니다.");
+      return direct.senderId;
     }
-
-    const directMessage = await this.prisma.directMessage.findUnique({
-      where: { id: messageId },
-      select: {
-        senderId: true,
-        conversation: {
-          select: { participantAId: true, participantBId: true },
-        },
-      },
-    });
-
-    if (!directMessage) {
-      throw new NotFoundException({
-        code: "MESSAGE_NOT_FOUND",
-        message: "메시지를 찾을 수 없습니다.",
-      });
-    }
-
-    const isParticipant =
-      directMessage.conversation.participantAId === reporterId ||
-      directMessage.conversation.participantBId === reporterId;
-
-    if (!isParticipant) {
-      throw new ForbiddenException({
-        code: "NOT_CONVERSATION_MEMBER",
-        message: "대화 참여자만 신고할 수 있습니다.",
-      });
-    }
-    if (directMessage.senderId === reporterId) {
-      throw new ForbiddenException({
-        code: "CANNOT_REPORT_SELF",
-        message: "본인 메시지는 신고할 수 없습니다.",
-      });
-    }
+    return null;
   }
 
-  async create(
-    reporterId: string,
-    dto: { targetType: ReportTargetType; targetId: string; reason: string },
-  ) {
-    if (dto.targetType === "MESSAGE") {
-      await this.assertCanReportMessage(reporterId, dto.targetId);
-    }
-
-    // status 는 admin 쪽 신고함(/admin/reports)에서 그대로 조회한다 —
-    // 기본값 RECEIVED 로 생성되며 관리자가 IN_REVIEW → RESOLVED 로 처리.
-    return this.prisma.report.create({
-      data: {
-        reporterId,
-        targetType: dto.targetType,
-        targetId: dto.targetId,
-        reason: dto.reason,
-      },
-    });
+  async create(reporterId: string, dto: { targetType: TargetType; targetId: string; reason: string }) {
+    const reportedId = await this.reportedUserId(reporterId, dto.targetType, dto.targetId);
+    if (reportedId === reporterId) throw new ForbiddenException({ code: "CANNOT_REPORT_SELF", message: "본인이 작성한 콘텐츠는 신고할 수 없습니다." });
+    const duplicate = await this.prisma.report.findFirst({ where: { reporterId, targetType: dto.targetType, targetId: dto.targetId, status: { in: ["RECEIVED", "IN_REVIEW"] } } });
+    if (duplicate) throw new ForbiddenException({ code: "DUPLICATE_REPORT", message: "이미 접수된 신고입니다." });
+    return this.prisma.report.create({ data: { reporterId, ...dto } });
   }
 }
-
-// 사용자용 신고 접수 API (관리자 화면은 modules/admin 의 GET/PATCH /admin/reports 에서 처리)
-@Controller("reports")
-@UseGuards(JwtAuthGuard)
-export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
-
-  @Post()
-  create(
-    @Req() req: any,
-    @Body(new ZodValidationPipe(createReportSchema)) dto: any,
-  ) {
-    return this.reports.create(req.user.id, dto);
-  }
-}
-
-@Module({
-  controllers: [ReportsController],
-  providers: [ReportsService],
-})
+@Controller("reports") @UseGuards(JwtAuthGuard)
+export class ReportsController { constructor(private readonly reports: ReportsService) {} @Post() create(@Req() req: any, @Body(new ZodValidationPipe(schema)) dto: any) { return this.reports.create(req.user.id, dto); } }
+@Module({ controllers: [ReportsController], providers: [ReportsService] })
 export class ReportsModule {}

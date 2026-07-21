@@ -246,6 +246,18 @@ export class AdminService {
         select: { author: { select: { id: true, name: true, email: true } } },
       });
       reported = review?.author ?? null;
+    } else if (report.targetType === "COMMUNITY_POST") {
+      const post = await this.prisma.post.findUnique({
+        where: { id: report.targetId },
+        select: { author: { select: { id: true, name: true, email: true } } },
+      });
+      reported = post?.author ?? null;
+    } else if (report.targetType === "COMMUNITY_COMMENT") {
+      const comment = await this.prisma.comment.findUnique({
+        where: { id: report.targetId },
+        select: { author: { select: { id: true, name: true, email: true } } },
+      });
+      reported = comment?.author ?? null;
     } else if (report.targetType === "MESSAGE") {
       const roomMessage = await this.prisma.message.findUnique({
         where: { id: report.targetId },

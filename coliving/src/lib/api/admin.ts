@@ -56,7 +56,7 @@ export async function getStats(): Promise<AdminStats> {
 // ── Reports (신고 관리) ──
 
 export type ReportStatus = "RECEIVED" | "IN_REVIEW" | "RESOLVED";
-export type ReportTargetType = "ROOM" | "REVIEW" | "USER" | "MESSAGE";
+export type ReportTargetType = "ROOM" | "REVIEW" | "USER" | "MESSAGE" | "COMMUNITY_POST" | "COMMUNITY_COMMENT";
 
 export interface AdminReport {
   id: string;
