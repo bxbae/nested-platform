@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.module";
@@ -327,6 +332,29 @@ export class RoomsService {
     const room = await this.prisma.room.findUnique({ where: { id } });
     if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
     if (room.hostId !== hostId) throw new ForbiddenException("본인 숙소만 삭제할 수 있습니다.");
+
+    // 살아 있는 예약이 걸린 방은 지울 수 없다. 지워 버리면 이미 결제한
+    // 게스트가 갈 곳을 잃는다. 예약을 먼저 정리(취소·완료)해야 한다.
+    const active = await this.prisma.reservation.count({
+      where: {
+        roomId: id,
+        status: {
+          in: [
+            "PENDING_PAYMENT",
+            "CONFIRMED",
+            "EARLY_CHECKOUT_REQUESTED",
+            "EARLY_CHECKOUT_APPROVED",
+          ],
+        },
+      },
+    });
+    if (active > 0) {
+      throw new BadRequestException({
+        code: "ROOM_HAS_ACTIVE_RESERVATIONS",
+        message: `진행 중인 예약이 ${active}건 있어 삭제할 수 없습니다. 예약을 먼저 정리해주세요.`,
+      });
+    }
+
     await this.prisma.room.delete({ where: { id } });
     return { ok: true };
   }
