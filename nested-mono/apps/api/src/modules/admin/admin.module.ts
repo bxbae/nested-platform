@@ -8,6 +8,8 @@ import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
 import { activityTier, TIER_LABEL } from "../../common/activity-tier";
+import { NotificationsModule } from "../notifications/notifications.module";
+import { NotificationsGateway } from "../notifications/notifications.gateway";
 
 const noticeCreateSchema = z.object({
   title: z.string().min(1, "제목을 입력해주세요.").max(200),
@@ -48,7 +50,10 @@ const couponCreateSchema = z.object({
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsGateway: NotificationsGateway,
+  ) {}
 
   // members (검색 + 정지 토글)
   async members(q?: string) {
@@ -201,11 +206,147 @@ export class AdminService {
       reason: r.reason,
       status: r.status,
       createdAt: r.createdAt,
+      reporterId: r.reporterId,
       reporterName: r.reporter?.name ?? "알 수 없음",
     }));
   }
   setReportStatus(id: string, status: string) {
     return this.prisma.report.update({ where: { id }, data: { status: status as any } });
+  }
+
+  // 신고 상세 컨텍스트 — 신고자/피신고자 계정과, MESSAGE 신고라면 연결된
+  // 채팅(채팅방 or 1:1 다이렉트)의 위치를 함께 내려준다. 신고 관리 화면의
+  // "계정 조회" / "채팅 보기" 버튼이 이 응답을 사용한다.
+  async reportContext(reportId: string) {
+    const report = await this.prisma.report.findUnique({
+      where: { id: reportId },
+      include: { reporter: { select: { id: true, name: true, email: true } } },
+    });
+    if (!report) {
+      throw new NotFoundException({ code: "REPORT_NOT_FOUND", message: "신고를 찾을 수 없어요." });
+    }
+
+    let reported: { id: string; name: string; email: string } | null = null;
+    let chat: { kind: "ROOM" | "DIRECT"; id: string } | null = null;
+
+    if (report.targetType === "USER") {
+      reported = await this.prisma.user.findUnique({
+        where: { id: report.targetId },
+        select: { id: true, name: true, email: true },
+      });
+    } else if (report.targetType === "ROOM") {
+      const room = await this.prisma.room.findUnique({
+        where: { id: report.targetId },
+        select: { host: { select: { id: true, name: true, email: true } } },
+      });
+      reported = room?.host ?? null;
+    } else if (report.targetType === "REVIEW") {
+      const review = await this.prisma.review.findUnique({
+        where: { id: report.targetId },
+        select: { author: { select: { id: true, name: true, email: true } } },
+      });
+      reported = review?.author ?? null;
+    } else if (report.targetType === "MESSAGE") {
+      const roomMessage = await this.prisma.message.findUnique({
+        where: { id: report.targetId },
+        select: {
+          chatRoomId: true,
+          sender: { select: { id: true, name: true, email: true } },
+        },
+      });
+      if (roomMessage) {
+        reported = roomMessage.sender;
+        chat = { kind: "ROOM", id: roomMessage.chatRoomId };
+      } else {
+        const directMessage = await this.prisma.directMessage.findUnique({
+          where: { id: report.targetId },
+          select: {
+            conversationId: true,
+            sender: { select: { id: true, name: true, email: true } },
+          },
+        });
+        if (directMessage) {
+          reported = directMessage.sender;
+          chat = { kind: "DIRECT", id: directMessage.conversationId };
+        }
+      }
+    }
+
+    return { reporter: report.reporter, reported, chat };
+  }
+
+  // 채팅방(숙소 문의) 대화 조회 — 관리자는 대화 참여자가 아니어도
+  // 신고된 메시지가 오간 대화 전체를 볼 수 있어야 한다.
+  async roomChat(chatRoomId: string) {
+    const room = await this.prisma.chatRoom.findUnique({
+      where: { id: chatRoomId },
+      include: {
+        guest: { select: { id: true, name: true, email: true } },
+        host: { select: { id: true, name: true, email: true } },
+        messages: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, senderId: true, body: true, imageUrl: true, createdAt: true },
+        },
+      },
+    });
+    if (!room) {
+      throw new NotFoundException({ code: "CHAT_ROOM_NOT_FOUND", message: "대화방을 찾을 수 없어요." });
+    }
+    return { guest: room.guest, host: room.host, messages: room.messages };
+  }
+
+  // 1:1 다이렉트 대화 조회 (관리자용)
+  async directChat(conversationId: string) {
+    const conversation = await this.prisma.directConversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        participantA: { select: { id: true, name: true, email: true } },
+        participantB: { select: { id: true, name: true, email: true } },
+        messages: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, senderId: true, body: true, imageUrl: true, createdAt: true },
+        },
+      },
+    });
+    if (!conversation) {
+      throw new NotFoundException({ code: "CONVERSATION_NOT_FOUND", message: "대화를 찾을 수 없어요." });
+    }
+    return {
+      participantA: conversation.participantA,
+      participantB: conversation.participantB,
+      messages: conversation.messages,
+    };
+  }
+
+  // 신고 처리 알림 — 신고자/피신고자에게 처리 결과를 알림으로 보낸다.
+  // 알림 타입은 스키마상 별도 REPORT 타입이 없어 SYSTEM 을 사용한다.
+  async notifyReportParties(reportId: string, target: "REPORTER" | "REPORTED", message?: string) {
+    const context = await this.reportContext(reportId);
+    const recipient = target === "REPORTER" ? context.reporter : context.reported;
+    if (!recipient) {
+      throw new NotFoundException({
+        code: "RECIPIENT_NOT_FOUND",
+        message: target === "REPORTER" ? "신고자 계정을 찾을 수 없어요." : "피신고자 계정을 찾을 수 없어요.",
+      });
+    }
+
+    const title = target === "REPORTER" ? "신고 처리 안내" : "신고 접수 및 처리 안내";
+    const defaultBody =
+      target === "REPORTER"
+        ? "신고해 주신 내용이 검토·처리되었습니다."
+        : "회원님과 관련된 신고가 접수되어 검토 후 조치되었습니다.";
+
+    const notification = await this.prisma.notification.create({
+      data: {
+        userId: recipient.id,
+        type: "SYSTEM",
+        title,
+        body: message?.trim() ? `${defaultBody}\n${message.trim()}` : defaultBody,
+      },
+    });
+
+    this.notificationsGateway.emitToUser(recipient.id, notification);
+    return notification;
   }
 
   // stats / revenue (통계 · 매출)
@@ -488,6 +629,10 @@ const verifySchema = z.object({ verified: z.boolean() });
 const roleSchema = z.object({ role: z.enum(["GUEST", "HOST", "ADMIN"]) });
 const publishSchema = z.object({ published: z.boolean() });
 const reportStatusSchema = z.object({ status: z.enum(["RECEIVED", "IN_REVIEW", "RESOLVED"]) });
+const reportNotifySchema = z.object({
+  target: z.enum(["REPORTER", "REPORTED"]),
+  message: z.string().trim().max(500).optional(),
+});
 
 // 관리자 API — all routes require ADMIN role.
 @Controller("admin")
@@ -558,6 +703,33 @@ export class AdminController {
   @Patch("reports/:id")
   reportStatus(@Param("id") id: string, @Body(new ZodValidationPipe(reportStatusSchema)) dto: any) {
     return this.admin.setReportStatus(id, dto.status);
+  }
+
+  // GET /admin/reports/:id/context — 신고자/피신고자 계정 + 연결된 채팅 위치
+  @Get("reports/:id/context")
+  reportContext(@Param("id") id: string) {
+    return this.admin.reportContext(id);
+  }
+
+  // POST /admin/reports/:id/notify — 신고자/피신고자에게 처리 알림 전송
+  @Post("reports/:id/notify")
+  notifyReport(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(reportNotifySchema)) dto: z.infer<typeof reportNotifySchema>,
+  ) {
+    return this.admin.notifyReportParties(id, dto.target, dto.message);
+  }
+
+  // GET /admin/chat/rooms/:id — 신고된 메시지가 속한 채팅방 전체 보기
+  @Get("chat/rooms/:id")
+  roomChat(@Param("id") id: string) {
+    return this.admin.roomChat(id);
+  }
+
+  // GET /admin/chat/direct/:id — 신고된 메시지가 속한 1:1 다이렉트 대화 전체 보기
+  @Get("chat/direct/:id")
+  directChat(@Param("id") id: string) {
+    return this.admin.directChat(id);
   }
 
   // GET /admin/reservations?status=&take=&skip=
@@ -670,6 +842,7 @@ export class PublicBannerController {
 }
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [AdminController, PublicNoticeController, PublicBannerController],
   providers: [AdminService],
 })
