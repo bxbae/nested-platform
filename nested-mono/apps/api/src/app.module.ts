@@ -26,6 +26,7 @@ import { HostOverdueModule } from "./modules/host/host-overdue.module";
 import { HostSettlementModule } from "./modules/host/host-settlement.module";
 import { PreferenceModule } from "./modules/preference/preference.module";
 import { MatchModule } from "./modules/match/match.module";
+import { UsersModule } from "./modules/users/users.module";
 import { FriendsModule } from "./modules/friends/friends.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 
@@ -69,6 +70,7 @@ import { ReportsModule } from "./modules/reports/reports.module";
     HostSettlementModule,
     PreferenceModule,
     MatchModule,
+    UsersModule,
     FriendsModule,
     ReportsModule,
   ],

@@ -13,6 +13,7 @@ import {
   type PostDetail,
   type ApiComment,
 } from "@/lib/api/community";
+import { UserProfileModal } from "@/components/UserProfileModal";
 
 const catColor: Record<string, string> = {
   notice: "#FF5A5F",
@@ -36,6 +37,8 @@ export default function PostPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [saving, setSaving] = useState(false);
+  // 이름을 누르면 뜨는 공개 프로필. null 이면 닫힌 상태.
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -202,7 +205,18 @@ export default function PostPage() {
             marginTop: 16, fontSize: 13, color: "var(--text-2)",
           }}
         >
-          <span>by {post.author}</span>
+          <span>
+            by{" "}
+            <button
+              onClick={() => setProfileUserId(post.authorId)}
+              style={{
+                background: "none", border: "none", padding: 0, cursor: "pointer",
+                color: "var(--primary)", fontSize: 13, fontWeight: 600,
+              }}
+            >
+              {post.author}
+            </button>
+          </span>
           {isAuthor && !editing && (
             <span style={{ display: "flex", gap: 4 }}>
               <button className="btn btn-ghost press" style={{ fontSize: 13 }} onClick={startEdit}>
@@ -232,6 +246,7 @@ export default function PostPage() {
             key={c.id}
             comment={c}
             canDelete={!!user && user.id === c.author.id}
+            onOpenProfile={() => setProfileUserId(c.author.id)}
             onDelete={() => removeReply(c.id)}
           />
         ))}
@@ -271,19 +286,31 @@ export default function PostPage() {
           </div>
         )}
       </div>
+
+      {/* 이름을 누르면 뜨는 공개 프로필 — 여기서 바로 메시지도 보낼 수 있다 */}
+      <UserProfileModal userId={profileUserId} onClose={() => setProfileUserId(null)} />
     </div>
   );
 }
 
 function Reply({
-  comment, canDelete, onDelete,
+  comment, canDelete, onDelete, onOpenProfile,
 }: {
   comment: ApiComment; canDelete: boolean; onDelete: () => void;
+  onOpenProfile: () => void;
 }) {
   return (
     <div className="card" style={{ padding: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ fontSize: 13.5 }}>{comment.author.name}</strong>
+        <button
+          onClick={onOpenProfile}
+          style={{
+            background: "none", border: "none", padding: 0, cursor: "pointer",
+            fontSize: 13.5, fontWeight: 700, color: "var(--text)",
+          }}
+        >
+          {comment.author.name}
+        </button>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 12, color: "var(--text-2)" }}>{timeAgo(comment.createdAt)}</span>
           {canDelete && (
