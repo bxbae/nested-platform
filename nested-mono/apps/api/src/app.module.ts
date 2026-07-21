@@ -24,6 +24,7 @@ import { HostCalendarModule } from "./modules/host/host-calendar.module";
 import { HostExportModule } from "./modules/host/host-export.module";
 import { HostOverdueModule } from "./modules/host/host-overdue.module";
 import { HostSettlementModule } from "./modules/host/host-settlement.module";
+import { TenantReviewModule } from "./modules/reviews/tenant-review.module";
 import { PreferenceModule } from "./modules/preference/preference.module";
 import { MatchModule } from "./modules/match/match.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -68,6 +69,7 @@ import { ReportsModule } from "./modules/reports/reports.module";
     HostExportModule,
     HostOverdueModule,
     HostSettlementModule,
+    TenantReviewModule,
     PreferenceModule,
     MatchModule,
     UsersModule,

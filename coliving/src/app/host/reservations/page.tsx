@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { won } from "@/lib/format";
+import { reviewTenant } from "@/lib/api/badges";
 import {
   listHostReservations,
   setHostReservationStatus,
@@ -76,6 +77,34 @@ export default function HostReservations() {
     try {
       await decideEarlyCheckout(id, decision);
       await load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // ── Tenant review (호스트 → 입주자) ──
+  const [reviewFor, setReviewFor] = useState<string | null>(null);
+  const [rating, setRating] = useState(5);
+  const [reviewBody, setReviewBody] = useState("");
+  const [reviewed, setReviewed] = useState<Set<string>>(new Set());
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  async function submitTenantReview(id: string) {
+    if (busyId) return;
+    if (!reviewBody.trim()) {
+      setReviewError("평가 내용을 입력해주세요.");
+      return;
+    }
+    setBusyId(id);
+    setReviewError(null);
+    try {
+      await reviewTenant(id, rating, reviewBody.trim());
+      setReviewed((prev) => new Set(prev).add(id));
+      setReviewFor(null);
+      setReviewBody("");
+      setRating(5);
+    } catch (e) {
+      setReviewError(e instanceof Error ? e.message : "평가를 등록하지 못했어요.");
     } finally {
       setBusyId(null);
     }
@@ -198,6 +227,62 @@ export default function HostReservations() {
                   <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideEarly(b.id, "reject")}>
                     거절
                   </button>
+                </div>
+              )}
+
+              {/* Finished stay → review the tenant */}
+              {(b.status === "COMPLETED" || b.status === "EARLY_CHECKOUT_APPROVED") && (
+                <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+                  {reviewed.has(b.id) ? (
+                    <span style={{ fontSize: 13, color: "var(--text-2)" }}>✓ 입주자 평가를 등록했습니다.</span>
+                  ) : reviewFor === b.id ? (
+                    <div>
+                      <div style={{ display: "flex", gap: 4, marginBottom: 10 }} role="radiogroup" aria-label="입주자 평점">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            role="radio"
+                            aria-checked={rating === n}
+                            aria-label={`${n}점`}
+                            onClick={() => setRating(n)}
+                            style={{
+                              background: "none", border: "none", cursor: "pointer", padding: 0,
+                              fontSize: 22, lineHeight: 1,
+                              color: rating >= n ? "#FF5A5F" : "var(--border)",
+                            }}
+                          >
+                            ★
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        value={reviewBody}
+                        onChange={(e) => setReviewBody(e.target.value)}
+                        placeholder="입주 기간 동안 어떤 입주자였나요? (청결, 소통, 규칙 준수 등)"
+                        rows={3}
+                        style={{
+                          width: "100%", resize: "vertical", padding: "10px 12px", borderRadius: 10,
+                          border: "1px solid var(--border)", fontSize: 13.5, fontFamily: "inherit",
+                        }}
+                      />
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => submitTenantReview(b.id)}>
+                          {busyId === b.id ? "등록 중…" : "평가 등록"}
+                        </button>
+                        <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 12px" }} onClick={() => { setReviewFor(null); setReviewError(null); }}>
+                          취소
+                        </button>
+                      </div>
+                      {reviewError && (
+                        <p style={{ fontSize: 12.5, color: "var(--primary)", marginTop: 8 }}>{reviewError}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => setReviewFor(b.id)}>
+                      ⭐ 입주자 평가하기
+                    </button>
+                  )}
                 </div>
               )}
             </div>

@@ -105,6 +105,8 @@ model User {
   posts                 Post[]
   comments              Comment[]
   preference            RoommatePreference?
+  tenantReviewsWritten  TenantReview[]           @relation("TenantReviewAuthor")
+  tenantReviewsReceived TenantReview[]           @relation("TenantReviewTenant")
 
   friendshipsA         Friendship[]         @relation("FriendshipUserA")
   friendshipsB         Friendship[]         @relation("FriendshipUserB")
@@ -273,6 +275,7 @@ model Reservation {
   totalDueNow          Int
   payment              Payment?
   settlement           Settlement?
+  tenantReview         TenantReview?
   createdAt            DateTime          @default(now())
 
   // DB-level guard against double-booking is enforced with an exclusion
@@ -718,4 +721,23 @@ model Banner {
   updatedAt DateTime @updatedAt
 
   @@index([active, order])
+}
+
+// ── 입주자 평가 (호스트 → 입주자) ──────────────────────────────────
+// Review 는 "게스트가 숙소를 평가"하는 반대 방향이다. 여기서는 호스트가
+// 계약이 끝난 입주자를 평가한다. 예약 1건당 1개.
+model TenantReview {
+  id            String      @id @default(cuid())
+  reservationId String      @unique
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  authorId      String
+  author        User        @relation("TenantReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  tenantId      String
+  tenant        User        @relation("TenantReviewTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  rating        Int
+  body          String
+  createdAt     DateTime    @default(now())
+
+  @@index([tenantId])
+  @@index([authorId])
 }
