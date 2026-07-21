@@ -99,3 +99,16 @@ export async function markAllNotificationsRead(): Promise<void> {
   if (!USE_REAL_API) return;
   await api.patch("/notifications/read-all");
 }
+
+export async function unreadMessageNotificationCount(): Promise<number> {
+  if (!USE_REAL_API) {
+    const result = await listNotifications();
+    return result.items.filter((item) => item.type === "MESSAGE" && !item.read).length;
+  }
+  try {
+    const result = await api.get<{ unread: number }>("/notifications/messages/unread-count");
+    return result.unread;
+  } catch {
+    return 0;
+  }
+}

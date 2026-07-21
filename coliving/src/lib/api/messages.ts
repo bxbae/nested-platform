@@ -71,3 +71,46 @@ export async function openChatRoom(roomId: string, hostId: string): Promise<ApiC
 export async function openChatRoomAsHost(roomId: string, guestId: string): Promise<ApiChatRoom> {
   return api.post<ApiChatRoom>("/messages/rooms/as-host", { roomId, guestId });
 }
+
+export interface ApiDirectConversation {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  other?: {
+    id: string;
+    name: string;
+    avatarColor: string;
+    avatarUrl: string | null;
+  };
+  messages: ApiDirectMessage[];
+}
+
+export interface ApiDirectMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  body: string | null;
+  imageUrl: string | null;
+  readBy: string[];
+  createdAt: string;
+}
+
+export async function listDirectConversations(): Promise<ApiDirectConversation[]> {
+  try { return await api.get<ApiDirectConversation[]>("/messages/direct"); } catch { return []; }
+}
+
+export async function openDirectConversation(targetUserId: string): Promise<ApiDirectConversation> {
+  return api.post<ApiDirectConversation>("/messages/direct", { targetUserId });
+}
+
+export async function listDirectMessages(conversationId: string): Promise<ApiDirectMessage[]> {
+  return api.get<ApiDirectMessage[]>(`/messages/direct/${encodeURIComponent(conversationId)}`);
+}
+
+export async function sendDirectMessage(conversationId: string, body?: string, imageUrl?: string): Promise<ApiDirectMessage> {
+  return api.post<ApiDirectMessage>(`/messages/direct/${encodeURIComponent(conversationId)}`, { body, imageUrl });
+}
+
+export async function markDirectConversationRead(conversationId: string): Promise<void> {
+  await api.post(`/messages/direct/${encodeURIComponent(conversationId)}/read`);
+}

@@ -164,13 +164,22 @@ export class ChatGateway implements OnGatewayConnection {
       throw new WsException("대화방 참여자만 읽음 처리할 수 있습니다.");
     }
 
-    await this.prisma.message.updateMany({
+    const unreadMessages = await this.prisma.message.findMany({
       where: {
         chatRoomId: data.roomId,
         NOT: { readBy: { has: userId } },
       },
-      data: {},
+      select: { id: true, readBy: true },
     });
+
+    await this.prisma.$transaction(
+      unreadMessages.map((message) =>
+        this.prisma.message.update({
+          where: { id: message.id },
+          data: { readBy: [...message.readBy, userId] },
+        }),
+      ),
+    );
 
     this.server.to(data.roomId).emit("message:read", {
       roomId: data.roomId,
