@@ -466,6 +466,78 @@ export class ReservationsService {
     );
   }
 
+  // ── 계약 연장 ──────────────────────────────────────────────
+  // Guest asks to stay longer on a CONFIRMED reservation. Mirrors the
+  // early-checkout flow: request → host approves/rejects.
+  async requestExtension(
+    id: string,
+    guestId: string,
+    months: number,
+  ): Promise<ReservationRecord> {
+    const r = await this.repo.findById(id);
+    if (!r)
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
+    if (r.guestId !== guestId) {
+      throw new ForbiddenException({
+        code: "FORBIDDEN",
+        message: "본인 예약만 요청할 수 있습니다.",
+      });
+    }
+    if (r.status !== "CONFIRMED") {
+      throw new BadRequestException({
+        code: "NOT_CONFIRMED",
+        message: "이용 중인(확정) 예약만 연장을 요청할 수 있습니다.",
+      });
+    }
+    if (months < 1 || months > 24) {
+      throw new BadRequestException({
+        code: "INVALID_MONTHS",
+        message: "연장 개월 수는 1~24개월 사이여야 합니다.",
+      });
+    }
+    return this.repo.requestExtension(id, months);
+  }
+
+  // Host approves (extend checkOut) or rejects (back to CONFIRMED).
+  async decideExtension(
+    id: string,
+    hostId: string,
+    decision: "approve" | "reject",
+  ): Promise<ReservationRecord> {
+    const r = await this.repo.findById(id);
+    if (!r)
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
+    const ownerId = await this.repo.findRoomHostId(id);
+    if (ownerId !== hostId) {
+      throw new ForbiddenException({
+        code: "NOT_HOST",
+        message: "본인 숙소의 예약만 처리할 수 있습니다.",
+      });
+    }
+    if (r.status !== "EXTENSION_REQUESTED") {
+      throw new BadRequestException({
+        code: "NOT_REQUESTED",
+        message: "연장이 요청된 예약만 처리할 수 있습니다.",
+      });
+    }
+    if (decision === "reject") return this.repo.clearExtension(id);
+
+    const months = r.extensionMonths ?? 0;
+    if (months < 1) {
+      throw new BadRequestException({
+        code: "INVALID_MONTHS",
+        message: "요청된 연장 개월 수가 올바르지 않습니다.",
+      });
+    }
+    return this.repo.applyExtension(id, months);
+  }
+
   // All reservations for the logged-in guest (my trips).
   async listMine(guestId: string) {
     return this.repo.listByGuest(guestId);

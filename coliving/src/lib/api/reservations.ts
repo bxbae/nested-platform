@@ -216,6 +216,8 @@ interface ApiReservation {
   id: string;
   months: number;
   checkIn: string;
+  checkOut?: string;
+  extensionMonths?: number | null;
   monthlyRent: number;
   deposit: number;
   cleaningFee: number;
@@ -296,7 +298,8 @@ export type HostReservationStatus =
   | "COMPLETED"
   | "NO_SHOW"
   | "EARLY_CHECKOUT_REQUESTED"
-  | "EARLY_CHECKOUT_APPROVED";
+  | "EARLY_CHECKOUT_APPROVED"
+  | "EXTENSION_REQUESTED";
 
 export interface HostReservation {
   id: string;
@@ -409,6 +412,8 @@ export async function listMyBookings(): Promise<Booking[]> {
       serviceFeeRate: 0.05,
       status: mapStatus(r.status),
       rawStatus: r.status,
+      checkOut: r.checkOut?.slice(0, 10),
+      extensionMonths: (r as { extensionMonths?: number | null }).extensionMonths ?? null,
       createdAt: r.createdAt,
     }));
   } catch {
@@ -438,4 +443,20 @@ export async function decideEarlyCheckout(
 ): Promise<void> {
   if (!USE_REAL_API) return;
   await api.patch(`/reservations/${reservationId}/early-checkout/decision`, { decision });
+}
+
+// ── 계약 연장 ──
+// PATCH /reservations/:id/extension — guest asks to stay N more months.
+export async function requestExtension(reservationId: string, months: number): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.patch(`/reservations/${reservationId}/extension`, { months });
+}
+
+// PATCH /reservations/:id/extension/decision — host approves or rejects.
+export async function decideExtension(
+  reservationId: string,
+  decision: "approve" | "reject"
+): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.patch(`/reservations/${reservationId}/extension/decision`, { decision });
 }

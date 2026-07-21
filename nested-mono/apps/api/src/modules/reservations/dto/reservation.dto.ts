@@ -48,6 +48,17 @@ export const earlyCheckoutSchema = z.object({
 });
 export type EarlyCheckoutDto = z.infer<typeof earlyCheckoutSchema>;
 
+// ── 계약 연장 ── 게스트가 원하는 개월 수 / 호스트의 승인·거절
+export const extensionRequestSchema = z.object({
+  months: z.coerce.number().int().min(1).max(24),
+});
+export type ExtensionRequestDto = z.infer<typeof extensionRequestSchema>;
+
+export const extensionDecisionSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+});
+export type ExtensionDecisionDto = z.infer<typeof extensionDecisionSchema>;
+
 function startOfToday(): number {
   const d = new Date();
   d.setHours(0, 0, 0, 0);

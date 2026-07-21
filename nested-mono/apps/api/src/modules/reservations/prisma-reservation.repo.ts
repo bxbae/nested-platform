@@ -241,6 +241,45 @@ export class PrismaReservationRepo implements ReservationRepo {
     return this.prisma.reservation.update({ where: { id }, data: { status } });
   }
 
+  // ── 계약 연장 ──
+  // Record the guest's requested months and park the reservation in
+  // EXTENSION_REQUESTED until the host decides.
+  async requestExtension(id: string, months: number): Promise<ReservationRecord> {
+    return this.prisma.reservation.update({
+      where: { id },
+      data: { status: "EXTENSION_REQUESTED", extensionMonths: months },
+    });
+  }
+
+  // Approve: push checkOut out by `months`, grow the contract length, clear the
+  // pending request and go back to CONFIRMED.
+  async applyExtension(id: string, months: number): Promise<ReservationRecord> {
+    const current = await this.prisma.reservation.findUnique({
+      where: { id },
+      select: { checkOut: true, months: true },
+    });
+    if (!current) throw new Error("RESERVATION_NOT_FOUND");
+    const newCheckOut = new Date(current.checkOut);
+    newCheckOut.setMonth(newCheckOut.getMonth() + months);
+    return this.prisma.reservation.update({
+      where: { id },
+      data: {
+        checkOut: newCheckOut,
+        months: current.months + months,
+        status: "CONFIRMED",
+        extensionMonths: null,
+      },
+    });
+  }
+
+  // Reject / cancel a pending request.
+  async clearExtension(id: string): Promise<ReservationRecord> {
+    return this.prisma.reservation.update({
+      where: { id },
+      data: { status: "CONFIRMED", extensionMonths: null },
+    });
+  }
+
   async markCouponUsed(couponId: string): Promise<void> {
     await this.prisma.coupon.update({
       where: { id: couponId },

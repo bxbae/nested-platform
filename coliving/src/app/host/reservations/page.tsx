@@ -8,6 +8,7 @@ import {
   setHostReservationStatus,
   sendOverdueNotice,
   decideEarlyCheckout,
+  decideExtension,
   type HostReservation,
   type HostReservationStatus,
 } from "@/lib/api/reservations";
@@ -23,6 +24,7 @@ const STATUS: Record<HostReservationStatus, { label: string; color: string; mute
   CANCELLED_BY_HOST: { label: "거절/취소", color: "var(--text-2)", muted: true },
   EARLY_CHECKOUT_REQUESTED: { label: "조기 퇴실 요청", color: "var(--primary)" },
   EARLY_CHECKOUT_APPROVED: { label: "조기 퇴실 승인", color: "var(--text-2)", muted: true },
+  EXTENSION_REQUESTED: { label: "연장 요청", color: "var(--primary)" },
 };
 
 type Filter = "all" | "PENDING_PAYMENT" | "CONFIRMED" | "done";
@@ -76,6 +78,18 @@ export default function HostReservations() {
     setBusyId(id);
     try {
       await decideEarlyCheckout(id, decision);
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Approve or reject a guest's contract-extension request.
+  async function decideExt(id: string, decision: "approve" | "reject") {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      await decideExtension(id, decision);
       await load();
     } finally {
       setBusyId(null);
@@ -225,6 +239,21 @@ export default function HostReservations() {
                     퇴실 승인
                   </button>
                   <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideEarly(b.id, "reject")}>
+                    거절
+                  </button>
+                </div>
+              )}
+
+              {/* Extension request → approve / reject */}
+              {b.status === "EXTENSION_REQUESTED" && (
+                <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+                    입주자가 계약 연장을 요청했습니다.
+                  </span>
+                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideExt(b.id, "approve")}>
+                    연장 승인
+                  </button>
+                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideExt(b.id, "reject")}>
                     거절
                   </button>
                 </div>

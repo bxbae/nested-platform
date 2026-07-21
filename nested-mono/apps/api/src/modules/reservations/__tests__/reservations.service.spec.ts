@@ -97,6 +97,29 @@ class FakeRepo implements ReservationRepo {
     r.status = status;
     return r;
   }
+  // ── 계약 연장 (테스트용 최소 구현) ──
+  async requestExtension(id: string, months: number) {
+    const r = this.reservations.find((x) => x.id === id)!;
+    r.status = "EXTENSION_REQUESTED";
+    r.extensionMonths = months;
+    return r;
+  }
+  async applyExtension(id: string, months: number) {
+    const r = this.reservations.find((x) => x.id === id)!;
+    const out = new Date(r.checkOut);
+    out.setMonth(out.getMonth() + months);
+    r.checkOut = out;
+    r.months += months;
+    r.status = "CONFIRMED";
+    r.extensionMonths = null;
+    return r;
+  }
+  async clearExtension(id: string) {
+    const r = this.reservations.find((x) => x.id === id)!;
+    r.status = "CONFIRMED";
+    r.extensionMonths = null;
+    return r;
+  }
   async markCouponUsed() {}
   async updateCompanionStatus(
     id: string,
