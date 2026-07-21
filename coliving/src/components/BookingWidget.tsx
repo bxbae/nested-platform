@@ -137,9 +137,51 @@ export function BookingWidget({ house }: { house: House }) {
 
   const [holdId, setHoldId] = useState<string | null>(null);
 
+  // ── Payment form fields ──
+  // Demo checkout, but the inputs are validated so an obviously invalid card
+  // (blank, letters, symbols) or a name containing digits can't be submitted.
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvc, setCardCvc] = useState("");
+
+  // Validate the payment form. Returns an error message, or null when OK.
+  // Rules: name must be non-empty letters only (no digits/symbols); card number
+  // must be 15–16 digits after stripping spaces/hyphens; expiry must be MM/YY
+  // with a real month; CVC must be 3–4 digits.
+  function validatePayment(): string | null {
+    const trimmedName = name.trim();
+    if (!trimmedName) return "예약자 이름을 입력해주세요.";
+    if (/\d/.test(trimmedName)) return "예약자 이름에 숫자를 넣을 수 없습니다.";
+    if (/[^\p{L}\s.'-]/u.test(trimmedName)) return "예약자 이름에 특수문자를 넣을 수 없습니다.";
+
+    const digitsOnly = cardNumber.replace(/[\s-]/g, "");
+    if (!digitsOnly) return "카드 번호를 입력해주세요.";
+    if (!/^\d+$/.test(digitsOnly)) return "카드 번호는 숫자만 입력할 수 있습니다.";
+    if (digitsOnly.length < 15 || digitsOnly.length > 16)
+      return "카드 번호는 15~16자리여야 합니다.";
+
+    const expiry = cardExpiry.replace(/\s/g, "");
+    if (!expiry) return "유효기간을 입력해주세요.";
+    const m = expiry.match(/^(\d{2})\/?(\d{2})$/);
+    if (!m) return "유효기간은 MM/YY 형식으로 입력해주세요.";
+    const month = Number(m[1]);
+    if (month < 1 || month > 12) return "유효기간의 월이 올바르지 않습니다.";
+
+    const cvc = cardCvc.trim();
+    if (!cvc) return "CVC를 입력해주세요.";
+    if (!/^\d{3,4}$/.test(cvc)) return "CVC는 숫자 3~4자리여야 합니다.";
+
+    return null;
+  }
+
   // ── 결제하기 → confirm ──
   async function pay() {
     if (!holdId) return;
+    const invalid = validatePayment();
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -386,16 +428,34 @@ export function BookingWidget({ house }: { house: House }) {
             </div>
             <div className="field">
               <label>카드 번호</label>
-              <input placeholder="4242 4242 4242 4242" inputMode="numeric" />
+              <input
+                value={cardNumber}
+                onChange={(e) => setCardNumber(e.target.value)}
+                placeholder="4242 4242 4242 4242"
+                inputMode="numeric"
+                maxLength={19}
+              />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="field">
                 <label>유효기간</label>
-                <input placeholder="09 / 28" />
+                <input
+                  value={cardExpiry}
+                  onChange={(e) => setCardExpiry(e.target.value)}
+                  placeholder="09/28"
+                  inputMode="numeric"
+                  maxLength={5}
+                />
               </div>
               <div className="field">
                 <label>CVC</label>
-                <input placeholder="123" inputMode="numeric" />
+                <input
+                  value={cardCvc}
+                  onChange={(e) => setCardCvc(e.target.value)}
+                  placeholder="123"
+                  inputMode="numeric"
+                  maxLength={4}
+                />
               </div>
             </div>
           </div>
