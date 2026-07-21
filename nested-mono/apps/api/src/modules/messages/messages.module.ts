@@ -16,15 +16,10 @@ import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
-import { NotificationsModule } from "../notifications/notifications.module";
-import { NotificationsGateway } from "../notifications/notifications.gateway";
 
 @Injectable()
 export class MessagesService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly notificationsGateway: NotificationsGateway,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   // list chat rooms for a user (guest or host) with last message
   async listRooms(userId: string) {
@@ -105,39 +100,15 @@ export class MessagesService {
       });
     }
 
-    const recipientId = isGuest ? chatRoom.hostId : chatRoom.guestId;
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const message = await tx.message.create({
-        data: {
-          chatRoomId,
-          senderId,
-          body: data.body,
-          imageUrl: data.imageUrl,
-          readBy: [senderId],
-        },
-      });
-
-      const preview =
-        data.body?.trim().slice(0, 80) ||
-        (data.imageUrl ? "사진을 보냈습니다." : "새 메시지가 도착했습니다.");
-
-      const notification = await tx.notification.create({
-        data: {
-          userId: recipientId,
-          type: "MESSAGE",
-          title: "새 메시지가 도착했어요",
-          body: preview,
-          targetUrl: `/me/messages?room=${chatRoomId}`,
-        },
-      });
-
-      return { message, notification };
+    return this.prisma.message.create({
+      data: {
+        chatRoomId,
+        senderId,
+        body: data.body,
+        imageUrl: data.imageUrl,
+        readBy: [senderId],
+      },
     });
-
-    this.notificationsGateway.emitToUser(recipientId, result.notification);
-
-    return result.message;
   }
 
   // get-or-create a chat room between a guest and a room's host
@@ -243,7 +214,6 @@ export class MessagesController {
 }
 
 @Module({
-  imports: [NotificationsModule],
   controllers: [MessagesController],
   providers: [MessagesService],
 })

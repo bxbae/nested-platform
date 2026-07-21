@@ -9,10 +9,7 @@ import {
 } from "@nestjs/websockets";
 import { Injectable } from "@nestjs/common";
 import { Server, Socket } from "socket.io";
-import { InjectQueue } from "@nestjs/bullmq";
-import { Queue } from "bullmq";
 import { PrismaService } from "../../prisma/prisma.service";
-import { NotificationsGateway } from "../notifications/notifications.gateway";
 import { JwtService } from "@nestjs/jwt";
 
 // Realtime chat gateway. Event names match the frontend Socket.io client:
@@ -26,8 +23,6 @@ export class ChatGateway implements OnGatewayConnection {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly notificationsGateway: NotificationsGateway,
-    @InjectQueue("notifications") private readonly notifications: Queue,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -111,46 +106,19 @@ export class ChatGateway implements OnGatewayConnection {
       throw new WsException("대화방 참여자만 메시지를 보낼 수 있습니다.");
     }
 
-    const recipientId = isGuest ? chatRoom.hostId : chatRoom.guestId;
-    const preview =
-      data.body?.trim().slice(0, 80) ||
-      (data.imageUrl ? "사진을 보냈습니다." : "새 메시지가 도착했습니다.");
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const message = await tx.message.create({
-        data: {
-          chatRoomId: data.roomId,
-          senderId,
-          body: data.body,
-          imageUrl: data.imageUrl,
-          readBy: [senderId],
-        },
-      });
-
-      const notification = await tx.notification.create({
-        data: {
-          userId: recipientId,
-          type: "MESSAGE",
-          title: "새 메시지가 도착했어요",
-          body: preview,
-          targetUrl: `/me/messages?room=${data.roomId}`,
-        },
-      });
-
-      return { message, notification };
+    const message = await this.prisma.message.create({
+      data: {
+        chatRoomId: data.roomId,
+        senderId,
+        body: data.body,
+        imageUrl: data.imageUrl,
+        readBy: [senderId],
+      },
     });
 
-    this.server.to(data.roomId).emit("message:new", result.message);
+    this.server.to(data.roomId).emit("message:new", message);
 
-    this.notificationsGateway.emitToUser(recipientId, result.notification);
-
-    await this.notifications.add("push", {
-      roomId: data.roomId,
-      senderId,
-      preview,
-    });
-
-    return result.message;
+    return message;
   }
 
   @SubscribeMessage("message:read")

@@ -756,7 +756,7 @@ export default function Messages() {
                     opacity: uploading ? 0.6 : 1,
                   }}
                 >
-                  {uploading ? "…" : "🖼️"}
+                  {uploading ? "…" : "📷​"}
                 </button>
 
                 <input
