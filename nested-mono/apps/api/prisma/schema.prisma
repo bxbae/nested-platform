@@ -57,32 +57,32 @@ enum PaymentStatus {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  passwordHash  String? // null for OAuth-only accounts
-  name          String // 공개용 닉네임
-  nicknameCompleted Boolean @default(false)
-  role          Role      @default(GUEST)
-  provider      String? // "google" | null
-  providerId    String?
-  avatarColor   String    @default("#FF5A5F")
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String? // null for OAuth-only accounts
+  name              String // 공개용 닉네임
+  nicknameCompleted Boolean   @default(false)
+  role              Role      @default(GUEST)
+  provider          String? // "google" | null
+  providerId        String?
+  avatarColor       String    @default("#FF5A5F")
   // Profile photo (S3 URL). null → fall back to the avatarColor circle.
-  avatarUrl     String?
-  bio           String? // self-introduction (스토리보드 1-1 자기소개)
-  age           Int? // optional, shown as "25세" on the profile card
-  job           String? // optional occupation label (e.g. "학생")
-  suspended     Boolean   @default(false)
+  avatarUrl         String?
+  bio               String? // self-introduction (스토리보드 1-1 자기소개)
+  age               Int? // optional, shown as "25세" on the profile card
+  job               String? // optional occupation label (e.g. "학생")
+  suspended         Boolean   @default(false)
   // Timestamp of email ownership confirmation. null = unverified.
   // Login is blocked while null (when a mail provider is configured).
-  emailVerified DateTime?
+  emailVerified     DateTime?
   // Set by an admin once identity has been checked (신분증·연락처 확인).
   // Distinct from emailVerified, which only proves the address works.
-  verifiedAt    DateTime?
+  verifiedAt        DateTime?
   // Set when the user deletes their own account. Distinct from `suspended`,
   // which is an admin action. Non-null means the account is gone: login is
   // blocked and the personal fields above have been anonymised.
-  deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
 
   listings              Room[]                   @relation("HostRooms")
   reservations          Reservation[]
@@ -106,11 +106,11 @@ model User {
   comments              Comment[]
   preference            RoommatePreference?
 
-  friendshipsA Friendship[] @relation("FriendshipUserA")
-  friendshipsB Friendship[] @relation("FriendshipUserB")
+  friendshipsA         Friendship[]         @relation("FriendshipUserA")
+  friendshipsB         Friendship[]         @relation("FriendshipUserB")
   directConversationsA DirectConversation[] @relation("DirectParticipantA")
   directConversationsB DirectConversation[] @relation("DirectParticipantB")
-  directMessages DirectMessage[] @relation("DirectMessageSender")
+  directMessages       DirectMessage[]      @relation("DirectMessageSender")
 
   @@index([provider, providerId])
 }
@@ -433,6 +433,8 @@ enum ReportTargetType {
   REVIEW
   USER
   MESSAGE
+  COMMUNITY_POST
+  COMMUNITY_COMMENT
 }
 
 enum ReportStatus {
@@ -538,33 +540,49 @@ enum PostCategory {
   SEEKING
 }
 
+enum PostStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+}
+
 model Post {
-  id        String       @id @default(cuid())
-  roomId    String
-  room      Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  authorId  String
-  author    User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  category  PostCategory @default(CHAT)
-  title     String
-  body      String
-  pinned    Boolean      @default(false)
-  createdAt DateTime     @default(now())
-  comments  Comment[]
+  id                    String       @id @default(cuid())
+  roomId                String
+  room                  Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  authorId              String
+  author                User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category              PostCategory @default(CHAT)
+  status                PostStatus   @default(OPEN)
+  title                 String
+  body                  String
+  pinned                Boolean      @default(false)
+  lifestyleSnapshot     Json?
+  sharedLifestyleFields String[]     @default([])
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  comments              Comment[]
 
   @@index([roomId, createdAt])
-  @@index([category])
+  @@index([category, status])
 }
 
 model Comment {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
   authorId  String
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
   body      String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([postId, createdAt])
+  @@index([parentId, createdAt])
 }
 
 // ── Roommate preference survey (onboarding) ──────────────────────────
