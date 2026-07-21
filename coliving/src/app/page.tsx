@@ -58,7 +58,7 @@ export default async function Home() {
               inset: 0,
               backgroundImage: "url(/hero.png)",
               backgroundSize: "120% auto",
-              backgroundPosition: "center left",
+              backgroundPosition: "left calc(50% + 136px)",
               opacity: 0.9,
             }}
           />
