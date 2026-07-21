@@ -25,7 +25,11 @@ export interface SettlementRow {
   roomName: string;
   guestName: string;
   checkIn: string; // ISO date
+  checkOut: string; // ISO date
   months: number;
+  occupants: number; // 1, or 2 when a companion joined the booking
+  monthlyRent: number;
+  deposit: number; // refundable — not part of host earnings
   gross: number; // monthlyRent * months
   commission: number; // platform fee
   net: number; // host take-home
@@ -39,6 +43,8 @@ export interface SettlementSummary {
   totalNet: number;
   scheduledNet: number; // sum of net for not-yet-paid rows
   paidNet: number; // sum of net already paid (COMPLETED)
+  totalDeposit: number; // deposits currently held (active stays only)
+  totalOccupants: number; // people currently living in (active stays only)
 }
 
 @Injectable()
@@ -64,12 +70,18 @@ export class HostSettlementService {
       const commission = Math.round(gross * COMMISSION_RATE);
       const net = gross - commission;
       const status: "SCHEDULED" | "PAID" = r.status === "COMPLETED" ? "PAID" : "SCHEDULED";
+      // A booking holds 1 person, or 2 when a companion was accepted.
+      const occupants = r.companionId ? 2 : 1;
       return {
         reservationId: r.id,
         roomName: r.room.name.trim(),
         guestName: r.guest?.name ?? "게스트",
         checkIn: r.checkIn.toISOString().slice(0, 10),
+        checkOut: r.checkOut.toISOString().slice(0, 10),
         months: r.months,
+        occupants,
+        monthlyRent: r.monthlyRent,
+        deposit: r.deposit,
         gross,
         commission,
         net,
@@ -80,6 +92,13 @@ export class HostSettlementService {
     const sum = (pick: (row: SettlementRow) => number) =>
       rows.reduce((acc, row) => acc + pick(row), 0);
 
+    // Deposits held and people living in count only *active* stays — a finished
+    // or future booking shouldn't inflate "현재 입주 인원".
+    const today = new Date().toISOString().slice(0, 10);
+    const active = rows.filter(
+      (r) => r.status === "SCHEDULED" && r.checkIn <= today && r.checkOut > today
+    );
+
     return {
       rows,
       totalGross: sum((r) => r.gross),
@@ -87,6 +106,8 @@ export class HostSettlementService {
       totalNet: sum((r) => r.net),
       scheduledNet: rows.filter((r) => r.status === "SCHEDULED").reduce((a, r) => a + r.net, 0),
       paidNet: rows.filter((r) => r.status === "PAID").reduce((a, r) => a + r.net, 0),
+      totalDeposit: active.reduce((a, r) => a + r.deposit, 0),
+      totalOccupants: active.reduce((a, r) => a + r.occupants, 0),
     };
   }
 }
