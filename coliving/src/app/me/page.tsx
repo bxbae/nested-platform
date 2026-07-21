@@ -1,6 +1,7 @@
 import { ProfileHeader } from "./ProfileHeader";
 import { PreferenceSummary } from "./PreferenceSummary";
 import { TierGuide } from "./TierGuide";
+import { MyBadges } from "@/components/MyBadges";
 
 export const metadata = { title: "프로필 · Nested" };
 
@@ -11,6 +12,9 @@ export default function Profile() {
 
       {/* profile card */}
       <ProfileHeader />
+
+      {/* 리뷰 기반 배지 */}
+      <MyBadges />
 
       {/* 활동 등급 기준 + 내 위치 */}
       <TierGuide />
