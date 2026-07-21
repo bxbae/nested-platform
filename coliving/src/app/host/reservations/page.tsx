@@ -124,7 +124,22 @@ export default function HostReservations() {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <strong style={{ fontSize: 16 }}>{b.houseName.trim()}</strong>
-                    <span className="chip" style={{ fontSize: 11, background: st.color, color: st.muted ? "var(--text-2)" : "#fff", border: "none" }}>
+                    {/* muted 상태(취소·완료 등)는 배경을 칠하지 않고 외곽선으로
+                        차분하게 둔다. 예전에는 배경과 글자가 모두 var(--text-2)
+                        여서 라벨이 회색 위 회색으로 묻혀 읽히지 않았다. */}
+                    <span
+                      className="chip"
+                      style={
+                        st.muted
+                          ? {
+                              fontSize: 11,
+                              background: "var(--bg-2)",
+                              color: "var(--text-2)",
+                              border: "1px solid var(--border)",
+                            }
+                          : { fontSize: 11, background: st.color, color: "#fff", border: "none" }
+                      }
+                    >
                       {st.label}
                     </span>
                   </div>

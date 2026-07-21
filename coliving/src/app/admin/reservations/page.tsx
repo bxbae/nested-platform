@@ -112,9 +112,29 @@ export default function AdminReservations() {
               <span style={{ fontSize: 13, color: "var(--text-2)" }}>{fmtDate(r.checkIn)}</span>
               <span style={{ fontSize: 13.5 }}>{won(r.totalDueNow)}</span>
               <span>
-                <span className="chip" style={{ fontSize: 11, background: STATUS[r.status].color, color: STATUS[r.status].color === "var(--text-2)" ? "var(--text-2)" : "#fff", border: "none" }}>
-                  {STATUS[r.status].label}
-                </span>
+                {/* 회색 계열(취소·완료 등)은 배경을 칠하면 글자가 같은 회색이
+                    되어 묻힌다. 그런 상태는 외곽선 배지로 표시한다. */}
+                {(() => {
+                  const st = STATUS[r.status];
+                  const muted = st.color === "var(--text-2)";
+                  return (
+                    <span
+                      className="chip"
+                      style={
+                        muted
+                          ? {
+                              fontSize: 11,
+                              background: "var(--bg-2)",
+                              color: "var(--text-2)",
+                              border: "1px solid var(--border)",
+                            }
+                          : { fontSize: 11, background: st.color, color: "#fff", border: "none" }
+                      }
+                    >
+                      {st.label}
+                    </span>
+                  );
+                })()}
               </span>
             </div>
           ))}
