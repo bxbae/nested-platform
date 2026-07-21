@@ -176,6 +176,9 @@ model Room {
   // 함께 지낼 수 있는 최대 인원. 독채(WHOLE_HOUSE)는 통째로 빌리므로 정원
   // 개념이 없어 null 로 둔다. 나머지 타입은 등록 시 필수.
   capacity       Int?
+  // 침실 개수. capacity(함께 지낼 사람 수)와는 다르다 —
+  // "방 2개, 최대 3명" 같은 조합이 가능하다. 선택 항목이라 nullable.
+  bedrooms       Int?
   genderPolicy   GenderPolicy    @default(ANY)
   monthlyRent    Int
   deposit        Int

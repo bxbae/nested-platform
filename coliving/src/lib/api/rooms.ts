@@ -66,6 +66,8 @@ export interface CreateRoomInput {
   images: string[];
   /** 함께 지낼 최대 인원. 독채(whole_house)는 null 로 보낸다. */
   capacity?: number | null;
+  /** 침실 개수 (선택) */
+  bedrooms?: number | null;
 }
 
 // POST /rooms — host only. The listing is created unpublished and only becomes
@@ -83,6 +85,7 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
     maintenanceFee: input.maintenanceFee,
     minStayMonths: input.minStayMonths,
     capacity: input.capacity ?? null,
+    bedrooms: input.bedrooms ?? null,
     availableFrom: input.availableFrom,
     images: input.images,
   });
@@ -105,6 +108,28 @@ export async function listMyRooms(): Promise<HostListing[]> {
     published: r.published,
     reservationCount: r._count?.reservations ?? 0,
   }));
+}
+
+// PATCH /rooms/:id — 호스트 본인 매물만. 서버가 소유권을 확인한다.
+// 사진·주소처럼 등록 흐름 전체가 필요한 항목은 제외하고, 자주 손보는 값만
+// 부분 수정으로 받는다.
+export interface UpdateRoomInput {
+  monthlyRent?: number;
+  deposit?: number;
+  cleaningFee?: number;
+  maintenanceFee?: number;
+  minStayMonths?: number;
+  availableFrom?: string; // ISO date
+  capacity?: number | null;
+}
+
+export async function updateRoom(id: string, input: UpdateRoomInput): Promise<void> {
+  await api.patch(`/rooms/${id}`, input);
+}
+
+// DELETE /rooms/:id — 예약이 걸려 있으면 서버가 거부한다.
+export async function deleteRoom(id: string): Promise<void> {
+  await api.delete(`/rooms/${id}`);
 }
 
 export async function getRoom(id: string): Promise<House> {

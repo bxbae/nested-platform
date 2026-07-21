@@ -34,6 +34,7 @@ export function filtersToParams(f: SearchParams): URLSearchParams {
   if (f.maxRent != null && f.maxRent < RENT_MAX) p.set("maxRent", String(f.maxRent));
   if (f.availableFrom) p.set("availableFrom", f.availableFrom);
   if (f.minCapacity) p.set("minCapacity", String(f.minCapacity));
+  if (f.minBedrooms) p.set("minBedrooms", String(f.minBedrooms));
   if (f.checkIn) p.set("checkIn", f.checkIn);
   if (f.checkOut) p.set("checkOut", f.checkOut);
   if (f.gender && f.gender !== "any") p.set("gender", f.gender);
@@ -54,6 +55,7 @@ export function paramsToFilters(sp: URLSearchParams): SearchParams {
     maxRent: sp.get("maxRent") ? Number(sp.get("maxRent")) : RENT_MAX,
     availableFrom: sp.get("availableFrom") ?? "",
     minCapacity: Number(sp.get("minCapacity")) || undefined,
+    minBedrooms: Number(sp.get("minBedrooms")) || undefined,
     // Stay window from the hero search (홈 검색바에서 고른 기간)
     checkIn: sp.get("checkIn") ?? "",
     checkOut: sp.get("checkOut") ?? "",
@@ -73,6 +75,7 @@ export function activeFilterCount(f: SearchParams): number {
   if ((f.minRent ?? RENT_MIN) > RENT_MIN || (f.maxRent ?? RENT_MAX) < RENT_MAX) n++;
   if (f.availableFrom) n++;
   if (f.minCapacity) n++;
+  if (f.minBedrooms) n++;
   if (f.checkIn && f.checkOut) n++; // 기간 선택은 하나의 필터로 센다
   if (f.gender && f.gender !== "any") n++;
   if (f.pets) n++;

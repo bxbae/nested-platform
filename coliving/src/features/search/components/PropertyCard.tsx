@@ -106,6 +106,7 @@ export function PropertyCard({
         </div>
         <div style={{ color: "var(--text-2)", fontSize: 13, marginTop: 2, display: "flex", alignItems: "center", gap: 3 }}>
           <MapPin size={13} /> {house.region} · {house.reviews} reviews
+          {house.bedrooms ? ` · 방 ${house.bedrooms}개` : ""}
           {house.capacity ? ` · 최대 ${house.capacity}명` : ""}
         </div>
         {badges.length > 0 && (

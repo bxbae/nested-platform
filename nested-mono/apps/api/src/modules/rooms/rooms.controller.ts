@@ -19,6 +19,8 @@ const createRoomSchema = z.object({
   // 함께 지낼 최대 인원. 독채는 통째로 빌리므로 정원 개념이 없다 —
   // 아래 superRefine 에서 타입별로 필수/금지를 가른다.
   capacity: z.number().int().min(1).max(20).nullable().optional(),
+  // 침실 개수 — 선택 항목. 원룸이면 1, 미입력이면 null.
+  bedrooms: z.number().int().min(1).max(10).nullable().optional(),
   monthlyRent: z.number().int().positive(),
   deposit: z.number().int().nonnegative(),
   cleaningFee: z.number().int().nonnegative(),
