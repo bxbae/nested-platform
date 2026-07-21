@@ -12,6 +12,8 @@ export interface AuthUser {
   email: string;
   role: string;
   name?: string;
+  // false until a social-login user chooses a public nickname.
+  nicknameCompleted?: boolean;
   bio?: string | null;
   avatarColor?: string;
   avatarUrl?: string | null;

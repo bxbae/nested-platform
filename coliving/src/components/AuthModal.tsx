@@ -52,8 +52,8 @@ export function AuthModal({
 
   async function submit() {
     setError("");
-    if (mode === "register" && !name.trim()) {
-      setError("이름을 입력해주세요.");
+    if (mode === "register" && name.trim().length < 2) {
+      setError("닉네임은 2자 이상 입력해주세요.");
       return;
     }
     if (!email.trim() || !password) {
@@ -157,11 +157,19 @@ export function AuthModal({
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {mode === "register" && (
             <input
-              placeholder="이름"
+              placeholder="닉네임 *"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              maxLength={20}
+              autoComplete="nickname"
               style={inputStyle}
             />
+          )}
+          {mode === "register" && (
+            <p style={{ margin: "-4px 2px 2px", fontSize: 12, lineHeight: 1.55, color: "var(--text-2)" }}>
+              닉네임은 룸메이트 매칭, 프로필, 친구 목록 및 메시지에 공개됩니다.
+              개인정보 보호를 위해 실명, 이메일, 전화번호 대신 별명을 사용해주세요.
+            </p>
           )}
           <input
             type="email"
