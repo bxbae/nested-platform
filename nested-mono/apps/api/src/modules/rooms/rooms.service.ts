@@ -30,6 +30,8 @@ export interface RoomSearchQuery {
   checkOut?: string;
   /** 최소 수용 인원. "N명 이상 지낼 수 있는 방"으로 좁힌다. */
   minCapacity?: number;
+  /** 최소 침실 개수. "방 N개 이상". */
+  minBedrooms?: number;
 }
 
 // Listing CRUD + search. Reads are cached; writes are host-scoped.
@@ -104,6 +106,13 @@ export class RoomsService {
     const minCapacity = Number(query.minCapacity);
     if (Number.isFinite(minCapacity) && minCapacity > 0) {
       where.capacity = { gte: minCapacity };
+    }
+
+    // 침실 개수 필터. 미입력(null)인 매물은 조건을 만족한다고 볼 수 없어
+    // 자연히 제외된다.
+    const minBedrooms = Number(query.minBedrooms);
+    if (Number.isFinite(minBedrooms) && minBedrooms > 0) {
+      where.bedrooms = { gte: minBedrooms };
     }
 
     // Date-range availability (날짜 기반 검색). A room is bookable for the
