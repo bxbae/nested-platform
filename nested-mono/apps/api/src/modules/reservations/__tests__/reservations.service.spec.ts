@@ -11,6 +11,8 @@ import type {
 function makeRoom(over: Partial<RoomRecord> = {}): RoomRecord {
   return {
     id: "room1",
+    name: "테스트 숙소",
+    hostId: "host-1",
     monthlyRent: 800_000,
     deposit: 3_000_000,
     cleaningFee: 100_000,
@@ -39,18 +41,26 @@ class FakeRepo implements ReservationRepo {
         r.roomId === roomId &&
         (r.status === "PENDING_PAYMENT" || r.status === "CONFIRMED") &&
         r.checkIn < checkOut &&
-        r.checkOut > checkIn
+        r.checkOut > checkIn,
     );
   }
   async createHold(data: Omit<ReservationRecord, "id" | "createdAt">) {
     // emulate the serializable re-check
-    const conflict = await this.findOverlapping(data.roomId, data.checkIn, data.checkOut);
+    const conflict = await this.findOverlapping(
+      data.roomId,
+      data.checkIn,
+      data.checkOut,
+    );
     if (conflict.length) {
       const e: any = new Error("conflict");
       e.code = "DATES_UNAVAILABLE";
       throw e;
     }
-    const rec: ReservationRecord = { ...data, id: `res${this.seq++}`, createdAt: new Date() };
+    const rec: ReservationRecord = {
+      ...data,
+      id: `res${this.seq++}`,
+      createdAt: new Date(),
+    };
     this.reservations.push(rec);
     return rec;
   }
@@ -60,7 +70,11 @@ class FakeRepo implements ReservationRepo {
   async listByGuest(guestId: string) {
     return this.reservations
       .filter((r) => r.guestId === guestId)
-      .map((r) => ({ ...r, room: { id: r.roomId, name: "Test Room", region: "Test", image: null }, payment: null }));
+      .map((r) => ({
+        ...r,
+        room: { id: r.roomId, name: "Test Room", region: "Test", image: null },
+        payment: null,
+      }));
   }
   // Test seam: which host owns which room. Defaults to "host1" for room1.
   roomHosts = new Map<string, string>([["room1", "host1"]]);
@@ -84,7 +98,10 @@ class FakeRepo implements ReservationRepo {
     return r;
   }
   async markCouponUsed() {}
-  async updateCompanionStatus(id: string, status: "PENDING" | "ACCEPTED" | "DECLINED") {
+  async updateCompanionStatus(
+    id: string,
+    status: "PENDING" | "ACCEPTED" | "DECLINED",
+  ) {
     const r = this.reservations.find((x) => x.id === id)!;
     r.companionStatus = status;
     r.companionRespondedAt = new Date();
@@ -102,7 +119,10 @@ class FakeRepo implements ReservationRepo {
 }
 
 class FakeGateway implements PaymentGateway {
-  constructor(private paidAmount: number, private ok = true) {}
+  constructor(
+    private paidAmount: number,
+    private ok = true,
+  ) {}
   async verify(p: { expectedAmount: number }) {
     return {
       ok: this.ok,
@@ -128,7 +148,9 @@ describe("ReservationsService", () => {
   it("rejects stays below the room minimum", async () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(0));
-    await expect(svc.quote({ roomId: "room1", checkIn: future, months: 1 })).rejects.toMatchObject({
+    await expect(
+      svc.quote({ roomId: "room1", checkIn: future, months: 1 }),
+    ).rejects.toMatchObject({
       response: { code: "MIN_STAY" },
     });
   });
@@ -136,7 +158,10 @@ describe("ReservationsService", () => {
   it("creates a PENDING_PAYMENT hold with server-computed totals", async () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(0));
-    const r = await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6 },
+      "guestA",
+    );
     expect(r.status).toBe("PENDING_PAYMENT");
     expect(r.totalDueNow).toBe(3_990_000);
     expect(r.guestId).toBe("guestA");
@@ -147,7 +172,7 @@ describe("ReservationsService", () => {
     const svc = new ReservationsService(repo, new FakeGateway(0));
     await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
     await expect(
-      svc.create({ roomId: "room1", checkIn: future, months: 3 }, "guestB")
+      svc.create({ roomId: "room1", checkIn: future, months: 3 }, "guestB"),
     ).rejects.toMatchObject({ response: { code: "DATES_UNAVAILABLE" } });
   });
 
@@ -158,7 +183,7 @@ describe("ReservationsService", () => {
     const svc = new ReservationsService(repo, new FakeGateway(0));
     await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
     await expect(
-      svc.quote({ roomId: "room1", checkIn: future, months: 3 })
+      svc.quote({ roomId: "room1", checkIn: future, months: 3 }),
     ).rejects.toMatchObject({ response: { code: "DATES_UNAVAILABLE" } });
   });
 
@@ -176,10 +201,18 @@ describe("ReservationsService", () => {
   it("confirms payment only when the PSP-verified amount matches", async () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(3_990_000, true));
-    const r = await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6 },
+      "guestA",
+    );
     const confirmed = await svc.confirmPayment(
-      { reservationId: r.id, provider: "TOSS", paymentKey: "pk_1", amount: 3_990_000 },
-      "guestA"
+      {
+        reservationId: r.id,
+        provider: "TOSS",
+        paymentKey: "pk_1",
+        amount: 3_990_000,
+      },
+      "guestA",
     );
     expect(confirmed.status).toBe("CONFIRMED");
   });
@@ -187,12 +220,20 @@ describe("ReservationsService", () => {
   it("rejects confirmation when the client amount differs from the server total", async () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(3_990_000, true));
-    const r = await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6 },
+      "guestA",
+    );
     await expect(
       svc.confirmPayment(
-        { reservationId: r.id, provider: "TOSS", paymentKey: "pk_1", amount: 10_000 },
-        "guestA"
-      )
+        {
+          reservationId: r.id,
+          provider: "TOSS",
+          paymentKey: "pk_1",
+          amount: 10_000,
+        },
+        "guestA",
+      ),
     ).rejects.toMatchObject({ response: { code: "AMOUNT_MISMATCH" } });
   });
 
@@ -200,23 +241,47 @@ describe("ReservationsService", () => {
     const repo = new FakeRepo();
     // PSP reports a different paid amount than expected
     const svc = new ReservationsService(repo, new FakeGateway(1_000, true));
-    const r = await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6 },
+      "guestA",
+    );
     await expect(
       svc.confirmPayment(
-        { reservationId: r.id, provider: "TOSS", paymentKey: "pk_1", amount: 3_990_000 },
-        "guestA"
-      )
+        {
+          reservationId: r.id,
+          provider: "TOSS",
+          paymentKey: "pk_1",
+          amount: 3_990_000,
+        },
+        "guestA",
+      ),
     ).rejects.toMatchObject({ response: { code: "PAYMENT_UNVERIFIED" } });
   });
 
   it("is idempotent: confirming an already-CONFIRMED reservation returns it", async () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(3_990_000, true));
-    const r = await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
-    await svc.confirmPayment({ reservationId: r.id, provider: "TOSS", paymentKey: "pk_1", amount: 3_990_000 }, "guestA");
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6 },
+      "guestA",
+    );
+    await svc.confirmPayment(
+      {
+        reservationId: r.id,
+        provider: "TOSS",
+        paymentKey: "pk_1",
+        amount: 3_990_000,
+      },
+      "guestA",
+    );
     const again = await svc.confirmPayment(
-      { reservationId: r.id, provider: "TOSS", paymentKey: "pk_1", amount: 3_990_000 },
-      "guestA"
+      {
+        reservationId: r.id,
+        provider: "TOSS",
+        paymentKey: "pk_1",
+        amount: 3_990_000,
+      },
+      "guestA",
     );
     expect(again.status).toBe("CONFIRMED");
   });
@@ -227,7 +292,7 @@ describe("ReservationsService", () => {
     const svc = new ReservationsService(repo, new FakeGateway(0));
     const r = await svc.create(
       { roomId: "room1", checkIn: future, months: 6, companionId: "mate1" },
-      "guestA"
+      "guestA",
     );
     expect(r.companionId).toBe("mate1");
     expect(r.companionStatus).toBe("PENDING");
@@ -236,7 +301,10 @@ describe("ReservationsService", () => {
   it("companionId 가 없으면 동반자 필드는 비어 있다", async () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(0));
-    const r = await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6 },
+      "guestA",
+    );
     expect(r.companionId).toBeNull();
     expect(r.companionStatus).toBeNull();
   });
@@ -245,7 +313,10 @@ describe("ReservationsService", () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(0));
     await expect(
-      svc.create({ roomId: "room1", checkIn: future, months: 6, companionId: "guestA" }, "guestA")
+      svc.create(
+        { roomId: "room1", checkIn: future, months: 6, companionId: "guestA" },
+        "guestA",
+      ),
     ).rejects.toMatchObject({ response: { code: "INVALID_COMPANION" } });
   });
 
@@ -254,7 +325,7 @@ describe("ReservationsService", () => {
     const svc = new ReservationsService(repo, new FakeGateway(0));
     const r = await svc.create(
       { roomId: "room1", checkIn: future, months: 6, companionId: "mate1" },
-      "guestA"
+      "guestA",
     );
     const updated = await svc.respondToCompanionInvite(r.id, "mate1", "accept");
     expect(updated.companionStatus).toBe("ACCEPTED");
@@ -265,10 +336,10 @@ describe("ReservationsService", () => {
     const svc = new ReservationsService(repo, new FakeGateway(0));
     const r = await svc.create(
       { roomId: "room1", checkIn: future, months: 6, companionId: "mate1" },
-      "guestA"
+      "guestA",
     );
     await expect(
-      svc.respondToCompanionInvite(r.id, "stranger", "accept")
+      svc.respondToCompanionInvite(r.id, "stranger", "accept"),
     ).rejects.toMatchObject({ response: { code: "FORBIDDEN" } });
   });
 
@@ -277,20 +348,31 @@ describe("ReservationsService", () => {
     const svc = new ReservationsService(repo, new FakeGateway(0));
     const r = await svc.create(
       { roomId: "room1", checkIn: future, months: 6, companionId: "mate1" },
-      "guestA"
+      "guestA",
     );
     await svc.respondToCompanionInvite(r.id, "mate1", "decline");
     await expect(
-      svc.respondToCompanionInvite(r.id, "mate1", "accept")
+      svc.respondToCompanionInvite(r.id, "mate1", "accept"),
     ).rejects.toMatchObject({ response: { code: "ALREADY_RESPONDED" } });
   });
 
   it("blocks a guest from paying someone else's reservation", async () => {
     const repo = new FakeRepo();
     const svc = new ReservationsService(repo, new FakeGateway(3_990_000, true));
-    const r = await svc.create({ roomId: "room1", checkIn: future, months: 6 }, "guestA");
+    const r = await svc.create(
+      { roomId: "room1", checkIn: future, months: 6 },
+      "guestA",
+    );
     await expect(
-      svc.confirmPayment({ reservationId: r.id, provider: "TOSS", paymentKey: "pk_1", amount: 3_990_000 }, "attacker")
+      svc.confirmPayment(
+        {
+          reservationId: r.id,
+          provider: "TOSS",
+          paymentKey: "pk_1",
+          amount: 3_990_000,
+        },
+        "attacker",
+      ),
     ).rejects.toMatchObject({ response: { code: "FORBIDDEN" } });
   });
 });

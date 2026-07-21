@@ -11,6 +11,7 @@ import { Injectable } from "@nestjs/common";
 import { Server, Socket } from "socket.io";
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtService } from "@nestjs/jwt";
+import { MessageEventsGateway } from "../messages/message-events.gateway";
 
 @Injectable()
 @WebSocketGateway({ namespace: "/chat", cors: { origin: true } })
@@ -20,6 +21,7 @@ export class ChatGateway implements OnGatewayConnection {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly messageEvents: MessageEventsGateway,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -89,6 +91,8 @@ export class ChatGateway implements OnGatewayConnection {
     const isGuest = chatRoom.guestId === senderId;
     const isHost = chatRoom.hostId === senderId;
 
+    const recipientId = isGuest ? chatRoom.hostId : chatRoom.guestId;
+
     if (!isGuest && !isHost) {
       throw new WsException("대화방 참여자만 메시지를 보낼 수 있습니다.");
     }
@@ -104,6 +108,9 @@ export class ChatGateway implements OnGatewayConnection {
     });
 
     this.server.to(data.roomId).emit("message:new", message);
+
+    this.messageEvents.emitChanged(senderId);
+    this.messageEvents.emitChanged(recipientId);
 
     return message;
   }
@@ -139,6 +146,8 @@ export class ChatGateway implements OnGatewayConnection {
         updatedCount: result.count,
       });
     }
+
+    this.messageEvents.emitChanged(userId);
 
     return { updatedCount: result.count };
   }

@@ -119,22 +119,69 @@ export interface ApiDirectMessage {
   createdAt: string;
 }
 
-export async function listDirectConversations(): Promise<ApiDirectConversation[]> {
-  try { return await api.get<ApiDirectConversation[]>("/messages/direct"); } catch { return []; }
+export async function listDirectConversations(): Promise<
+  ApiDirectConversation[]
+> {
+  try {
+    return await api.get<ApiDirectConversation[]>("/messages/direct");
+  } catch {
+    return [];
+  }
 }
 
-export async function openDirectConversation(targetUserId: string): Promise<ApiDirectConversation> {
+export async function openDirectConversation(
+  targetUserId: string,
+): Promise<ApiDirectConversation> {
   return api.post<ApiDirectConversation>("/messages/direct", { targetUserId });
 }
 
-export async function listDirectMessages(conversationId: string): Promise<ApiDirectMessage[]> {
-  return api.get<ApiDirectMessage[]>(`/messages/direct/${encodeURIComponent(conversationId)}`);
+export async function listDirectMessages(
+  conversationId: string,
+): Promise<ApiDirectMessage[]> {
+  return api.get<ApiDirectMessage[]>(
+    `/messages/direct/${encodeURIComponent(conversationId)}`,
+  );
 }
 
-export async function sendDirectMessage(conversationId: string, body?: string, imageUrl?: string): Promise<ApiDirectMessage> {
-  return api.post<ApiDirectMessage>(`/messages/direct/${encodeURIComponent(conversationId)}`, { body, imageUrl });
+export async function sendDirectMessage(
+  conversationId: string,
+  body?: string,
+  imageUrl?: string,
+): Promise<ApiDirectMessage> {
+  return api.post<ApiDirectMessage>(
+    `/messages/direct/${encodeURIComponent(conversationId)}`,
+    { body, imageUrl },
+  );
 }
 
-export async function markDirectConversationRead(conversationId: string): Promise<void> {
+export async function markDirectConversationRead(
+  conversationId: string,
+): Promise<void> {
   await api.post(`/messages/direct/${encodeURIComponent(conversationId)}/read`);
+}
+
+export interface MessageUnreadCount {
+  roomUnread: number;
+  directUnread: number;
+  total: number;
+}
+
+export async function getMessageUnreadCount(): Promise<MessageUnreadCount> {
+  if (!USE_REAL_API) {
+    return {
+      roomUnread: 0,
+      directUnread: 0,
+      total: 0,
+    };
+  }
+
+  try {
+    return await api.get<MessageUnreadCount>("/messages/unread-count");
+  } catch {
+    return {
+      roomUnread: 0,
+      directUnread: 0,
+      total: 0,
+    };
+  }
 }

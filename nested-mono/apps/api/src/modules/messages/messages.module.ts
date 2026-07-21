@@ -15,6 +15,8 @@ import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
+import { JwtModule } from "@nestjs/jwt";
+import { MessageEventsGateway } from "./message-events.gateway";
 
 function orderedPair(firstId: string, secondId: string): [string, string] {
   return firstId < secondId ? [firstId, secondId] : [secondId, firstId];
@@ -22,7 +24,10 @@ function orderedPair(firstId: string, secondId: string): [string, string] {
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly messageEvents: MessageEventsGateway,
+  ) {}
 
   listRooms(userId: string) {
     return this.prisma.chatRoom.findMany({
@@ -64,9 +69,17 @@ export class MessagesService {
     senderId: string,
     data: { body?: string; imageUrl?: string },
   ) {
-    await this.assertRoomMember(chatRoomId, senderId);
+    const chatRoom = await this.assertRoomMember(chatRoomId, senderId);
 
-    return this.createRoomMessage(chatRoomId, senderId, data);
+    const recipientId =
+      chatRoom.guestId === senderId ? chatRoom.hostId : chatRoom.guestId;
+
+    const message = await this.createRoomMessage(chatRoomId, senderId, data);
+
+    this.messageEvents.emitChanged(senderId);
+    this.messageEvents.emitChanged(recipientId);
+
+    return message;
   }
 
   async openRoom(guestId: string, roomId: string, hostId: string) {
@@ -198,10 +211,18 @@ export class MessagesService {
     senderId: string,
     data: { body?: string; imageUrl?: string },
   ) {
-    await this.assertDirectMember(conversationId, senderId);
+    const conversation = await this.assertDirectMember(
+      conversationId,
+      senderId,
+    );
 
-    return this.prisma.$transaction(async (tx) => {
-      const message = await tx.directMessage.create({
+    const recipientId =
+      conversation.participantAId === senderId
+        ? conversation.participantBId
+        : conversation.participantAId;
+
+    const message = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.directMessage.create({
         data: {
           conversationId,
           senderId,
@@ -220,8 +241,13 @@ export class MessagesService {
         },
       });
 
-      return message;
+      return created;
     });
+
+    this.messageEvents.emitChanged(senderId);
+    this.messageEvents.emitChanged(recipientId);
+
+    return message;
   }
 
   async markDirectRead(conversationId: string, userId: string) {
@@ -245,7 +271,65 @@ export class MessagesService {
       ),
     );
 
+    this.messageEvents.emitChanged(userId);
+
     return { updated: unread.length };
+  }
+
+  async unreadCount(userId: string) {
+    const [roomUnread, directUnread] = await Promise.all([
+      this.prisma.message.count({
+        where: {
+          senderId: {
+            not: userId,
+          },
+          NOT: {
+            readBy: {
+              has: userId,
+            },
+          },
+          chatRoom: {
+            OR: [
+              {
+                guestId: userId,
+              },
+              {
+                hostId: userId,
+              },
+            ],
+          },
+        },
+      }),
+
+      this.prisma.directMessage.count({
+        where: {
+          senderId: {
+            not: userId,
+          },
+          NOT: {
+            readBy: {
+              has: userId,
+            },
+          },
+          conversation: {
+            OR: [
+              {
+                participantAId: userId,
+              },
+              {
+                participantBId: userId,
+              },
+            ],
+          },
+        },
+      }),
+    ]);
+
+    return {
+      roomUnread,
+      directUnread,
+      total: roomUnread + directUnread,
+    };
   }
 
   private createRoomMessage(
@@ -378,6 +462,11 @@ export class MessagesController {
     return this.messages.markDirectRead(conversationId, req.user.id);
   }
 
+  @Get("unread-count")
+  unreadCount(@Req() req: any) {
+    return this.messages.unreadCount(req.user.id);
+  }
+
   @Get(":chatRoomId")
   list(@Req() req: any, @Param("chatRoomId") chatRoomId: string) {
     return this.messages.listMessages(chatRoomId, req.user.id);
@@ -394,7 +483,9 @@ export class MessagesController {
 }
 
 @Module({
+  imports: [JwtModule.register({})],
   controllers: [MessagesController],
-  providers: [MessagesService],
+  providers: [MessagesService, MessageEventsGateway],
+  exports: [MessageEventsGateway],
 })
 export class MessagesModule {}
