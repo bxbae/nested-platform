@@ -144,7 +144,8 @@ export function apiRoomToHouse(r: ApiRoom): House {
     roomType: fromApiRoomType(r.roomType),
     // 서버가 내려주는 침실 개수. 미입력이면 null.
     bedrooms: (r as { bedrooms?: number | null }).bedrooms ?? null,
-    residents: 0,
+    // 서버가 계산한 현재 거주 인원 (진행 중 예약 + 수락한 동반자).
+    residents: (r as { residents?: number }).residents ?? 0,
     // 서버가 내려주는 정원. 독채는 null.
     capacity: (r as { capacity?: number | null }).capacity ?? null,
     amenities: (r.amenities ?? []).map((a) => a.amenity?.label ?? a.amenity?.name ?? "").filter(Boolean),
