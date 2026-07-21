@@ -27,6 +27,7 @@ import { HostSettlementModule } from "./modules/host/host-settlement.module";
 import { PreferenceModule } from "./modules/preference/preference.module";
 import { MatchModule } from "./modules/match/match.module";
 import { FriendsModule } from "./modules/friends/friends.module";
+import { ReportsModule } from "./modules/reports/reports.module";
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { FriendsModule } from "./modules/friends/friends.module";
     PreferenceModule,
     MatchModule,
     FriendsModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}
