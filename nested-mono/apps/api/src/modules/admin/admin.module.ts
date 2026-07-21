@@ -1,6 +1,18 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Query, Body, Req, UseGuards, Injectable, Module,
-  NotFoundException, BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Query,
+  Body,
+  Req,
+  UseGuards,
+  Injectable,
+  Module,
+  NotFoundException,
+  BadRequestException,
 } from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -31,7 +43,10 @@ const bannerCreateSchema = z.object({
 });
 const bannerUpdateSchema = z.object({
   title: z.string().min(1).max(200).optional(),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
   position: z.string().min(1).max(50).optional(),
   linkUrl: z.string().url().max(500).nullable().optional(),
   active: z.boolean().optional(),
@@ -62,10 +77,17 @@ export class AdminService {
         // Hide accounts that have deleted themselves — they're anonymised and
         // shouldn't clutter the admin list.
         deletedAt: null,
-        ...(q ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] } : {}),
+        ...(q
+          ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] }
+          : {}),
       },
       select: {
-        id: true, name: true, email: true, role: true, suspended: true, createdAt: true,
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        suspended: true,
+        createdAt: true,
         verifiedAt: true,
         // Counts that feed the activity tier.
         _count: { select: { reviews: true } },
@@ -93,9 +115,15 @@ export class AdminService {
   // Admin marks identity as checked (or revokes it). Separate from
   // emailVerified: that only proves the address works, this is a human check.
   async setVerified(userId: string, verified: boolean) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
     if (!user) {
-      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없어요." });
+      throw new NotFoundException({
+        code: "USER_NOT_FOUND",
+        message: "사용자를 찾을 수 없어요.",
+      });
     }
     return this.prisma.user.update({
       where: { id: userId },
@@ -112,13 +140,20 @@ export class AdminService {
         message: "본인 계정은 정지할 수 없어요.",
       });
     }
-    return this.prisma.user.update({ where: { id: userId }, data: { suspended } });
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { suspended },
+    });
   }
 
   // Change a member's role. Guests can promote themselves via
   // POST /auth/become-host; this is the operational path — granting ADMIN, or
   // demoting someone who shouldn't be hosting.
-  async setRole(adminId: string, userId: string, role: "GUEST" | "HOST" | "ADMIN") {
+  async setRole(
+    adminId: string,
+    userId: string,
+    role: "GUEST" | "HOST" | "ADMIN",
+  ) {
     // Removing your own admin rights would lock you out of this very screen.
     if (adminId === userId) {
       throw new BadRequestException({
@@ -126,9 +161,15 @@ export class AdminService {
         message: "본인 계정의 역할은 변경할 수 없어요.",
       });
     }
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
     if (!user) {
-      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없어요." });
+      throw new NotFoundException({
+        code: "USER_NOT_FOUND",
+        message: "사용자를 찾을 수 없어요.",
+      });
     }
     // The target keeps their old role until their token refreshes — guards read
     // it from the JWT. Existing sessions are dropped so they re-authenticate.
@@ -156,8 +197,61 @@ export class AdminService {
       },
     });
   }
-  setPublished(id: string, published: boolean) {
-    return this.prisma.room.update({ where: { id }, data: { published } });
+  async setPublished(id: string, published: boolean) {
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        hostId: true,
+        published: true,
+      },
+    });
+
+    if (!room) {
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
+    }
+
+    // 이미 같은 상태라면 중복 알림 없이 그대로 처리
+    if (room.published === published) {
+      return this.prisma.room.update({
+        where: { id },
+        data: { published },
+      });
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updatedRoom = await tx.room.update({
+        where: { id },
+        data: { published },
+      });
+
+      const notification = published
+        ? await tx.notification.create({
+            data: {
+              userId: room.hostId,
+              type: "ROOM_APPROVED",
+              title: "숙소 등록이 승인되었어요",
+              body: `"${room.name}" 숙소가 승인되어 서비스에 공개되었습니다.`,
+              targetUrl: "/host/rooms",
+            },
+          })
+        : null;
+
+      return {
+        updatedRoom,
+        notification,
+      };
+    });
+
+    if (result.notification) {
+      this.notificationsGateway.emitToUser(room.hostId, result.notification);
+    }
+
+    return result.updatedRoom;
   }
 
   // Reject a submission outright. Unlike RoomsService.remove this isn't scoped
@@ -170,12 +264,16 @@ export class AdminService {
       include: { _count: { select: { reservations: true } } },
     });
     if (!room) {
-      throw new NotFoundException({ code: "ROOM_NOT_FOUND", message: "숙소를 찾을 수 없습니다." });
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
     }
     if (room.published) {
       throw new BadRequestException({
         code: "ALREADY_PUBLISHED",
-        message: "이미 게시된 숙소는 거부할 수 없습니다. 먼저 게시를 취소해주세요.",
+        message:
+          "이미 게시된 숙소는 거부할 수 없습니다. 먼저 게시를 취소해주세요.",
       });
     }
     // Reservations have an FK RESTRICT, so the delete would fail at the DB
@@ -211,7 +309,10 @@ export class AdminService {
     }));
   }
   setReportStatus(id: string, status: string) {
-    return this.prisma.report.update({ where: { id }, data: { status: status as any } });
+    return this.prisma.report.update({
+      where: { id },
+      data: { status: status as any },
+    });
   }
 
   // 신고 상세 컨텍스트 — 신고자/피신고자 계정과, MESSAGE 신고라면 연결된
@@ -223,7 +324,10 @@ export class AdminService {
       include: { reporter: { select: { id: true, name: true, email: true } } },
     });
     if (!report) {
-      throw new NotFoundException({ code: "REPORT_NOT_FOUND", message: "신고를 찾을 수 없어요." });
+      throw new NotFoundException({
+        code: "REPORT_NOT_FOUND",
+        message: "신고를 찾을 수 없어요.",
+      });
     }
 
     let reported: { id: string; name: string; email: string } | null = null;
@@ -297,12 +401,21 @@ export class AdminService {
         host: { select: { id: true, name: true, email: true } },
         messages: {
           orderBy: { createdAt: "asc" },
-          select: { id: true, senderId: true, body: true, imageUrl: true, createdAt: true },
+          select: {
+            id: true,
+            senderId: true,
+            body: true,
+            imageUrl: true,
+            createdAt: true,
+          },
         },
       },
     });
     if (!room) {
-      throw new NotFoundException({ code: "CHAT_ROOM_NOT_FOUND", message: "대화방을 찾을 수 없어요." });
+      throw new NotFoundException({
+        code: "CHAT_ROOM_NOT_FOUND",
+        message: "대화방을 찾을 수 없어요.",
+      });
     }
     return { guest: room.guest, host: room.host, messages: room.messages };
   }
@@ -316,12 +429,21 @@ export class AdminService {
         participantB: { select: { id: true, name: true, email: true } },
         messages: {
           orderBy: { createdAt: "asc" },
-          select: { id: true, senderId: true, body: true, imageUrl: true, createdAt: true },
+          select: {
+            id: true,
+            senderId: true,
+            body: true,
+            imageUrl: true,
+            createdAt: true,
+          },
         },
       },
     });
     if (!conversation) {
-      throw new NotFoundException({ code: "CONVERSATION_NOT_FOUND", message: "대화를 찾을 수 없어요." });
+      throw new NotFoundException({
+        code: "CONVERSATION_NOT_FOUND",
+        message: "대화를 찾을 수 없어요.",
+      });
     }
     return {
       participantA: conversation.participantA,
@@ -332,17 +454,26 @@ export class AdminService {
 
   // 신고 처리 알림 — 신고자/피신고자에게 처리 결과를 알림으로 보낸다.
   // 알림 타입은 스키마상 별도 REPORT 타입이 없어 SYSTEM 을 사용한다.
-  async notifyReportParties(reportId: string, target: "REPORTER" | "REPORTED", message?: string) {
+  async notifyReportParties(
+    reportId: string,
+    target: "REPORTER" | "REPORTED",
+    message?: string,
+  ) {
     const context = await this.reportContext(reportId);
-    const recipient = target === "REPORTER" ? context.reporter : context.reported;
+    const recipient =
+      target === "REPORTER" ? context.reporter : context.reported;
     if (!recipient) {
       throw new NotFoundException({
         code: "RECIPIENT_NOT_FOUND",
-        message: target === "REPORTER" ? "신고자 계정을 찾을 수 없어요." : "피신고자 계정을 찾을 수 없어요.",
+        message:
+          target === "REPORTER"
+            ? "신고자 계정을 찾을 수 없어요."
+            : "피신고자 계정을 찾을 수 없어요.",
       });
     }
 
-    const title = target === "REPORTER" ? "신고 처리 안내" : "신고 접수 및 처리 안내";
+    const title =
+      target === "REPORTER" ? "신고 처리 안내" : "신고 접수 및 처리 안내";
     const defaultBody =
       target === "REPORTER"
         ? "신고해 주신 내용이 검토·처리되었습니다."
@@ -353,7 +484,9 @@ export class AdminService {
         userId: recipient.id,
         type: "SYSTEM",
         title,
-        body: message?.trim() ? `${defaultBody}\n${message.trim()}` : defaultBody,
+        body: message?.trim()
+          ? `${defaultBody}\n${message.trim()}`
+          : defaultBody,
       },
     });
 
@@ -367,10 +500,19 @@ export class AdminService {
       this.prisma.user.count(),
       this.prisma.room.count(),
       this.prisma.reservation.count(),
-      this.prisma.payment.aggregate({ _sum: { amount: true }, where: { status: "PAID" } }),
+      this.prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: { status: "PAID" },
+      }),
     ]);
     const gmv = paidAgg._sum.amount ?? 0;
-    return { users, rooms, reservations, gmv, commission: Math.round(gmv * 0.05) };
+    return {
+      users,
+      rooms,
+      reservations,
+      gmv,
+      commission: Math.round(gmv * 0.05),
+    };
   }
 
   // all reservations (관리자용 예약 조회)
@@ -437,8 +579,12 @@ export class AdminService {
 
     // Index DB results by "YYYY-M" so we can zero-fill missing months.
     const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}`;
-    const revByMonth = new Map(revenueRows.map((r) => [key(new Date(r.month)), r]));
-    const resByMonth = new Map(reservationRows.map((r) => [key(new Date(r.month)), r]));
+    const revByMonth = new Map(
+      revenueRows.map((r) => [key(new Date(r.month)), r]),
+    );
+    const resByMonth = new Map(
+      reservationRows.map((r) => [key(new Date(r.month)), r]),
+    );
 
     const trend: {
       month: string;
@@ -481,7 +627,11 @@ export class AdminService {
 
   createNotice(data: { title: string; body: string; pinned?: boolean }) {
     return this.prisma.notice.create({
-      data: { title: data.title, body: data.body, pinned: data.pinned ?? false },
+      data: {
+        title: data.title,
+        body: data.body,
+        pinned: data.pinned ?? false,
+      },
     });
   }
 
@@ -507,16 +657,24 @@ export class AdminService {
   }
 
   private async ensureNotice(id: string) {
-    const found = await this.prisma.notice.findUnique({ where: { id }, select: { id: true } });
+    const found = await this.prisma.notice.findUnique({
+      where: { id },
+      select: { id: true },
+    });
     if (!found) {
-      throw new NotFoundException({ code: "NOTICE_NOT_FOUND", message: "공지를 찾을 수 없어요." });
+      throw new NotFoundException({
+        code: "NOTICE_NOT_FOUND",
+        message: "공지를 찾을 수 없어요.",
+      });
     }
   }
 
   // ── Banners (배너 CRUD) ──
   // Admin list shows everything; the public home shows only active ones.
   listBanners() {
-    return this.prisma.banner.findMany({ orderBy: [{ order: "asc" }, { createdAt: "desc" }] });
+    return this.prisma.banner.findMany({
+      orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+    });
   }
 
   listActiveBanners() {
@@ -578,9 +736,15 @@ export class AdminService {
   }
 
   private async ensureBanner(id: string) {
-    const found = await this.prisma.banner.findUnique({ where: { id }, select: { id: true } });
+    const found = await this.prisma.banner.findUnique({
+      where: { id },
+      select: { id: true },
+    });
     if (!found) {
-      throw new NotFoundException({ code: "BANNER_NOT_FOUND", message: "배너를 찾을 수 없어요." });
+      throw new NotFoundException({
+        code: "BANNER_NOT_FOUND",
+        message: "배너를 찾을 수 없어요.",
+      });
     }
   }
 
@@ -590,7 +754,9 @@ export class AdminService {
   // which is what these add. "Active" is derived from the validity window and
   // remaining usage rather than a stored flag.
   async listCoupons() {
-    const rows = await this.prisma.coupon.findMany({ orderBy: { validTo: "desc" } });
+    const rows = await this.prisma.coupon.findMany({
+      orderBy: { validTo: "desc" },
+    });
     const now = new Date();
     return rows.map((c) => ({
       ...c,
@@ -627,9 +793,15 @@ export class AdminService {
   }
 
   async deleteCoupon(id: string) {
-    const found = await this.prisma.coupon.findUnique({ where: { id }, select: { id: true } });
+    const found = await this.prisma.coupon.findUnique({
+      where: { id },
+      select: { id: true },
+    });
     if (!found) {
-      throw new NotFoundException({ code: "COUPON_NOT_FOUND", message: "쿠폰을 찾을 수 없어요." });
+      throw new NotFoundException({
+        code: "COUPON_NOT_FOUND",
+        message: "쿠폰을 찾을 수 없어요.",
+      });
     }
     await this.prisma.coupon.delete({ where: { id } });
     return { ok: true };
@@ -640,7 +812,9 @@ const suspendSchema = z.object({ suspended: z.boolean() });
 const verifySchema = z.object({ verified: z.boolean() });
 const roleSchema = z.object({ role: z.enum(["GUEST", "HOST", "ADMIN"]) });
 const publishSchema = z.object({ published: z.boolean() });
-const reportStatusSchema = z.object({ status: z.enum(["RECEIVED", "IN_REVIEW", "RESOLVED"]) });
+const reportStatusSchema = z.object({
+  status: z.enum(["RECEIVED", "IN_REVIEW", "RESOLVED"]),
+});
 const reportNotifySchema = z.object({
   target: z.enum(["REPORTER", "REPORTED"]),
   message: z.string().trim().max(500).optional(),
@@ -667,7 +841,8 @@ export class AdminController {
   @Patch("members/:id/verify")
   setVerified(
     @Param("id") id: string,
-    @Body(new ZodValidationPipe(verifySchema)) dto: z.infer<typeof verifySchema>,
+    @Body(new ZodValidationPipe(verifySchema))
+    dto: z.infer<typeof verifySchema>,
   ) {
     return this.admin.setVerified(id, dto.verified);
   }
@@ -697,7 +872,10 @@ export class AdminController {
   }
 
   @Patch("rooms/:id/publish")
-  publish(@Param("id") id: string, @Body(new ZodValidationPipe(publishSchema)) dto: any) {
+  publish(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(publishSchema)) dto: any,
+  ) {
     return this.admin.setPublished(id, dto.published);
   }
 
@@ -713,7 +891,10 @@ export class AdminController {
   }
 
   @Patch("reports/:id")
-  reportStatus(@Param("id") id: string, @Body(new ZodValidationPipe(reportStatusSchema)) dto: any) {
+  reportStatus(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(reportStatusSchema)) dto: any,
+  ) {
     return this.admin.setReportStatus(id, dto.status);
   }
 
@@ -727,7 +908,8 @@ export class AdminController {
   @Post("reports/:id/notify")
   notifyReport(
     @Param("id") id: string,
-    @Body(new ZodValidationPipe(reportNotifySchema)) dto: z.infer<typeof reportNotifySchema>,
+    @Body(new ZodValidationPipe(reportNotifySchema))
+    dto: z.infer<typeof reportNotifySchema>,
   ) {
     return this.admin.notifyReportParties(id, dto.target, dto.message);
   }
@@ -771,14 +953,18 @@ export class AdminController {
   }
 
   @Post("notices")
-  createNotice(@Body(new ZodValidationPipe(noticeCreateSchema)) dto: z.infer<typeof noticeCreateSchema>) {
+  createNotice(
+    @Body(new ZodValidationPipe(noticeCreateSchema))
+    dto: z.infer<typeof noticeCreateSchema>,
+  ) {
     return this.admin.createNotice(dto);
   }
 
   @Patch("notices/:id")
   updateNotice(
     @Param("id") id: string,
-    @Body(new ZodValidationPipe(noticeUpdateSchema)) dto: z.infer<typeof noticeUpdateSchema>,
+    @Body(new ZodValidationPipe(noticeUpdateSchema))
+    dto: z.infer<typeof noticeUpdateSchema>,
   ) {
     return this.admin.updateNotice(id, dto);
   }
@@ -795,14 +981,18 @@ export class AdminController {
   }
 
   @Post("banners")
-  createBanner(@Body(new ZodValidationPipe(bannerCreateSchema)) dto: z.infer<typeof bannerCreateSchema>) {
+  createBanner(
+    @Body(new ZodValidationPipe(bannerCreateSchema))
+    dto: z.infer<typeof bannerCreateSchema>,
+  ) {
     return this.admin.createBanner(dto);
   }
 
   @Patch("banners/:id")
   updateBanner(
     @Param("id") id: string,
-    @Body(new ZodValidationPipe(bannerUpdateSchema)) dto: z.infer<typeof bannerUpdateSchema>,
+    @Body(new ZodValidationPipe(bannerUpdateSchema))
+    dto: z.infer<typeof bannerUpdateSchema>,
   ) {
     return this.admin.updateBanner(id, dto);
   }
@@ -819,7 +1009,10 @@ export class AdminController {
   }
 
   @Post("coupons")
-  createCoupon(@Body(new ZodValidationPipe(couponCreateSchema)) dto: z.infer<typeof couponCreateSchema>) {
+  createCoupon(
+    @Body(new ZodValidationPipe(couponCreateSchema))
+    dto: z.infer<typeof couponCreateSchema>,
+  ) {
     return this.admin.createCoupon(dto);
   }
 
@@ -855,7 +1048,11 @@ export class PublicBannerController {
 
 @Module({
   imports: [NotificationsModule],
-  controllers: [AdminController, PublicNoticeController, PublicBannerController],
+  controllers: [
+    AdminController,
+    PublicNoticeController,
+    PublicBannerController,
+  ],
   providers: [AdminService],
 })
 export class AdminModule {}

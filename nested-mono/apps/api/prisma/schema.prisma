@@ -380,11 +380,27 @@ model Coupon {
 
 // ── Notifications ──────────────────────────────────────────────────
 enum NotificationType {
-  RESERVATION
+  COMMENT
+
+  ROOM_APPROVED
+  ROOM_REJECTED
+
+  RESERVATION_REQUESTED
+  RESERVATION_CONFIRMED
+  RESERVATION_COMPLETED
+  RESERVATION_CANCELLED
+
+  EARLY_CHECKOUT_REQUESTED
+  EARLY_CHECKOUT_APPROVED
+  EARLY_CHECKOUT_REJECTED
+
   PAYMENT
-  MESSAGE
   REVIEW
   SYSTEM
+
+  // 기존 알림 데이터 호환용
+  MESSAGE
+  RESERVATION
 }
 
 model Notification {

@@ -7,8 +7,10 @@ import {
 } from "./reservations.service";
 import { PrismaReservationRepo } from "./prisma-reservation.repo";
 import { PspPaymentGateway } from "./psp-payment.gateway";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [ReservationsController],
   providers: [
     ReservationsService,

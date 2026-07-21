@@ -72,7 +72,11 @@ export default function MessagesPage() {
 
   const conversations = useMemo<Conversation[]>(
     () => [
-      ...directChats.map((raw) => ({ kind: "direct" as const, id: raw.id, raw })),
+      ...directChats.map((raw) => ({
+        kind: "direct" as const,
+        id: raw.id,
+        raw,
+      })),
       ...roomChats.map((raw) => ({ kind: "room" as const, id: raw.id, raw })),
     ],
     [directChats, roomChats],
@@ -94,7 +98,11 @@ export default function MessagesPage() {
         const wantedRoom = params.get("room");
         const wantedDirect = params.get("direct");
         const all: Conversation[] = [
-          ...directs.map((raw) => ({ kind: "direct" as const, id: raw.id, raw })),
+          ...directs.map((raw) => ({
+            kind: "direct" as const,
+            id: raw.id,
+            raw,
+          })),
           ...rooms.map((raw) => ({ kind: "room" as const, id: raw.id, raw })),
         ];
 
@@ -103,7 +111,9 @@ export default function MessagesPage() {
             item.kind === "direct"
               ? item.id === wantedDirect
               : item.id === wantedRoom,
-          ) ?? all[0] ?? null,
+          ) ??
+            all[0] ??
+            null,
         );
       } finally {
         if (alive) setLoading(false);
@@ -209,7 +219,10 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!shouldStickToBottomRef.current) return;
     const frame = window.requestAnimationFrame(() => {
-      messageBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      messageBottomRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [messages]);
@@ -222,9 +235,15 @@ export default function MessagesPage() {
 
     try {
       if (active.kind === "direct") {
-        const created = await sendDirectMessage(active.id, body?.trim(), imageUrl);
+        const created = await sendDirectMessage(
+          active.id,
+          body?.trim(),
+          imageUrl,
+        );
         setMessages((prev) =>
-          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+          prev.some((item) => item.id === created.id)
+            ? prev
+            : [...prev, created],
         );
         setDraft("");
         return true;
@@ -232,21 +251,25 @@ export default function MessagesPage() {
 
       const socket = socketRef.current;
       if (!socket?.connected) {
-        throw new Error("채팅 서버에 연결되지 않았어요. 잠시 후 다시 시도해주세요.");
+        throw new Error(
+          "채팅 서버에 연결되지 않았어요. 잠시 후 다시 시도해주세요.",
+        );
       }
 
       const created = await new Promise<ApiMessage>((resolve, reject) => {
-        socket.timeout(5000).emit(
-          "message:send",
-          { roomId: active.id, body: body?.trim(), imageUrl },
-          (socketError: Error | null, message?: ApiMessage) => {
-            if (socketError || !message) {
-              reject(socketError ?? new Error("메시지를 보내지 못했어요."));
-              return;
-            }
-            resolve(message);
-          },
-        );
+        socket
+          .timeout(5000)
+          .emit(
+            "message:send",
+            { roomId: active.id, body: body?.trim(), imageUrl },
+            (socketError: Error | null, message?: ApiMessage) => {
+              if (socketError || !message) {
+                reject(socketError ?? new Error("메시지를 보내지 못했어요."));
+                return;
+              }
+              resolve(message);
+            },
+          );
       });
 
       setMessages((prev) =>
@@ -297,7 +320,9 @@ export default function MessagesPage() {
         if (fileRef.current) fileRef.current.value = "";
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "이미지를 보내지 못했습니다.");
+      setError(
+        cause instanceof Error ? cause.message : "이미지를 보내지 못했습니다.",
+      );
     } finally {
       setUploading(false);
     }
@@ -365,10 +390,15 @@ export default function MessagesPage() {
 
   return (
     <div>
-      <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>메시지</h1>
+      <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>
+        메시지
+      </h1>
 
       {conversations.length === 0 ? (
-        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}>
+        <div
+          className="card"
+          style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}
+        >
           아직 대화가 없어요.
         </div>
       ) : (
@@ -388,18 +418,35 @@ export default function MessagesPage() {
                     gap: 12,
                     alignItems: "flex-start",
                     border:
-                      active?.id === conversation.id && active.kind === conversation.kind
+                      active?.id === conversation.id &&
+                      active.kind === conversation.kind
                         ? "1.5px solid var(--text)"
                         : "1px solid var(--border)",
                   }}
                 >
-                  <Avatar name={meta.name} color={meta.color} url={meta.avatarUrl} size={40} />
+                  <Avatar
+                    name={meta.name}
+                    color={meta.color}
+                    url={meta.avatarUrl}
+                    size={40}
+                  />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <strong style={{ fontSize: 14 }}>{meta.name}</strong>
                     <div style={{ fontSize: 12, color: "var(--text-2)" }}>
-                      {conversation.kind === "direct" ? "친구 메시지" : meta.context}
+                      {conversation.kind === "direct"
+                        ? "친구 메시지"
+                        : meta.context}
                     </div>
-                    <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        color: "var(--text-2)",
+                        marginTop: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {meta.preview}
                     </div>
                   </div>
@@ -409,20 +456,74 @@ export default function MessagesPage() {
           </div>
 
           {active && (
-            <div className="card" style={{ padding: 0, display: "flex", flexDirection: "column", height: "min(72vh, 720px)", minHeight: 520, overflow: "hidden" }}>
-              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: "1px solid var(--border)", background: "#fff" }}>
-                <Avatar name={counterpartName} color={counterpartColor} url={counterpartAvatarUrl} size={42} />
+            <div
+              className="card"
+              style={{
+                padding: 0,
+                display: "flex",
+                flexDirection: "column",
+                height: "min(72vh, 720px)",
+                minHeight: 520,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "14px 18px",
+                  borderBottom: "1px solid var(--border)",
+                  background: "#fff",
+                }}
+              >
+                <Avatar
+                  name={counterpartName}
+                  color={counterpartColor}
+                  url={counterpartAvatarUrl}
+                  size={42}
+                />
                 <div style={{ minWidth: 0 }}>
-                  <strong style={{ display: "block", fontSize: 16 }}>{counterpartName}</strong>
-                  <span style={{ display: "block", marginTop: 2, fontSize: 12.5, color: "var(--text-2)" }}>
-                    {active.kind === "direct" ? "친구와의 대화" : active.raw.room?.name ?? "숙소 관련 대화"}
+                  <strong style={{ display: "block", fontSize: 16 }}>
+                    {counterpartName}
+                  </strong>
+                  <span
+                    style={{
+                      display: "block",
+                      marginTop: 2,
+                      fontSize: 12.5,
+                      color: "var(--text-2)",
+                    }}
+                  >
+                    {active.kind === "direct"
+                      ? "친구와의 대화"
+                      : (active.raw.room?.name ?? "숙소 관련 대화")}
                   </span>
                 </div>
               </div>
 
-              <div ref={messageListRef} onScroll={handleMessageScroll} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "18px 18px 24px", background: "var(--bg-2)" }}>
+              <div
+                ref={messageListRef}
+                onScroll={handleMessageScroll}
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  padding: "18px 18px 24px",
+                  background: "var(--bg-2)",
+                }}
+              >
                 {messages.length === 0 && (
-                  <div style={{ height: "100%", display: "grid", placeItems: "center", color: "var(--text-2)", fontSize: 14 }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "grid",
+                      placeItems: "center",
+                      color: "var(--text-2)",
+                      fontSize: 14,
+                    }}
+                  >
                     첫 메시지를 보내보세요.
                   </div>
                 )}
@@ -431,38 +532,139 @@ export default function MessagesPage() {
                   {messages.map((message, index) => {
                     const mine = message.senderId === user?.id;
                     const previous = messages[index - 1];
-                    const showDate = !previous || dateKey(previous.createdAt) !== dateKey(message.createdAt);
-                    const samePreviousSender = !showDate && previous?.senderId === message.senderId;
+                    const showDate =
+                      !previous ||
+                      dateKey(previous.createdAt) !==
+                        dateKey(message.createdAt);
+                    const samePreviousSender =
+                      !showDate && previous?.senderId === message.senderId;
                     const showAvatar = !mine && !samePreviousSender;
-                    const isRead = mine && Boolean(otherUserId && (message.readBy ?? []).includes(otherUserId));
+                    const isRead =
+                      mine &&
+                      Boolean(
+                        otherUserId &&
+                        (message.readBy ?? []).includes(otherUserId),
+                      );
 
                     return (
                       <Fragment key={message.id}>
                         {showDate && (
-                          <div style={{ display: "flex", justifyContent: "center", margin: index === 0 ? "2px 0 12px" : "18px 0 12px" }}>
-                            <span style={{ padding: "6px 11px", borderRadius: 999, background: "rgba(0,0,0,.07)", color: "var(--text-2)", fontSize: 11.5 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "center",
+                              margin:
+                                index === 0 ? "2px 0 12px" : "18px 0 12px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                padding: "6px 11px",
+                                borderRadius: 999,
+                                background: "rgba(0,0,0,.07)",
+                                color: "var(--text-2)",
+                                fontSize: 11.5,
+                              }}
+                            >
                               {formatDateLabel(message.createdAt)}
                             </span>
                           </div>
                         )}
 
-                        <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 7 }}>
-                          {!mine && <div style={{ width: 34, flexShrink: 0 }}>{showAvatar && <Avatar name={counterpartName} color={counterpartColor} url={counterpartAvatarUrl} size={34} />}</div>}
-
-                          {mine && (
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginBottom: 2, color: "var(--text-2)", fontSize: 10.5 }}>
-                              {!isRead && <span style={{ color: "var(--primary)", fontWeight: 800 }}>1</span>}
-                              <span>{formatMessageTime(message.createdAt)}</span>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: mine ? "flex-end" : "flex-start",
+                            alignItems: "flex-end",
+                            gap: 7,
+                          }}
+                        >
+                          {!mine && (
+                            <div style={{ width: 34, flexShrink: 0 }}>
+                              {showAvatar && (
+                                <Avatar
+                                  name={counterpartName}
+                                  color={counterpartColor}
+                                  url={counterpartAvatarUrl}
+                                  size={34}
+                                />
+                              )}
                             </div>
                           )}
 
-                          <div style={{ minWidth: 0, maxWidth: "min(72%, 420px)" }}>
-                            {!mine && showAvatar && <div style={{ margin: "0 0 5px 3px", color: "var(--text-2)", fontSize: 11.5 }}>{counterpartName}</div>}
-                            <div style={{ background: mine ? "var(--primary)" : "#fff", color: mine ? "#fff" : "var(--text)", padding: message.imageUrl ? 4 : "10px 13px", borderRadius: mine ? "16px 16px 4px 16px" : "16px 16px 16px 4px", border: mine ? "none" : "1px solid var(--border)", fontSize: 14, lineHeight: 1.45, wordBreak: "break-word" }}>
+                          {mine && (
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "flex-end",
+                                marginBottom: 2,
+                                color: "var(--text-2)",
+                                fontSize: 10.5,
+                              }}
+                            >
+                              {!isRead && (
+                                <span
+                                  style={{
+                                    color: "var(--primary)",
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  1
+                                </span>
+                              )}
+                              <span>
+                                {formatMessageTime(message.createdAt)}
+                              </span>
+                            </div>
+                          )}
+
+                          <div
+                            style={{ minWidth: 0, maxWidth: "min(72%, 420px)" }}
+                          >
+                            {!mine && showAvatar && (
+                              <div
+                                style={{
+                                  margin: "0 0 5px 3px",
+                                  color: "var(--text-2)",
+                                  fontSize: 11.5,
+                                }}
+                              >
+                                {counterpartName}
+                              </div>
+                            )}
+                            <div
+                              style={{
+                                background: mine ? "var(--primary)" : "#fff",
+                                color: mine ? "#fff" : "var(--text)",
+                                padding: message.imageUrl ? 4 : "10px 13px",
+                                borderRadius: mine
+                                  ? "16px 16px 4px 16px"
+                                  : "16px 16px 16px 4px",
+                                border: mine
+                                  ? "none"
+                                  : "1px solid var(--border)",
+                                fontSize: 14,
+                                lineHeight: 1.45,
+                                wordBreak: "break-word",
+                              }}
+                            >
                               {message.imageUrl ? (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img src={message.imageUrl} alt="전송된 사진" style={{ maxWidth: 240, maxHeight: 280, borderRadius: 12, display: "block", objectFit: "cover" }} />
-                              ) : message.body}
+                                <img
+                                  src={message.imageUrl}
+                                  alt="전송된 사진"
+                                  style={{
+                                    maxWidth: 240,
+                                    maxHeight: 280,
+                                    borderRadius: 12,
+                                    display: "block",
+                                    objectFit: "cover",
+                                  }}
+                                />
+                              ) : (
+                                message.body
+                              )}
                             </div>
                           </div>
 
@@ -556,7 +758,17 @@ export default function MessagesPage() {
                     {sending || uploading ? "전송 중…" : "보내기"}
                   </button>
                 </div>
-                {error && <p style={{ fontSize: 13, color: "var(--primary)", margin: "8px 0 0" }}>{error}</p>}
+                {error && (
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "var(--primary)",
+                      margin: "8px 0 0",
+                    }}
+                  >
+                    {error}
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -686,7 +898,13 @@ function ReportMessageModal({
 }
 
 function getCounterpart(active: Conversation | null, currentUserId?: string) {
-  if (!active) return { id: "", name: "상대방", avatarColor: null as string | null, avatarUrl: null as string | null };
+  if (!active)
+    return {
+      id: "",
+      name: "상대방",
+      avatarColor: null as string | null,
+      avatarUrl: null as string | null,
+    };
   if (active.kind === "direct") {
     return {
       id: active.raw.other?.id ?? "",
@@ -695,33 +913,84 @@ function getCounterpart(active: Conversation | null, currentUserId?: string) {
       avatarUrl: active.raw.other?.avatarUrl ?? null,
     };
   }
-  const other = active.raw.hostId === currentUserId ? active.raw.guest : active.raw.host;
+  const other =
+    active.raw.hostId === currentUserId ? active.raw.guest : active.raw.host;
   return {
-    id: other?.id ?? (active.raw.hostId === currentUserId ? active.raw.guestId : active.raw.hostId),
-    name: other?.name ?? (active.raw.hostId === currentUserId ? "게스트" : "호스트"),
+    id:
+      other?.id ??
+      (active.raw.hostId === currentUserId
+        ? active.raw.guestId
+        : active.raw.hostId),
+    name:
+      other?.name ??
+      (active.raw.hostId === currentUserId ? "게스트" : "호스트"),
     avatarColor: other?.avatarColor ?? null,
     avatarUrl: other?.avatarUrl ?? null,
   };
 }
 
-function getConversationMeta(conversation: Conversation, currentUserId?: string) {
+function getConversationMeta(
+  conversation: Conversation,
+  currentUserId?: string,
+) {
   const counterpart = getCounterpart(conversation, currentUserId);
-  const last = conversation.raw.messages?.[0] as ApiMessage | ApiDirectMessage | undefined;
+  const last = conversation.raw.messages?.[0] as
+    | ApiMessage
+    | ApiDirectMessage
+    | undefined;
   return {
-    name: conversation.kind === "direct" ? counterpart.name : conversation.raw.room?.name ?? "숙소",
+    name:
+      conversation.kind === "direct"
+        ? counterpart.name
+        : (conversation.raw.room?.name ?? "숙소"),
     context: conversation.kind === "direct" ? "친구 메시지" : counterpart.name,
-    preview: last?.imageUrl ? "📷 사진" : last?.body ?? "아직 메시지가 없어요",
+    preview: last?.imageUrl
+      ? "📷 사진"
+      : (last?.body ?? "아직 메시지가 없어요"),
     color: counterpart.avatarColor ?? "var(--primary)",
     avatarUrl: counterpart.avatarUrl,
   };
 }
 
-function Avatar({ name, color, url, size }: { name: string; color: string; url: string | null; size: number }) {
+function Avatar({
+  name,
+  color,
+  url,
+  size,
+}: {
+  name: string;
+  color: string;
+  url: string | null;
+  size: number;
+}) {
   return url ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt={`${name} 프로필`} style={{ width: size, height: size, borderRadius: 999, flexShrink: 0, objectFit: "cover" }} />
+    <img
+      src={url}
+      alt={`${name} 프로필`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        flexShrink: 0,
+        objectFit: "cover",
+      }}
+    />
   ) : (
-    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: 999, flexShrink: 0, background: color, display: "grid", placeItems: "center", color: "#fff", fontWeight: 700 }}>
+    <span
+      aria-hidden="true"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        flexShrink: 0,
+        background: color,
+        display: "grid",
+        placeItems: "center",
+        color: "#fff",
+        fontWeight: 700,
+      }}
+    >
       {name.charAt(0)}
     </span>
   );
@@ -733,9 +1002,17 @@ function dateKey(iso: string) {
 }
 
 function formatDateLabel(iso: string) {
-  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(iso));
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(new Date(iso));
 }
 
 function formatMessageTime(iso: string) {
-  return new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+  return new Intl.DateTimeFormat("ko-KR", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(iso));
 }

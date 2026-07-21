@@ -13,6 +13,8 @@ export type ReservationStatus =
 
 export interface RoomRecord {
   id: string;
+  name: string;
+  hostId: string;
   monthlyRent: number;
   deposit: number;
   cleaningFee: number;
@@ -63,9 +65,15 @@ export interface ReservationRepo {
   findRoom(roomId: string): Promise<RoomRecord | null>;
   findCouponByCode(code: string): Promise<CouponRecord | null>;
   /** Reservations that overlap [checkIn, checkOut) for a room and still hold inventory. */
-  findOverlapping(roomId: string, checkIn: Date, checkOut: Date): Promise<ReservationRecord[]>;
+  findOverlapping(
+    roomId: string,
+    checkIn: Date,
+    checkOut: Date,
+  ): Promise<ReservationRecord[]>;
   /** Insert inside a serializable transaction; the impl re-checks overlap under lock. */
-  createHold(data: Omit<ReservationRecord, "id" | "createdAt">): Promise<ReservationRecord>;
+  createHold(
+    data: Omit<ReservationRecord, "id" | "createdAt">,
+  ): Promise<ReservationRecord>;
   findById(id: string): Promise<ReservationRecord | null>;
   /** All reservations for a guest, newest first, with room name + first image. */
   listByGuest(guestId: string): Promise<ReservationWithRoom[]>;
@@ -73,9 +81,15 @@ export interface ReservationRepo {
   listByHost(hostId: string): Promise<ReservationForHost[]>;
   /** The host that owns the room this reservation is for (ownership checks). */
   findRoomHostId(reservationId: string): Promise<string | null>;
-  updateStatus(id: string, status: ReservationStatus): Promise<ReservationRecord>;
+  updateStatus(
+    id: string,
+    status: ReservationStatus,
+  ): Promise<ReservationRecord>;
   /** 동반자 초대 응답 (수락/거절) 기록. */
-  updateCompanionStatus(id: string, status: CompanionStatus): Promise<ReservationRecord>;
+  updateCompanionStatus(
+    id: string,
+    status: CompanionStatus,
+  ): Promise<ReservationRecord>;
   /** 내가 동반자로 초대된 예약들 — 마이페이지에서 수락/거절하도록. */
   listByCompanion(companionId: string): Promise<ReservationWithRoom[]>;
   markCouponUsed(couponId: string): Promise<void>;
@@ -84,7 +98,13 @@ export interface ReservationRepo {
 // Reservation joined with a little room context, for the "my trips" list.
 export interface ReservationWithRoom extends ReservationRecord {
   room: { id: string; name: string; region: string; image: string | null };
-  payment: { id: string; provider: string; amount: number; status: string; createdAt: Date } | null;
+  payment: {
+    id: string;
+    provider: string;
+    amount: number;
+    status: string;
+    createdAt: Date;
+  } | null;
 }
 
 // Reservation joined with room + guest context, for the host's "received
