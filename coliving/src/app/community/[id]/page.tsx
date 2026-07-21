@@ -44,7 +44,7 @@ export default function PostPage() {
   const [post, setPost] = useState<PostDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState("");
-  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
   const [posting, setPosting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -65,7 +65,11 @@ export default function PostPage() {
     if (!post || !reply.trim() || posting) return;
     setPosting(true);
     try {
-      await addComment(post.id, reply.trim(), replyTo ?? undefined);
+      await addComment(
+        post.id,
+        replyTo ? `@${replyTo.name} ${reply.trim()}` : reply.trim(),
+        replyTo?.id,
+      );
       setReply(""); setReplyTo(null); await reload();
     } finally { setPosting(false); }
   }
@@ -153,12 +157,12 @@ export default function PostPage() {
       <h2 style={{ fontSize: 17, margin: "28px 0 12px" }}>댓글 {post.replies}개</h2>
       <div style={{ display: "grid", gap: 10 }}>
         {post.comments.length === 0 && <p style={{ color: "var(--text-2)" }}>아직 댓글이 없어요.</p>}
-        {post.comments.map(comment => <CommentCard key={comment.id} comment={comment} currentUserId={user?.id} onProfile={setProfileUserId} onReply={setReplyTo} onEdit={setEditingComment} onDelete={removeComment} onReport={id => setReportTarget({ type: "COMMUNITY_COMMENT", id })} />)}
+        {post.comments.map(comment => <CommentCard key={comment.id} comment={comment} currentUserId={user?.id} onProfile={setProfileUserId} onReply={(id, name) => setReplyTo({ id, name })} onEdit={setEditingComment} onDelete={removeComment} onReport={id => setReportTarget({ type: "COMMUNITY_COMMENT", id })} />)}
       </div>
 
       <div className="card" style={{ padding: 16, marginTop: 18 }}>
         {isAuthenticated ? <>
-          {replyTo && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 8 }}><span>답글 작성 중</span><button onClick={() => setReplyTo(null)}>취소</button></div>}
+          {replyTo && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 8 }}><span><strong>@{replyTo.name}</strong>님에게 답글 작성 중</span><button onClick={() => setReplyTo(null)}>취소</button></div>}
           <textarea value={reply} onChange={e => setReply(e.target.value)} rows={3} placeholder={replyTo ? "답글을 입력하세요" : "댓글을 입력하세요"} style={{ width: "100%" }} />
           <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>전화번호·이메일·정확한 주소는 댓글에 남기지 마세요.</p>
           <button className="btn btn-primary" style={{ marginTop: 10 }} disabled={!reply.trim() || posting} onClick={() => void submitReply()}>{posting ? "등록 중…" : replyTo ? "답글 남기기" : "댓글 남기기"}</button>
@@ -172,23 +176,104 @@ export default function PostPage() {
   );
 }
 
-function CommentCard({ comment, currentUserId, onProfile, onReply, onEdit, onDelete, onReport, nested = false }: {
-  comment: ApiComment; currentUserId?: string; onProfile: (id: string) => void; onReply: (id: string) => void;
-  onEdit: (v: { id: string; body: string }) => void; onDelete: (id: string) => Promise<void>; onReport: (id: string) => void; nested?: boolean;
+function CommentCard({ comment, currentUserId, onProfile, onReply, onEdit, onDelete, onReport }: {
+  comment: ApiComment;
+  currentUserId?: string;
+  onProfile: (id: string) => void;
+  onReply: (id: string, name: string) => void;
+  onEdit: (v: { id: string; body: string }) => void;
+  onDelete: (id: string) => Promise<void>;
+  onReport: (id: string) => void;
 }) {
   const mine = currentUserId === comment.author.id;
-  return <div className="card" style={{ padding: 14, marginLeft: nested ? 34 : 0 }}>
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-      <button onClick={() => onProfile(comment.author.id)} style={{ border: 0, background: "none", padding: 0, fontWeight: 700, cursor: "pointer" }}>{comment.author.name}</button>
-      <span style={{ fontSize: 12, color: "var(--text-2)" }}>{timeAgo(comment.createdAt)}</span>
+  const [visibleReplies, setVisibleReplies] = useState(3);
+  const replies = comment.replies ?? [];
+  const shownReplies = replies.slice(0, visibleReplies);
+  const hiddenCount = replies.length - shownReplies.length;
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <CommentContent
+        comment={comment}
+        mine={mine}
+        onProfile={onProfile}
+        onReply={onReply}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onReport={onReport}
+      />
+
+      {shownReplies.length > 0 && (
+        <div style={{ marginTop: 12, marginLeft: 18, paddingLeft: 14, borderLeft: "2px solid var(--line)" }}>
+          {shownReplies.map((reply) => (
+            <div key={reply.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+              <CommentContent
+                comment={reply}
+                mine={currentUserId === reply.author.id}
+                onProfile={onProfile}
+                onReply={onReply}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                onReport={onReport}
+                nested
+              />
+            </div>
+          ))}
+
+          {hiddenCount > 0 && (
+            <button
+              onClick={() => setVisibleReplies((count) => Math.min(count + 5, replies.length))}
+              style={{ marginTop: 10, border: 0, background: "none", color: "var(--primary)", fontWeight: 700, cursor: "pointer" }}
+            >
+              답글 {hiddenCount}개 더보기
+            </button>
+          )}
+          {visibleReplies > 3 && hiddenCount === 0 && replies.length > 3 && (
+            <button
+              onClick={() => setVisibleReplies(3)}
+              style={{ marginTop: 10, border: 0, background: "none", color: "var(--text-2)", cursor: "pointer" }}
+            >
+              답글 접기
+            </button>
+          )}
+        </div>
+      )}
     </div>
-    <p style={{ marginTop: 6, whiteSpace: "pre-wrap", fontSize: 14 }}>{comment.body}</p>
-    <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 12 }}>
-      {!nested && <button onClick={() => onReply(comment.id)}>답글</button>}
-      {mine ? <><button onClick={() => onEdit({ id: comment.id, body: comment.body })}>수정</button><button onClick={() => void onDelete(comment.id)}>삭제</button></> : <button onClick={() => onReport(comment.id)}>신고</button>}
+  );
+}
+
+function CommentContent({ comment, mine, onProfile, onReply, onEdit, onDelete, onReport, nested = false }: {
+  comment: ApiComment;
+  mine: boolean;
+  onProfile: (id: string) => void;
+  onReply: (id: string, name: string) => void;
+  onEdit: (v: { id: string; body: string }) => void;
+  onDelete: (id: string) => Promise<void>;
+  onReport: (id: string) => void;
+  nested?: boolean;
+}) {
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+        <button onClick={() => onProfile(comment.author.id)} style={{ border: 0, background: "none", padding: 0, fontWeight: 700, cursor: "pointer" }}>
+          {comment.author.name}
+        </button>
+        <span style={{ fontSize: 12, color: "var(--text-2)" }}>{timeAgo(comment.createdAt)}</span>
+      </div>
+      <p style={{ marginTop: 6, whiteSpace: "pre-wrap", fontSize: nested ? 13.5 : 14 }}>{comment.body}</p>
+      <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 12 }}>
+        <button onClick={() => onReply(comment.id, comment.author.name)}>답글</button>
+        {mine ? (
+          <>
+            <button onClick={() => onEdit({ id: comment.id, body: comment.body })}>수정</button>
+            <button onClick={() => void onDelete(comment.id)}>삭제</button>
+          </>
+        ) : (
+          <button onClick={() => onReport(comment.id)}>신고</button>
+        )}
+      </div>
     </div>
-    {(comment.replies ?? []).map(reply => <CommentCard key={reply.id} comment={reply} currentUserId={currentUserId} onProfile={onProfile} onReply={onReply} onEdit={onEdit} onDelete={onDelete} onReport={onReport} nested />)}
-  </div>;
+  );
 }
 
 function timeAgo(iso: string) {

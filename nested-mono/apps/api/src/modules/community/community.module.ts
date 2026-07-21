@@ -269,7 +269,16 @@ export class CommunityService {
           code: "COMMENT_NOT_FOUND",
           message: "답글 대상 댓글을 찾을 수 없습니다.",
         });
-      if (parent.parentId) parentId = parent.parentId; // 1단계 대댓글만 유지
+      const rootParentId = parent.parentId ?? parent.id;
+      const replyCount = await this.prisma.comment.count({
+        where: { parentId: rootParentId },
+      });
+      if (replyCount >= 50)
+        throw new ForbiddenException({
+          code: "REPLY_LIMIT_REACHED",
+          message: "이 댓글에는 답글을 최대 50개까지 작성할 수 있습니다.",
+        });
+      parentId = rootParentId; // 답글 깊이는 1단계로 고정
     }
     const notifyUserId =
       parentId && parent?.authorId !== authorId
