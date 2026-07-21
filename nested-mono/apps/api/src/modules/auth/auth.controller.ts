@@ -23,7 +23,7 @@ import { z } from "zod";
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  name: z.string().min(1),
+  name: z.string().trim().min(2, "닉네임은 2자 이상 입력해주세요.").max(20, "닉네임은 20자 이하로 입력해주세요."),
 });
 const loginSchema = z.object({
   email: z.string().email(),
@@ -34,7 +34,7 @@ const refreshSchema = z.object({ refreshToken: z.string().min(1) });
 // Only these three are writable. `email` and `role` are deliberately absent:
 // Zod strips unknown keys, so a client can't sneak `role: "ADMIN"` through.
 const updateMeSchema = z.object({
-  name: z.string().min(1, "이름을 입력해주세요.").max(40).optional(),
+  name: z.string().trim().min(2, "닉네임은 2자 이상 입력해주세요.").max(20, "닉네임은 20자 이하로 입력해주세요.").optional(),
   bio: z.string().max(500, "자기소개는 500자 이내로 입력해주세요.").optional(),
   avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요.").optional(),
   // Profile card fields (스토리보드 1-1 / 08). All optional.

@@ -16,7 +16,7 @@ export class NaverStrategy extends PassportStrategy(Strategy, "naver") {
 
   async validate(_accessToken: string, _refreshToken: string, profile: any, done: (e: any, u?: any) => void) {
     const email = profile.email ?? `naver_${profile.id}@users.nested.kr`;
-    const name = profile.name ?? profile.nickname ?? "Naver User";
+    const name = profile.name ?? profile.nickname ?? "";
     const tokens = await this.auth.validateOAuthUser({
       provider: "naver",
       providerId: String(profile.id),

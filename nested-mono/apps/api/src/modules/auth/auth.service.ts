@@ -30,7 +30,7 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
-        id: true, email: true, name: true, role: true, createdAt: true,
+        id: true, email: true, name: true, nicknameCompleted: true, role: true, createdAt: true,
         bio: true, avatarColor: true, avatarUrl: true, age: true, job: true,
         // Lets the client hide "change password" for OAuth-only accounts,
         // which have no password to change.
@@ -51,6 +51,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       name: user.name,
+      nicknameCompleted: user.nicknameCompleted,
       role: user.role,
       bio: user.bio,
       avatarColor: user.avatarColor,
@@ -84,7 +85,7 @@ export class AuthService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.name !== undefined ? { name: data.name, nicknameCompleted: true } : {}),
         ...(data.bio !== undefined ? { bio: data.bio } : {}),
         ...(data.avatarColor !== undefined ? { avatarColor: data.avatarColor } : {}),
         ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
@@ -92,7 +93,7 @@ export class AuthService {
         ...(data.job !== undefined ? { job: data.job } : {}),
       },
       select: {
-        id: true, email: true, name: true, role: true, createdAt: true,
+        id: true, email: true, name: true, nicknameCompleted: true, role: true, createdAt: true,
         bio: true, avatarColor: true, avatarUrl: true, age: true, job: true,
         passwordHash: true,
       },
@@ -101,6 +102,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       name: user.name,
+      nicknameCompleted: user.nicknameCompleted,
       role: user.role,
       bio: user.bio,
       avatarColor: user.avatarColor,
@@ -162,6 +164,7 @@ export class AuthService {
         email,
         passwordHash,
         name,
+        nicknameCompleted: true,
         emailVerified: autoVerify ? new Date() : null,
       },
     });
@@ -222,7 +225,8 @@ export class AuthService {
         user = await this.prisma.user.create({
           data: {
             email: profile.email,
-            name: profile.name,
+            name: this.createTemporaryNickname(),
+            nicknameCompleted: false,
             provider: profile.provider,
             providerId: profile.providerId,
           },
@@ -504,6 +508,10 @@ export class AuthService {
     return { ok: true };
   }
 
+  private createTemporaryNickname(): string {
+    return `사용자${randomBytes(3).toString("hex")}`;
+  }
+
   private hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
   }
@@ -515,6 +523,10 @@ export class AuthService {
     name?: string | null,
     createdAt?: Date | null,
   ) {
+    const profile = await this.prisma.user.findUnique({
+      where: { id: sub },
+      select: { nicknameCompleted: true },
+    });
     const payload: JwtPayload = { sub, email, role };
     const accessToken = await this.jwt.signAsync(payload, {
       secret: process.env.JWT_ACCESS_SECRET,
@@ -542,6 +554,7 @@ export class AuthService {
         email,
         role,
         name: name ?? null,
+        nicknameCompleted: profile?.nicknameCompleted ?? true,
         createdAt: createdAt ? createdAt.toISOString() : null,
       },
     };

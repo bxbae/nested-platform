@@ -198,9 +198,9 @@ export function Nav() {
                     fontWeight: 700,
                   }}
                 >
-                  {(user?.name ?? user?.email ?? "U").charAt(0).toUpperCase()}
+                  {(user?.nicknameCompleted === false ? "닉" : (user?.name ?? user?.email ?? "U")).charAt(0).toUpperCase()}
                 </span>
-                {user?.name ?? "마이"}
+                {user?.nicknameCompleted === false ? "닉네임 설정" : (user?.name ?? "마이")}
               </Link>
 
               <MessageBell />

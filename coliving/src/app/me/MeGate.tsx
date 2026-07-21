@@ -21,6 +21,8 @@ export function MeGate({ children }: { children: React.ReactNode }) {
     }
     if (!user) {
       router.replace("/?auth=1");
+    } else if (user.nicknameCompleted === false && window.location.pathname !== "/me/settings") {
+      router.replace("/me/settings?nickname=required");
     } else {
       setChecked(true);
     }
