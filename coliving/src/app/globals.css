@@ -615,3 +615,23 @@ input[type="range"] { accent-color: var(--primary); }
   .hero-search-bar > * { border-left: 0 !important; border-top: 1px solid var(--border); }
   .hero-search-bar > :first-child { border-top: 0 !important; }
 }
+
+
+/* ── Home hero refinements ───────────────────────────────────── */
+.hero-search-shell {
+  width: 100%;
+  max-width: 1080px;
+  margin: 34px auto 0;
+}
+.hero-search-root {
+  position: relative;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  z-index: 100;
+}
+@media (max-width: 860px) {
+  .hero-search-bar { grid-template-columns: 1fr !important; }
+  .hero-search-bar > * { border-left: 0 !important; border-top: 1px solid var(--border); }
+  .hero-search-bar > *:first-child { border-top: 0 !important; }
+}

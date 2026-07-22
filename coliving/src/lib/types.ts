@@ -16,6 +16,17 @@ export const GENDER_LABELS: Record<GenderPolicy, string> = {
   male_only: "남성 전용",
   female_only: "여성 전용",
 };
+export const VIBE_LABELS: Record<string, string> = {
+  quiet: "조용함",
+  social: "사교적",
+  creative: "창의적",
+  calm: "차분함",
+  focused: "집중형",
+  independent: "독립적",
+  international: "국제적",
+  wellness: "건강 중심",
+};
+
 
 export interface House {
   id: string;

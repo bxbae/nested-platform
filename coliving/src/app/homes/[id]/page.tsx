@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { houses } from "@/lib/data";
 import { won } from "@/lib/format";
-import { ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
+import { VIBE_LABELS, ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
 import type { House } from "@/lib/types";
 import { jobHubs, estimateCommute, commuteBand } from "@/lib/commute";
 import { enrichHouse } from "@/lib/detail";
@@ -16,6 +16,7 @@ import { USE_REAL_API } from "@/lib/api/config";
 import { getRoom, getSimilarRooms } from "@/lib/api/rooms"; // 유사 숙소 추천(비슷한 숙소) API 함수 추가
 import { DistanceFromMe } from "@/components/DistanceFromMe"; // 내 위치 거리 표시
 import { UserAvatar } from "@/components/UserAvatar";
+import { getAmenityLabel } from "@/lib/amenities";
 
 // Render this page on demand so it always reads live data and the current
 // USE_REAL_API value at request time — never a stale build-time snapshot.
@@ -219,14 +220,14 @@ export default async function HomeDetail({
               {house.amenities.map((a) => (
                 <div key={a} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15 }}>
                   <span aria-hidden="true" style={{ fontSize: 18 }}>{AMENITY_ICON[a] ?? "✔️"}</span>
-                  {a}
+                  {getAmenityLabel(a)}
                 </div>
               ))}
             </div>
             {/* vibe tags */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>
               {house.vibe.map((v) => (
-                <span key={v} className="chip">{v}</span>
+                <span key={v} className="chip">{VIBE_LABELS[v] ?? v}</span>
               ))}
               {house.petsAllowed && <span className="chip">🐾 반려동물 가능</span>}
               {house.parking && <span className="chip">🅿️ 주차 가능</span>}

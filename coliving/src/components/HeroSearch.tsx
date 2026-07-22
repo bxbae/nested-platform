@@ -79,7 +79,7 @@ export function HeroSearch() {
     : checkIn ? `${fmtShort(checkIn)} ~ 퇴실일 선택` : "입주일 ~ 퇴실일 선택";
 
   return (
-    <div ref={boxRef} style={{ position: "relative", maxWidth: 900, zIndex: 100 }}>
+    <div ref={boxRef} className="hero-search-root">
       <div className="card hero-search-bar" style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr .9fr auto", alignItems: "stretch", padding: 8, borderRadius: 22, boxShadow: "var(--shadow-lg)" }}>
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "8px 16px" }}>
           <span aria-hidden="true" style={{ fontSize: 20 }}>📍</span>
