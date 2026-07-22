@@ -1,80 +1,151 @@
 "use client";
 
 // 숙소 상세 페이지 — 내 위치 기준 거리 표시
-// browse(통근 검색)에서 쓰던 estimateCommute()를 그대로 재사용한다.
-// 원래는 "직장 위치 ↔ 숙소" 거리를 구하던 함수인데, 좌표 두 개 사이
-// 거리를 구하는 범용 함수라 "내 현재 위치 ↔ 숙소"에도 그대로 쓸 수 있다.
-
+// 도보/지하철은 예전엔 직접 계산했지만, 이제 ODsay API 기반 실시간
+// 대중교통 정보(버스/지하철/지하철+버스)까지 한 번에 받아오는 방식으로 교체.
+// 지도에서 직접 위치 지정하는 기능은 그대로 유지.
 import { useEffect, useState } from "react";
-import { estimateCommute } from "@/lib/commute";
+import { getTransitRoutes, type TransitResult } from "@/lib/api/transit";
+import { MyLocationPicker } from "@/components/MyLocationPicker";
 
 interface DistanceFromMeProps {
   houseLat: number;
   houseLng: number;
 }
 
+interface TabItem {
+  key: string;
+  label: string;
+  icon: string;
+  minutes: number;
+  note?: string;
+}
+
+const MODE_LABEL: Record<string, { label: string; icon: string }> = {
+  walk: { label: "도보", icon: "🚶" },
+  subway: { label: "지하철", icon: "🚇" },
+  bus: { label: "버스", icon: "🚌" },
+  subway_bus: { label: "지하철+버스", icon: "🚇🚌" },
+  car: { label: "자동차", icon: "🚗" },
+};
+
 export function DistanceFromMe({ houseLat, houseLng }: DistanceFromMeProps) {
-  const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
-  // 위치 권한 거부, 위치 정보 없는 기기 등 실패 케이스를 구분해서 안내하기 위한 상태
-  const [status, setStatus] = useState<"idle" | "loading" | "denied" | "unsupported">("idle");
+  const [autoLocation, setAutoLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [manualLocation, setManualLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+
+  const [routes, setRoutes] = useState<TransitResult | null>(null);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
+  const [selectedTab, setSelectedTab] = useState<string>("walk");
 
   useEffect(() => {
-    if (!navigator.geolocation) {
-      setStatus("unsupported");
-      return;
-    }
-    setStatus("loading");
+    if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setStatus("idle");
-      },
+      (pos) => setAutoLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {
-        // 사용자가 위치 권한을 거부한 경우 등. 조용히 실패 처리 —
-        // 이 기능은 "있으면 좋은" 부가 정보라 에러를 화면에 크게 띄우지 않는다.
-        setStatus("denied");
+        /* 거부되면 조용히 무시 — 지도로 직접 지정하는 버튼이 대안이 됨 */
       }
     );
   }, []);
 
-  // 아직 위치를 못 가져왔으면(로딩 중/거부/미지원) 아무것도 표시하지 않는다.
-  if (!myLocation) return null;
+  const myLocation = manualLocation ?? autoLocation;
 
-// 수정 — 도보/지하철 두 가지 추정치를 각각 계산해서 같이 보여줌
-// estimateCommute()는 어떤 모드로 호출하든 km(직선거리)은 항상 정확히
-// 반환하므로, 그 km 하나로 두 모드의 시간을 각각 계산한다.
-// (아래 도보 13분/km, 지하철 22km/h 공식은 commute.ts의 estimateCommute와
-// 동일한 기준을 그대로 따른 것 — 그 파일이 바뀌면 여기도 같이 확인 필요)
-const raw = estimateCommute(houseLat, houseLng, myLocation.lat, myLocation.lng);
-const km = raw.km;
-const walkMinutes = Math.max(4, Math.round(km * 13));
-const subwayMinutes = Math.round(10 + (km / 22) * 60);
+  useEffect(() => {
+    if (!myLocation) return;
+    setLoadingRoutes(true);
+    getTransitRoutes(myLocation.lat, myLocation.lng, houseLat, houseLng)
+      .then((res) => {
+        setRoutes(res);
+        setSelectedTab("walk");
+      })
+      .catch(() => setRoutes(null))
+      .finally(() => setLoadingRoutes(false));
+  }, [myLocation?.lat, myLocation?.lng, houseLat, houseLng]);
 
-// 수정 — 도보/지하철을 한 줄에 나란히 배치, 거리는 오른쪽 끝에 작게
-return (
-    <div
-      className="card"
-      style={{
-        margin: "22px 0 0",
-        padding: 16,
-        display: "flex",
-        alignItems: "center",
-        gap: 28,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 20 }}>🚶</span>
-        <strong style={{ fontSize: 15 }}>도보 {walkMinutes}분</strong>
-      </div>
-  
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 20 }}>🚇</span>
-        <strong style={{ fontSize: 15 }}>지하철 {subwayMinutes}분</strong>
-      </div>
-  
-      <div style={{ fontSize: 13, color: "var(--text-2)", marginLeft: "auto" }}>
-        내 위치에서 약 {km}km
-      </div>
+  const tabs: TabItem[] = routes
+    ? [
+        { key: "walk", ...MODE_LABEL.walk, minutes: routes.walk.minutes },
+        ...routes.transit.map((t) => ({
+          key: t.mode,
+          ...MODE_LABEL[t.mode],
+          minutes: t.minutes,
+          note: t.transferCount ? `환승 ${t.transferCount}회` : undefined,
+        })),
+        { key: "car", ...MODE_LABEL.car, minutes: routes.car.minutes},
+      ]
+    : [];
+
+  const active = tabs.find((t) => t.key === selectedTab) ?? tabs[0];
+
+  return (
+    <div style={{ margin: "22px 0 0" }}>
+      {loadingRoutes && (
+        <div className="card" style={{ padding: 16, fontSize: 13, color: "var(--text-2)" }}>
+          이동 시간 계산 중...
+        </div>
+      )}
+
+      {!loadingRoutes && tabs.length > 0 && (
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setSelectedTab(t.key)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 20,
+                  border: "1px solid var(--border)",
+                  background: t.key === selectedTab ? "var(--primary)" : "transparent",
+                  color: t.key === selectedTab ? "#fff" : "var(--text)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+
+          {active && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 22 }}>{active.icon}</span>
+              <div>
+                <strong style={{ fontSize: 16 }}>
+                  {active.label} {active.minutes}분
+                </strong>
+                {active.note && (
+                  <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 2 }}>{active.note}</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowPicker((v) => !v)}
+        style={{
+          marginTop: 8,
+          fontSize: 13,
+          color: "var(--primary)",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+        }}
+      >
+        {showPicker ? "지도 닫기" : "📍 내 위치 직접 지정하기"}
+      </button>
+
+      {showPicker && (
+        <div style={{ marginTop: 10 }}>
+          <MyLocationPicker
+            initialLat={houseLat}
+            initialLng={houseLng}
+            onPick={(lat, lng) => setManualLocation({ lat, lng })}
+          />
+        </div>
+      )}
     </div>
   );
 }
