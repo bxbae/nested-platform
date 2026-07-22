@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/api/useAuth";
 import { USE_REAL_API } from "@/lib/api/config";
@@ -13,6 +13,7 @@ export function MeGate({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const router = useRouter();
   const [checked, setChecked] = useState(false);
+  const redirected = useRef(false);
 
   useEffect(() => {
     if (!USE_REAL_API) {
@@ -20,9 +21,18 @@ export function MeGate({ children }: { children: React.ReactNode }) {
       return;
     }
     if (!user) {
-      router.replace("/?auth=1");
-    } else if (user.nicknameCompleted === false && window.location.pathname !== "/me/settings") {
-      router.replace("/me/settings?nickname=required");
+      if (!redirected.current) {
+        redirected.current = true;
+        router.replace("/?auth=1");
+      }
+    } else if (
+      user.nicknameCompleted === false &&
+      !window.location.pathname.startsWith("/me/settings")
+    ) {
+      if (!redirected.current) {
+        redirected.current = true;
+        router.replace("/me/settings?nickname=required");
+      }
     } else {
       setChecked(true);
     }
