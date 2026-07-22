@@ -190,7 +190,7 @@ export function NotificationBell() {
             lineHeight: 1,
           }}
         >
-          🔔
+          
         </span>
 
         {unread > 0 && (

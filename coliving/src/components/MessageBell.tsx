@@ -157,7 +157,7 @@ export function MessageBell() {
             lineHeight: 1,
           }}
         >
-          💬
+          
         </span>
 
         {unread > 0 && (

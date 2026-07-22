@@ -47,7 +47,7 @@ export default function HostDashboardPage() {
     <div>
       {/* ── header ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
-        <h1 className="display" style={{ fontSize: 30 }}>📊 수익 대시보드</h1>
+        <h1 className="display" style={{ fontSize: 30 }}> 수익 대시보드</h1>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 14px" }} disabled={downloading !== null} onClick={() => download("revenue")}>
             {downloading === "revenue" ? "내보내는 중…" : "⬇ 수익내역 CSV"}
@@ -107,10 +107,10 @@ export default function HostDashboardPage() {
         />
       </div>
 
-      {/* ── 최근 6개월 수익 추이 -> 📈 월별 매출 추이 ── */}
+      {/* ── 최근 6개월 수익 추이 ->  월별 매출 추이 ── */}
       <div className="card" style={{ padding: 22, marginTop: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <strong style={{ fontSize: 15 }}>📈 월별 매출 추이</strong>
+          <strong style={{ fontSize: 15 }}> 월별 매출 추이</strong>
           <Legend />
         </div>
         <p style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>최근 6개월 매출과 점유율</p>
@@ -123,10 +123,10 @@ export default function HostDashboardPage() {
         )}
       </div>
 
-      {/* ── 내 숙소 -> 🏠 객실별 수익 테이블 ── */}
+      {/* ── 내 숙소 ->  객실별 수익 테이블 ── */}
       <div className="card" style={{ padding: 22, marginTop: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-          <strong style={{ fontSize: 15 }}>🏠 객실별 수익</strong>
+          <strong style={{ fontSize: 15 }}> 객실별 수익</strong>
           <Link href="/host/listings" style={{ color: "var(--secondary)", fontSize: 13.5, fontWeight: 600 }}>
             숙소 관리 →
           </Link>
@@ -168,10 +168,10 @@ export default function HostDashboardPage() {
         )}
       </div>
 
-      {/* ── 💰 정산 현황 + 🧾 최근 문의 내역 (side by side on wide screens) ── */}
+      {/* ──  정산 현황 + 🧾 최근 문의 내역 (side by side on wide screens) ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginTop: 20 }} className="dashboard-bottom-grid">
         <div className="card" style={{ padding: 22 }}>
-          <strong style={{ fontSize: 15 }}>💰 정산 현황</strong>
+          <strong style={{ fontSize: 15 }}> 정산 현황</strong>
           <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
             <SettlementRow
               label="정산 완료"
@@ -413,21 +413,21 @@ function TrendLineChart({ points }: { points: { month: string; revenue: number; 
         <g style={{ pointerEvents: "none" }}>
           <rect
             x={tipXFor(hover)} y={tipYFor(hover)} width={TIP_W} height={TIP_H} rx={8}
-            fill="transparent" opacity={0.94}
+            fill="var(--text)" opacity={0.94}
           />
           <text
             x={tipXFor(hover) + TIP_W / 2}
-            y={tipYFor(hover) + TIP_H / 2 - 40}
+            y={tipYFor(hover) + TIP_H / 2}
             textAnchor="middle"
           >
-            <tspan x={tipXFor(hover) + TIP_W / 2} dy="20" fontSize={10} fill="var(--primary)" fontWeight={700}>
-              {points[hover].month}
-            </tspan>
-            <tspan x={tipXFor(hover) + TIP_W / 2} dy="20" fontSize={11} fill="var(--text)" fontWeight={600}>
+            <tspan x={tipXFor(hover) + TIP_W / 2} dy="20" fontSize={11} fill="#fff" fontWeight={600}>
               {won(points[hover].revenue)}
             </tspan>
-            <tspan x={tipXFor(hover) + TIP_W / 2} dy="18" fontSize={11} fill="var(--text)" fontWeight={600}>
+            <tspan x={tipXFor(hover) + TIP_W / 2} dy="18" fontSize={11} fill="#fff" fontWeight={600}>
               {points[hover].occupancy || 0}%
+            </tspan>
+            <tspan x={tipXFor(hover) + 15} dy="-25" fontSize={10} fill="var(--primary)" fontWeight={700}>
+              {points[hover].month}
             </tspan>
           </text>
         </g>

@@ -231,7 +231,7 @@ export default function HostReservations() {
                     onClick={() => notifyOverdue(b.id)}
                     title="입주자에게 연체 안내 알림을 보냅니다"
                   >
-                    {noticed.has(b.id) ? "✓ 안내 발송됨" : "🔔 연체 안내"}
+                    {noticed.has(b.id) ? "✓ 안내 발송됨" : " 연체 안내"}
                   </button>
                 </div>
               )}
@@ -316,7 +316,7 @@ export default function HostReservations() {
                     </div>
                   ) : (
                     <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => setReviewFor(b.id)}>
-                      ⭐ 입주자 평가하기
+                       입주자 평가하기
                     </button>
                   )}
                 </div>

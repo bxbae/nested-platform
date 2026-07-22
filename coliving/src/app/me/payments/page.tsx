@@ -38,7 +38,7 @@ export default function Payments() {
                   aria-hidden="true"
                   style={{ width: 44, height: 44, borderRadius: 12, background: "var(--bg-2)", display: "grid", placeItems: "center", fontSize: 20 }}
                 >
-                  💳
+                  
                 </span>
                 <div>
                   <strong style={{ fontSize: 15 }}>{p.houseName}</strong>

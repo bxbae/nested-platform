@@ -82,7 +82,7 @@ export function HeroSearch() {
     <div ref={boxRef} className="hero-search-root">
       <div className="card hero-search-bar" style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr .9fr auto", alignItems: "stretch", padding: 8, borderRadius: 22, boxShadow: "var(--shadow-lg)" }}>
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "8px 16px" }}>
-          <span aria-hidden="true" style={{ fontSize: 20 }}>📍</span>
+          <span aria-hidden="true" style={{ fontSize: 20 }}></span>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 700 }}>직장 또는 목적지</div>
             <input
@@ -98,7 +98,7 @@ export function HeroSearch() {
         </div>
 
         <button type="button" onClick={() => setOpenPanel(openPanel === "date" ? null : "date")} style={{ border: 0, borderLeft: "1px solid var(--border)", background: "transparent", textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", cursor: "pointer" }}>
-          <span aria-hidden="true" style={{ fontSize: 19 }}>🗓️</span>
+          <span aria-hidden="true" style={{ fontSize: 19 }}></span>
           <span style={{ minWidth: 0 }}>
             <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>입주 기간</span>
             <span style={{ display: "block", fontSize: 14, color: checkIn ? "var(--text)" : "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rangeLabel}</span>
@@ -106,7 +106,7 @@ export function HeroSearch() {
         </button>
 
         <label style={{ borderLeft: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, padding: "8px 16px" }}>
-          <span aria-hidden="true" style={{ fontSize: 19 }}>🏠</span>
+          <span aria-hidden="true" style={{ fontSize: 19 }}></span>
           <span style={{ minWidth: 0, flex: 1 }}>
             <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>주거 형태</span>
             <select value={roomType} onChange={(e) => setRoomType(e.target.value as "" | RoomType)} aria-label="주거 형태" style={{ width: "100%", border: 0, outline: 0, background: "transparent", padding: "4px 0 0", fontSize: 14, cursor: "pointer" }}>
@@ -119,7 +119,7 @@ export function HeroSearch() {
       </div>
 
       {openPanel === "location" && (
-        <div className="card" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, width: "min(470px, 92vw)", padding: 18, borderRadius: 18, boxShadow: "var(--shadow-lg)" }}>
+        <div className="card" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, width: "min(470px, 92vw)", padding: 18, borderRadius: 18, boxShadow: "var(--shadow-lg)", zIndex: 300 }}>
           <strong style={{ fontSize: 14 }}>주요 업무 지역</strong>
           <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 4 }}>자주 찾는 출근 목적지를 빠르게 선택하세요.</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
@@ -135,7 +135,7 @@ export function HeroSearch() {
       )}
 
       {openPanel === "date" && (
-        <div className="card" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, padding: 20, width: "min(620px, 94vw)", borderRadius: 18, boxShadow: "var(--shadow-lg)" }}>
+        <div className="card" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, padding: 20, width: "min(620px, 94vw)", borderRadius: 18, boxShadow: "var(--shadow-lg)", zIndex: 300 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <button type="button" onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))} aria-label="이전 달" style={{ fontSize: 22 }}>‹</button>
             <strong style={{ fontSize: 14 }}>입주일과 퇴실일을 선택하세요</strong>

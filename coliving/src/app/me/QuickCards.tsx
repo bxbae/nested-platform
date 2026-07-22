@@ -44,12 +44,12 @@ export function QuickCards() {
   return (
     <>
       <div className="stat-row" style={{ marginTop: 20 }}>
-        <QuickCard href="/me/trips" icon="📋" label="예약 내역" />
+        <QuickCard href="/me/trips" icon="" label="예약 내역" />
         <QuickCard href="/me/wishlist" icon="♥" label="찜 목록" badge={saved ?? undefined} />
-        <QuickCard href="/me/messages" icon="💬" label="메시지" accent />
+        <QuickCard href="/me/messages" icon="" label="메시지" accent />
         <QuickCard
           href="/me/notifications"
-          icon="🔔"
+          icon=""
           label="알림"
           badge={unreadNoti ?? undefined}
           accent
@@ -57,8 +57,8 @@ export function QuickCards() {
       </div>
 
       <div className="stat-row" style={{ marginTop: 14, gridTemplateColumns: "repeat(2, 1fr)" }}>
-        <QuickCard href="/me/payments" icon="💳" label="결제 내역" />
-        <QuickCard href="/me/reviews" icon="⭐" label="리뷰 관리" />
+        <QuickCard href="/me/payments" icon="" label="결제 내역" />
+        <QuickCard href="/me/reviews" icon="" label="리뷰 관리" />
       </div>
     </>
   );

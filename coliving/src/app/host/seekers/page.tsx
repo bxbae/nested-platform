@@ -78,7 +78,7 @@ export default function HostSeekers() {
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 8 }}>
                   {p.author} · {new Date(p.createdAt).toLocaleDateString("ko-KR")}
-                  {p.replies > 0 && <> · 💬 {p.replies}</>}
+                  {p.replies > 0 && <> ·  {p.replies}</>}
                 </div>
               </div>
               <span className="chip" style={{ fontSize: 11, background: "var(--primary)", color: "#fff", border: "none", whiteSpace: "nowrap" }}>

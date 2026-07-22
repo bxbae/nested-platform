@@ -27,7 +27,7 @@ export function PropertyCard({
 
   const badges: string[] = [];
   if (house.petsAllowed) badges.push("🐾 반려동물");
-  if (house.parking) badges.push("🅿️ 주차");
+  if (house.parking) badges.push("🅿 주차");
   if (house.genderPolicy !== "any") badges.push(GENDER_LABELS[house.genderPolicy]);
 
   return (

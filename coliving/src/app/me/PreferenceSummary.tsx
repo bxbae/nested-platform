@@ -10,10 +10,10 @@ const AXIS_ICON: Record<string, string> = {
   cleanliness: "🧹",
   smoking: "🚬",
   pets: "🐾",
-  visitors: "🚪",
+  visitors: "",
   sleep: "🌙",
-  sociability: "🗣️",
-  sharedSpace: "🛋️",
+  sociability: "🗣",
+  sharedSpace: "🛋",
   drinking: "🍺",
 };
 
@@ -43,7 +43,7 @@ export function PreferenceSummary() {
         }}
       >
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 22 }} aria-hidden="true">🧭</span>
+          <span style={{ fontSize: 22 }} aria-hidden="true"></span>
           <span style={{ fontWeight: 600, fontSize: 14.5 }}>
             생활 성향을 등록하면 룸메이트 매칭이 시작돼요
           </span>
@@ -57,10 +57,10 @@ export function PreferenceSummary() {
     <div className="card" style={{ marginTop: 20, padding: 22 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <strong style={{ fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
-          <span aria-hidden="true">🧭</span> 생활 성향
+          <span aria-hidden="true"></span> 생활 성향
         </strong>
         <Link href="/me/preference" style={{ fontSize: 13, color: "var(--text-2)", fontWeight: 600 }}>
-          수정 ✏️
+          수정 ✏
         </Link>
       </div>
 
