@@ -8,11 +8,21 @@ import { api } from "./client";
 import { notifications as demoNotifications } from "@/lib/me";
 
 export type NotificationType =
-  | "RESERVATION"
+  | "COMMENT"
+  | "ROOM_APPROVED"
+  | "ROOM_REJECTED"
+  | "RESERVATION_REQUESTED"
+  | "RESERVATION_CONFIRMED"
+  | "RESERVATION_COMPLETED"
+  | "RESERVATION_CANCELLED"
+  | "EARLY_CHECKOUT_REQUESTED"
+  | "EARLY_CHECKOUT_APPROVED"
+  | "EARLY_CHECKOUT_REJECTED"
   | "PAYMENT"
-  | "MESSAGE"
   | "REVIEW"
-  | "SYSTEM";
+  | "SYSTEM"
+  | "MESSAGE"
+  | "RESERVATION";
 
 export interface ApiNotification {
   id: string;
@@ -24,13 +34,40 @@ export interface ApiNotification {
   targetUrl: string | null;
 }
 
-// Server enum → the Korean labels the UI chips use.
 export const TYPE_LABEL: Record<NotificationType, string> = {
-  RESERVATION: "예약",
+  COMMENT: "댓글",
+  ROOM_APPROVED: "숙소 승인",
+  ROOM_REJECTED: "숙소 반려",
+  RESERVATION_REQUESTED: "예약 요청",
+  RESERVATION_CONFIRMED: "예약 확정",
+  RESERVATION_COMPLETED: "이용 완료",
+  RESERVATION_CANCELLED: "예약 취소",
+  EARLY_CHECKOUT_REQUESTED: "조기 퇴실 요청",
+  EARLY_CHECKOUT_APPROVED: "조기 퇴실 승인",
+  EARLY_CHECKOUT_REJECTED: "조기 퇴실 거절",
   PAYMENT: "결제",
-  MESSAGE: "메시지",
   REVIEW: "리뷰",
-  SYSTEM: "시스템",
+  SYSTEM: "안내",
+  MESSAGE: "메시지",
+  RESERVATION: "예약",
+};
+
+export const TYPE_COLOR: Record<NotificationType, string> = {
+  COMMENT: "#2E9D65",
+  ROOM_APPROVED: "#7C6FE0",
+  ROOM_REJECTED: "#A26A42",
+  RESERVATION_REQUESTED: "#00A699",
+  RESERVATION_CONFIRMED: "#00A699",
+  RESERVATION_COMPLETED: "#00A699",
+  RESERVATION_CANCELLED: "#00A699",
+  EARLY_CHECKOUT_REQUESTED: "#00A699",
+  EARLY_CHECKOUT_APPROVED: "#00A699",
+  EARLY_CHECKOUT_REJECTED: "#00A699",
+  PAYMENT: "#3E9BC4",
+  REVIEW: "#FFB400",
+  SYSTEM: "#7C6FE0",
+  MESSAGE: "#FF5A5F",
+  RESERVATION: "#00A699",
 };
 
 // "3분 전" / "2시간 전" / "5일 전"
@@ -103,10 +140,13 @@ export async function markAllNotificationsRead(): Promise<void> {
 export async function unreadMessageNotificationCount(): Promise<number> {
   if (!USE_REAL_API) {
     const result = await listNotifications();
-    return result.items.filter((item) => item.type === "MESSAGE" && !item.read).length;
+    return result.items.filter((item) => item.type === "MESSAGE" && !item.read)
+      .length;
   }
   try {
-    const result = await api.get<{ unread: number }>("/notifications/messages/unread-count");
+    const result = await api.get<{ unread: number }>(
+      "/notifications/messages/unread-count",
+    );
     return result.unread;
   } catch {
     return 0;
