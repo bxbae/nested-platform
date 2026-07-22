@@ -1,38 +1,51 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
   relativeTime,
   TYPE_LABEL,
+  TYPE_COLOR,
   type ApiNotification,
-  type NotificationType,
 } from "@/lib/api/notifications";
-import { useRouter } from "next/navigation";
-
-const TYPE_COLOR: Record<NotificationType, string> = {
-  RESERVATION: "#00A699",
-  PAYMENT: "#3E9BC4",
-  MESSAGE: "#FF5A5F",
-  REVIEW: "#FFB400",
-  SYSTEM: "#7C6FE0",
-};
+import {
+  matchesNotificationTab,
+  NOTIFICATION_TABS,
+  type NotificationTab,
+} from "@/lib/notification-tabs";
 
 export default function Notifications() {
   const router = useRouter();
+
   const [items, setItems] = useState<ApiNotification[]>([]);
+  const [activeTab, setActiveTab] = useState<NotificationTab>("ALL");
   const [loading, setLoading] = useState(true);
-  const unread = items.filter((n) => !n.read).length;
+
+  const unread = items.filter((item) => !item.read).length;
+
+  const visibleItems = useMemo(
+    () => items.filter((item) => matchesNotificationTab(item, activeTab)),
+    [items, activeTab],
+  );
 
   useEffect(() => {
-    (async () => {
-      const { items } = await listNotifications();
-      setItems(items);
-      setLoading(false);
-    })();
+    void loadNotifications();
   }, []);
+
+  async function loadNotifications() {
+    const result = await listNotifications();
+    setItems(result.items);
+    setLoading(false);
+  }
+
+  function getUnreadCount(tab: NotificationTab) {
+    return items.filter(
+      (item) => !item.read && matchesNotificationTab(item, tab),
+    ).length;
+  }
 
   function openNotification(notification: ApiNotification) {
     setItems((prev) =>
@@ -50,25 +63,13 @@ export default function Notifications() {
     }
   }
 
-  // Optimistic: flip locally, then persist. A failed write just leaves the
-  // server as-is; the next load reconciles.
-  async function readOne(id: string) {
-    setItems((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-    );
-    try {
-      await markNotificationRead(id);
-    } catch {
-      /* ignore */
-    }
-  }
-
   async function readAll() {
-    setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    setItems((prev) => prev.map((item) => ({ ...item, read: true })));
+
     try {
       await markAllNotificationsRead();
     } catch {
-      /* ignore */
+      // 다음 조회 때 서버 상태와 다시 동기화한다.
     }
   }
 
@@ -79,6 +80,7 @@ export default function Notifications() {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-end",
+          gap: 16,
           marginBottom: 20,
         }}
       >
@@ -86,95 +88,176 @@ export default function Notifications() {
           <h1 className="display" style={{ fontSize: 30 }}>
             알림
           </h1>
+
           <p style={{ color: "var(--text-2)", marginTop: 4 }}>
-            {loading ? "불러오는 중…" : `읽지 않은 알림 ${unread}개`}
+            {loading
+              ? "불러오는 중..."
+              : unread > 0
+                ? `읽지 않은 알림 ${unread}개`
+                : "모든 알림을 확인했어요."}
           </p>
         </div>
+
         {unread > 0 && (
-          <button className="btn btn-ghost press" onClick={readAll}>
+          <button
+            type="button"
+            className="btn btn-ghost press"
+            onClick={readAll}
+          >
             모두 읽음
           </button>
         )}
       </div>
 
-      {!loading && items.length === 0 ? (
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: 20,
+        }}
+      >
+        {NOTIFICATION_TABS.map((tab) => {
+          const tabUnread = getUnreadCount(tab.key);
+
+          return (
+            <button
+              type="button"
+              key={tab.key}
+              className="chip press"
+              data-active={activeTab === tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                cursor: "pointer",
+              }}
+            >
+              {tab.label}
+
+              {tabUnread > 0 && (
+                <span
+                  style={{
+                    minWidth: 19,
+                    height: 19,
+                    padding: "0 5px",
+                    borderRadius: 99,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    background: "var(--primary)",
+                    color: "#fff",
+                  }}
+                >
+                  {tabUnread > 99 ? "99+" : tabUnread}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {!loading && visibleItems.length === 0 ? (
         <div
           className="card"
-          style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}
+          style={{
+            padding: 40,
+            textAlign: "center",
+            color: "var(--text-2)",
+          }}
         >
-          아직 알림이 없어요.
+          {items.length === 0
+            ? "아직 알림이 없어요."
+            : "이 분류에는 알림이 없어요."}
         </div>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
-          {items.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => openNotification(n)}
-              className="card press"
-              style={{
-                padding: 16,
-                textAlign: "left",
-                display: "flex",
-                gap: 14,
-                alignItems: "flex-start",
-                background: !n.read ? "var(--bg-2)" : "#fff",
-              }}
-            >
-              <span
-                className="chip"
+          {visibleItems.map((notification) => {
+            const color = TYPE_COLOR[notification.type];
+
+            return (
+              <button
+                type="button"
+                key={notification.id}
+                onClick={() => openNotification(notification)}
+                className="card press"
                 style={{
-                  fontSize: 11,
-                  background: `${TYPE_COLOR[n.type]}18`,
-                  color: TYPE_COLOR[n.type],
-                  border: "none",
-                  flexShrink: 0,
+                  padding: 16,
+                  textAlign: "left",
+                  display: "flex",
+                  gap: 14,
+                  alignItems: "flex-start",
+                  background: !notification.read
+                    ? "var(--bg-2)"
+                    : "var(--surface, #fff)",
                 }}
               >
-                {TYPE_LABEL[n.type]}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
+                <span
+                  className="chip"
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 8,
+                    fontSize: 11,
+                    background: `${color}18`,
+                    color,
+                    border: "none",
+                    flexShrink: 0,
                   }}
                 >
-                  <strong style={{ fontSize: 14.5 }}>{n.title}</strong>
-                  <span
+                  {TYPE_LABEL[notification.type]}
+                </span>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
                     style={{
-                      fontSize: 12,
-                      color: "var(--text-2)",
-                      whiteSpace: "nowrap",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 8,
                     }}
                   >
-                    {relativeTime(n.createdAt)}
-                  </span>
+                    <strong style={{ fontSize: 14.5 }}>
+                      {notification.title}
+                    </strong>
+
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-2)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {relativeTime(notification.createdAt)}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 13.5,
+                      color: "var(--text-2)",
+                      marginTop: 3,
+                    }}
+                  >
+                    {notification.body}
+                  </div>
                 </div>
-                <div
-                  style={{
-                    fontSize: 13.5,
-                    color: "var(--text-2)",
-                    marginTop: 3,
-                  }}
-                >
-                  {n.body}
-                </div>
-              </div>
-              {!n.read && (
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 99,
-                    background: "var(--primary)",
-                    flexShrink: 0,
-                    marginTop: 6,
-                  }}
-                />
-              )}
-            </button>
-          ))}
+
+                {!notification.read && (
+                  <span
+                    aria-label="읽지 않은 알림"
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 99,
+                      background: "var(--primary)",
+                      flexShrink: 0,
+                      marginTop: 6,
+                    }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
