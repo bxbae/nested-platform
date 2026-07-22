@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/api/useAuth";
 import { listPosts, createPost } from "@/lib/api/community";
 import { searchRooms } from "@/lib/api/rooms";
 import { getPreference, SURVEY, type PreferenceView } from "@/lib/api/preference";
+import { UserAvatar } from "@/components/UserAvatar";
 
 const categories = [
   { id: "all", label: "전체" },
@@ -132,7 +133,7 @@ export default function Community() {
                 <>
                   <p style={{fontSize:12.5,color:"var(--text-2)",marginBottom:8}}>마이페이지에 저장된 성향입니다. 다시 입력하지 않고 공개할 항목만 선택하세요.</p>
                   <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
-                    {SURVEY.map(({axis,options})=>{const value=(preference as any)[axis];const label=options.find(o=>o.value===value)?.label??value;const checked=sharedLifestyleFields.includes(axis);return <button type="button" key={axis} className="chip" data-active={checked} onClick={()=>setSharedLifestyleFields(v=>checked?v.filter(x=>x!==axis):[...v,axis])}>{checked?"✓ ":""}{label}</button>})}
+                    {SURVEY.map(({axis,options})=>{const value = preference[axis as keyof PreferenceView];const label=options.find(o=>o.value===value)?.label??value;const checked=sharedLifestyleFields.includes(axis);return <button type="button" key={axis} className="chip" data-active={checked} onClick={()=>setSharedLifestyleFields(v=>checked?v.filter(x=>x!==axis):[...v,axis])}>{checked?"✓ ":""}{label}</button>})}
                   </div>
                 </>
               ) : <p style={{fontSize:13,color:"var(--text-2)"}}>생활 성향을 먼저 등록하면 방 구함 글에 자동으로 불러올 수 있습니다.</p>}
@@ -190,8 +191,27 @@ export default function Community() {
             </div>
             <h3 style={{ fontSize: 17, marginTop: 10 }}>{p.title}</h3>
             <p style={{ fontSize: 14.5, color: "var(--text-2)", marginTop: 6 }}>{p.body}</p>
-            <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 13, color: "var(--text-2)" }}>
-              <span>by {p.author}</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                marginTop: 12,
+                fontSize: 13,
+                color: "var(--text-2)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <UserAvatar
+                  name={p.author}
+                  avatarUrl={p.authorAvatarUrl}
+                  avatarColor={p.authorAvatarColor}
+                  size={30}
+                  fontSize={12}
+                />
+                <span>{p.author}</span>
+              </div>
               <span>💬 {p.replies}</span>
             </div>
           </Link>

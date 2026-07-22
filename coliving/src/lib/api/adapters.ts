@@ -79,6 +79,7 @@ interface ApiHostProfile {
   superhost?: boolean;
   responseRate?: number;
   avatarColor?: string;
+  avatarUrl?: string | null;
   createdAt?: string;
 }
 export interface ApiRoom {
@@ -111,7 +112,11 @@ export interface ApiRoom {
     rating: number;
     body: string;
     createdAt?: string;
-    author?: { name?: string; avatarColor?: string };
+    author?: {
+      name?: string;
+      avatarColor?: string;
+      avatarUrl?: string | null;
+    };
   }[];
   description?: string;
   blurb?: string;
@@ -160,6 +165,7 @@ export function apiRoomToHouse(r: ApiRoom): House {
         : "",
       body: rv.body,
       avatarColor: rv.author?.avatarColor ?? "#FF5A5F",
+      avatarUrl: rv.author?.avatarUrl ?? null,
     })),
     color: r.color ?? "#FF5A5F",
     photo: gallery[0],
@@ -178,6 +184,7 @@ export function apiRoomToHouse(r: ApiRoom): House {
             superhost: r.host?.superhost ?? false,
             responseRate: r.host?.responseRate ?? 100,
             avatarColor: r.host?.avatarColor ?? "#FF5A5F",
+            avatarUrl: r.host?.avatarUrl ?? null,
           }
         : undefined,
     availableFrom:

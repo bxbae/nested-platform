@@ -55,6 +55,7 @@ export interface House {
     superhost: boolean;
     responseRate: number; // percent
     avatarColor: string;
+    avatarUrl?: string | null;
   };
   houseReviews?: {
     author: string;
@@ -62,6 +63,7 @@ export interface House {
     date: string; // "2026.05"
     body: string;
     avatarColor: string;
+    avatarUrl?: string | null;
   }[];
   availableFrom: string; // ISO date
   minStayMonths: number;
@@ -103,6 +105,8 @@ export interface Post {
   houseId: string;
   author: string;
   authorId?: string;
+  authorAvatarColor?: string | null;
+  authorAvatarUrl?: string | null;
   category: "notice" | "event" | "chore" | "market" | "chat" | "seeking";
   title: string;
   body: string;

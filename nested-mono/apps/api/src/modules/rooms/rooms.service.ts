@@ -274,7 +274,15 @@ export class RoomsService {
         host: true,
         reviews: {
           orderBy: { createdAt: "desc" },
-          include: { author: { select: { name: true, avatarColor: true } } },
+          include: {
+            author: {
+              select: {
+                name: true,
+                avatarColor: true,
+                avatarUrl: true,
+              },
+            },
+          },
         },
         ...occupancyInclude(),
       },

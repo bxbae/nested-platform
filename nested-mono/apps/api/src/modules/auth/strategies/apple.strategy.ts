@@ -10,11 +10,11 @@ import { AuthService } from "../auth.service";
 export class AppleStrategy extends PassportStrategy(Strategy, "apple") {
   constructor(private readonly auth: AuthService) {
     super({
-      clientID: process.env.APPLE_CLIENT_ID ?? "dev.nested.app",
-      teamID: process.env.APPLE_TEAM_ID ?? "DEVTEAMID",
-      keyID: process.env.APPLE_KEY_ID ?? "DEVKEYID",
-      privateKeyString: process.env.APPLE_PRIVATE_KEY ?? "dev-private-key",
-      callbackURL: process.env.APPLE_CALLBACK_URL ?? "http://localhost:4000/auth/apple/callback",
+      clientID: process.env.APPLE_CLIENT_ID || "dev.nested.app",
+      teamID: process.env.APPLE_TEAM_ID || "DEVTEAMID",
+      keyID: process.env.APPLE_KEY_ID || "DEVKEYID",
+      privateKeyString: process.env.APPLE_PRIVATE_KEY || "dev-private-key",
+      callbackURL: process.env.APPLE_CALLBACK_URL || "http://localhost:4000/auth/apple/callback",
       passReqToCallback: false,
       scope: ["name", "email"],
     } as any);

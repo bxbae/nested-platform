@@ -33,19 +33,33 @@ export function Nav() {
   const path = usePathname();
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuth();
+
   const [authOpen, setAuthOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+
+  const displayName =
+    user?.nicknameCompleted === false ? "닉네임 설정" : (user?.name ?? "마이");
+
+  const avatarFallback =
+    user?.nicknameCompleted === false
+      ? "닉"
+      : (user?.name ?? user?.email ?? "U").charAt(0).toUpperCase();
+
+  const avatarColor = user?.avatarColor ?? "var(--brand, #FF5A5F)";
+  const avatarUrl = user?.avatarUrl ?? null;
 
   // Opened via ?auth=1 (e.g. redirected here from a guarded page while logged
   // out). Read the query straight off the URL so we don't need a Suspense
   // boundary around useSearchParams for the global nav.
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const hasAuthFlag =
       new URLSearchParams(window.location.search).get("auth") === "1";
+
     if (hasAuthFlag && !isAuthenticated) {
       setAuthOpen(true);
-      router.replace(path); // strip the query so it doesn't re-trigger
+      router.replace(path);
     }
   }, [isAuthenticated, router, path]);
 
@@ -72,32 +86,46 @@ export function Nav() {
       >
         <Link
           href="/"
-          style={{ display: "flex", alignItems: "center", gap: 10 }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
         >
           <Rings size={28} />
+
           <span
             className="display"
-            style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-0.03em" }}
+            style={{
+              fontSize: 21,
+              fontWeight: 600,
+              letterSpacing: "-0.03em",
+            }}
           >
             Nested
           </span>
         </Link>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
           <nav className="nav-links" aria-label="Primary">
-            {links.map((l) => {
-              const active = path.startsWith(l.href);
-              const linkEl = (
+            {links.map((link) => {
+              const active = path.startsWith(link.href);
+
+              const linkElement = (
                 <Link
-                  key={l.href}
-                  href={l.href}
+                  key={link.href}
+                  href={link.href}
                   style={{
                     fontSize: 14.5,
                     fontWeight: active ? 600 : 450,
                     padding: "8px 14px",
                     borderRadius: 999,
-                    // Active pill is always white, so force a dark text color
-                    // (var(--text) is light in dark mode and would vanish here).
                     color: active ? "#222222" : "var(--text-2)",
                     background: active ? "#fff" : "transparent",
                     border: active
@@ -106,23 +134,23 @@ export function Nav() {
                   }}
                   className="navlink"
                 >
-                  {l.label}
+                  {link.label}
                 </Link>
               );
 
-              // "숙소 검색" gets a hover dropdown (room-type filters + commute
-              // search). The wrapper spans both the link and the panel so
-              // moving the mouse from one into the other doesn't close it.
-              if (l.href !== "/search") return linkEl;
+              if (link.href !== "/search") {
+                return linkElement;
+              }
 
               return (
                 <div
-                  key={l.href}
+                  key={link.href}
                   style={{ position: "relative" }}
                   onMouseEnter={() => setSearchOpen(true)}
                   onMouseLeave={() => setSearchOpen(false)}
                 >
-                  {linkEl}
+                  {linkElement}
+
                   {searchOpen && (
                     <div
                       style={{
@@ -140,13 +168,18 @@ export function Nav() {
                         zIndex: 60,
                       }}
                     >
-                      {SEARCH_DROPDOWN.map((item, i) => (
+                      {SEARCH_DROPDOWN.map((item, index) => (
                         <div key={item.href}>
-                          {i === SEARCH_DROPDOWN.length - 1 && (
+                          {index === SEARCH_DROPDOWN.length - 1 && (
                             <div
-                              style={{ height: 1, background: "var(--border)", margin: "6px 8px" }}
+                              style={{
+                                height: 1,
+                                background: "var(--border)",
+                                margin: "6px 8px",
+                              }}
                             />
                           )}
+
                           <Link
                             href={item.href}
                             onClick={() => setSearchOpen(false)}
@@ -169,9 +202,17 @@ export function Nav() {
               );
             })}
           </nav>
+
           <ThemeToggle />
+
           {isAuthenticated ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
               <Link
                 href="/me"
                 style={{
@@ -183,24 +224,42 @@ export function Nav() {
                   gap: 7,
                 }}
               >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 999,
-                    background: "var(--brand, #FF5A5F)",
-                    color: "#fff",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 13,
-                    fontWeight: 700,
-                  }}
-                >
-                  {(user?.nicknameCompleted === false ? "닉" : (user?.name ?? user?.email ?? "U")).charAt(0).toUpperCase()}
-                </span>
-                {user?.nicknameCompleted === false ? "닉네임 설정" : (user?.name ?? "마이")}
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={`${displayName} 프로필 사진`}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 999,
+                      objectFit: "cover",
+                      display: "block",
+                      flexShrink: 0,
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 999,
+                      background: avatarColor,
+                      color: "#fff",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {avatarFallback}
+                  </span>
+                )}
+
+                <span>{displayName}</span>
               </Link>
 
               <MessageBell />
@@ -226,13 +285,18 @@ export function Nav() {
             <button
               onClick={() => setAuthOpen(true)}
               className="btn btn-primary nav-cta press"
-              style={{ padding: "9px 18px", border: "none", cursor: "pointer" }}
+              style={{
+                padding: "9px 18px",
+                border: "none",
+                cursor: "pointer",
+              }}
             >
               Get started
             </button>
           )}
         </div>
       </div>
+
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </header>
   );

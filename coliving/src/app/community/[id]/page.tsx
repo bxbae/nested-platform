@@ -17,6 +17,7 @@ import {
 } from "@/lib/api/community";
 import { UserProfileModal } from "@/components/UserProfileModal";
 import { CommunityReportModal } from "@/components/CommunityReportModal";
+import { UserAvatar } from "@/components/UserAvatar";
 
 const catColor: Record<string, string> = {
   notice: "#FF5A5F", event: "#00A699", chore: "#3E9BC4",
@@ -149,8 +150,37 @@ export default function PostPage() {
             </div>
           </div>
         )}
-        <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <button onClick={() => setProfileUserId(post.authorId)} style={{ background: "none", border: 0, padding: 0, color: "var(--primary)", fontWeight: 700, cursor: "pointer" }}>{post.author}</button>
+        <div
+          style={{
+            marginTop: 18,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <button
+            onClick={() => setProfileUserId(post.authorId)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 9,
+              background: "none",
+              border: 0,
+              padding: 0,
+              color: "var(--primary)",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            <UserAvatar
+              name={post.author}
+              avatarUrl={post.authorAvatarUrl}
+              avatarColor={post.authorAvatarColor}
+              size={38}
+              fontSize={14}
+            />
+            <span>{post.author}</span>
+          </button>
         </div>
       </article>
 
@@ -255,8 +285,27 @@ function CommentContent({ comment, mine, onProfile, onReply, onEdit, onDelete, o
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-        <button onClick={() => onProfile(comment.author.id)} style={{ border: 0, background: "none", padding: 0, fontWeight: 700, cursor: "pointer" }}>
-          {comment.author.name}
+        <button
+          onClick={() => onProfile(comment.author.id)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            border: 0,
+            background: "none",
+            padding: 0,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          <UserAvatar
+            name={comment.author.name}
+            avatarUrl={comment.author.avatarUrl}
+            avatarColor={comment.author.avatarColor}
+            size={nested ? 28 : 34}
+            fontSize={nested ? 11 : 13}
+          />
+          <span>{comment.author.name}</span>
         </button>
         <span style={{ fontSize: 12, color: "var(--text-2)" }}>{timeAgo(comment.createdAt)}</span>
       </div>
