@@ -1,52 +1,40 @@
 import { Injectable } from "@nestjs/common";
 
-// 실시간 다중 이동수단 조회
-// ODsay API 하나로 버스/지하철/지하철+버스(환승)를 실제 경로 기준 실시간 조회.
-// 도보/자차는 API 없이 거리 기반 계산으로 처리한다
+// 다중 이동수단 예상 소요시간 계산
+// ⚠️ 2026-07-22 팀 결정: ODsay API 연동 포기.
+// 이유: ODsay는 서버(백엔드) 호출 시 고정 IP 등록이 필요한데, 우리 배포
+// 환경(Vercel Hobby 플랜)은 서버리스 구조라 요청마다 IP가 바뀌어 고정 IP를
+// 쓸 수 없다. Vercel의 고정 IP 기능은 Pro/Enterprise 전용 유료 부가기능
+// (월 $100+)이라 학생 프로젝트 규모에 맞지 않아 포기.
+//
+// 대신 도보/자차와 동일한 방식(거리 기반 공식 계산)으로 버스/지하철/
+// 지하철+버스도 예상치를 계산한다. 실시간 API 없이도 사용자 경험은
+// 유지하되, "예상치"임을 명확히 표시한다.
 @Injectable()
 export class TransitService {
   async getRoutes(fromLat: number, fromLng: number, toLat: number, toLng: number) {
     const km = this.haversine(fromLat, fromLng, toLat, toLng);
 
-    // 도보: API 없이 계산 (기존 commute.ts와 같은 공식)
+    // 도보: 기존 그대로 (분당 이동 거리 기반)
     const walk = { mode: "walk", minutes: Math.max(4, Math.round(km * 13)), km: this.round1(km) };
 
-    // 자차(택시): 실시간 교통정보 API가 아직 없어 평균 주행속도로 근사
-    // (정확한 실시간 반영은 추후 별도 API 검토 — 오늘은 추정치로 표시)
+    // 자차(택시): 기존 그대로 (평균 주행속도 25km/h 근사)
     const car = { mode: "car", minutes: Math.max(3, Math.round((km / 25) * 60)), km: this.round1(km), estimated: true };
 
-    // ODsay 키가 없으면(발급 대기 중) 대중교통 옵션은 조용히 빈 배열로 응답.
-    // 프론트는 이 경우 도보/자차만 보여주고, 버스·지하철 탭은 "준비 중"으로 표시.
-    if (!process.env.ODSAY_API_KEY) {
-      return { walk, car, transit: [] };
-    }
+    // 지하철: 평균 속도 22km/h + 환승/대기 기본 10분
+    const subwayMinutes = Math.round(10 + (km / 22) * 60);
+    // 버스: 평균 속도 18km/h (신호·정차 많음) + 배차 대기 기본 8분
+    const busMinutes = Math.round(8 + (km / 18) * 60);
+    // 지하철+버스 환승: 평균 속도 20km/h + 환승 포함 기본 15분
+    const subwayBusMinutes = Math.round(15 + (km / 20) * 60);
 
-    try {
-      const url = `https://api.odsay.com/v1/api/searchPubTransPathT?SX=${fromLng}&SY=${fromLat}&EX=${toLng}&EY=${toLat}&apiKey=${process.env.ODSAY_API_KEY}`;
-      const res = await fetch(url);
-      const data: any = await res.json();
+    const transit = [
+      { mode: "subway", minutes: subwayMinutes, transferCount: km < 3 ? 0 : 1 },
+      { mode: "bus", minutes: busMinutes, transferCount: km < 8 ? 1 : 2 },
+      { mode: "subway_bus", minutes: subwayBusMinutes, transferCount: 1 },
+    ];
 
-      // ODsay는 여러 경로 후보를 배열로 주는데, 각 후보의 pathType으로
-      // 1=지하철, 2=버스, 3=지하철+버스(환승)를 구분해준다.
-      const paths = data?.result?.path ?? [];
-      const modeLabel = (pathType: number) =>
-        pathType === 1 ? "subway" : pathType === 2 ? "bus" : "subway_bus";
-
-      // 같은 유형 중 가장 빠른 경로 하나씩만 골라서 대표로 사용
-      const byMode = new Map<string, any>();
-      for (const p of paths) {
-        const mode = modeLabel(p.pathType);
-        const minutes = p.info?.totalTime;
-        if (!byMode.has(mode) || minutes < byMode.get(mode).minutes) {
-          byMode.set(mode, { mode, minutes, transferCount: p.info?.busTransitCount + p.info?.subwayTransitCount });
-        }
-      }
-
-      return { walk, car, transit: Array.from(byMode.values()) };
-    } catch {
-      // API 호출 실패해도 도보/자차는 그대로 보여준다
-      return { walk, car, transit: [] };
-    }
+    return { walk, car, transit };
   }
 
   private haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
