@@ -28,7 +28,10 @@ export function Nav() {
     { href: "/community", label: t.community },
     { href: "/host", label: t.host },
     { href: "/me", label: t.my },
-    { href: "/admin", label: t.admin },
+    // "관리자" tab only for admins. /admin itself should also be gated
+    // server/route-side (AdminGate) — this just keeps a non-admin from
+    // seeing the link in the first place.
+    ...(user?.role === "ADMIN" ? [{ href: "/admin", label: t.admin }] : []),
   ];
 
   const roomLinks = [
