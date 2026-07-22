@@ -71,13 +71,13 @@ export default async function Home() {
           }}
         >
           <div style={{ width: "100%" }}>
-            <div style={{ maxWidth: 680 }}>
+            <div className="home-hero-copy" style={{ maxWidth: 760 }}>
               <span className="eyebrow">서울의 공유주거</span>
 
               <h1
-                className="display"
+                className="display home-hero-title"
                 style={{
-                  fontSize: "clamp(40px, 5.2vw, 68px)",
+                  fontSize: "clamp(40px, 4.6vw, 68px)",
                   marginTop: 18,
                   lineHeight: 1.14,
                   letterSpacing: "-0.04em",

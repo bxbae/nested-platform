@@ -673,3 +673,22 @@ header button {
     display: none !important;
   }
 }
+
+/* Windows hero title layout */
+.home-hero-copy {
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
+}
+
+.home-hero-title {
+  word-break: keep-all;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .home-hero-title {
+    white-space: normal;
+  }
+}
