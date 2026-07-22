@@ -9,40 +9,44 @@ import { AuthModal } from "./AuthModal";
 import { useAuth } from "@/lib/api/useAuth";
 import { NotificationBell } from "./NotificationBell";
 import { MessageBell } from "./MessageBell";
-
-const links = [
-  { href: "/search", label: "숙소 검색" },
-  // { href: "/browse", label: "직장 근처 숙소" },
-  { href: "/match", label: "룸메이트" },
-  { href: "/community", label: "커뮤니티" },
-  { href: "/host", label: "호스트" },
-  { href: "/me", label: "마이" },
-  { href: "/admin", label: "관리자" },
-];
-
-// Hover menu under "숙소 검색" — room-type filters plus the commute search.
-const SEARCH_DROPDOWN = [
-  { label: "원룸", href: "/search?roomTypes=one_room" },
-  { label: "쉐어룸", href: "/search?roomTypes=share_room" },
-  { label: "독채", href: "/search?roomTypes=whole_house" },
-  { label: "아파트", href: "/search?roomTypes=apartment" },
-  { label: "직장 근처 숙소", href: "/browse" },
-];
+import { LanguageToggle } from "./LanguageToggle";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { translations } from "@/lib/i18n/translations";
 
 export function Nav() {
   const path = usePathname();
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuth();
 
+  const { locale } = useLanguage();
+  const t = translations[locale].nav;
+
+  const links = [
+    { href: "/search", label: t.search },
+    { href: "/match", label: t.roommate },
+    { href: "/community", label: t.community },
+    { href: "/host", label: t.host },
+    { href: "/me", label: t.my },
+    { href: "/admin", label: t.admin },
+  ];
+
+  const searchDropdown = [
+    { label: t.oneRoom, href: "/search?roomTypes=one_room" },
+    { label: t.shareRoom, href: "/search?roomTypes=share_room" },
+    { label: t.wholeHouse, href: "/search?roomTypes=whole_house" },
+    { label: t.apartment, href: "/search?roomTypes=apartment" },
+    { label: t.commuteSearch, href: "/browse" },
+  ];
+
   const [authOpen, setAuthOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const displayName =
-    user?.nicknameCompleted === false ? "닉네임 설정" : (user?.name ?? "마이");
+    user?.nicknameCompleted === false ? t.nicknameSetup : (user?.name ?? t.my);
 
   const avatarFallback =
     user?.nicknameCompleted === false
-      ? "닉"
+      ? "N"
       : (user?.name ?? user?.email ?? "U").charAt(0).toUpperCase();
 
   const avatarColor = user?.avatarColor ?? "var(--brand, #FF5A5F)";
@@ -168,9 +172,9 @@ export function Nav() {
                         zIndex: 60,
                       }}
                     >
-                      {SEARCH_DROPDOWN.map((item, index) => (
+                      {searchDropdown.map((item, index) => (
                         <div key={item.href}>
-                          {index === SEARCH_DROPDOWN.length - 1 && (
+                          {index === searchDropdown.length - 1 && (
                             <div
                               style={{
                                 height: 1,
@@ -203,6 +207,7 @@ export function Nav() {
             })}
           </nav>
 
+          <LanguageToggle />
           <ThemeToggle />
 
           {isAuthenticated ? (
@@ -227,7 +232,7 @@ export function Nav() {
                 {avatarUrl ? (
                   <img
                     src={avatarUrl}
-                    alt={`${displayName} 프로필 사진`}
+                    alt={`${displayName} ${t.profileImage}`}
                     style={{
                       width: 28,
                       height: 28,
@@ -278,7 +283,7 @@ export function Nav() {
                   cursor: "pointer",
                 }}
               >
-                로그아웃
+                {t.logout}
               </button>
             </div>
           ) : (
@@ -291,7 +296,7 @@ export function Nav() {
                 cursor: "pointer",
               }}
             >
-              Get started
+              {t.getStarted}
             </button>
           )}
         </div>
