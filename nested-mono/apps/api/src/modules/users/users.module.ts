@@ -21,6 +21,7 @@ export interface PublicProfile {
   avatarColor: string;
   avatarUrl: string | null;
   bio: string | null;
+  gender: "MALE" | "FEMALE" | "OTHER";
   joinedYear: number;
   verified: boolean;
   tier: string;
@@ -42,6 +43,7 @@ export class UsersService {
         avatarColor: true,
         avatarUrl: true,
         bio: true,
+        gender: true,
         createdAt: true,
         deletedAt: true,
         suspended: true,
@@ -73,6 +75,7 @@ export class UsersService {
       avatarColor: user.avatarColor,
       avatarUrl: user.avatarUrl,
       bio: user.bio,
+      gender: user.gender,
       joinedYear: user.createdAt.getFullYear(),
       ...badges,
       keywords: user.preference?.isCompleted ? user.preference.keywords : [],
