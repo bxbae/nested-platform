@@ -1,10 +1,19 @@
 import { Module } from "@nestjs/common";
-import { Resolver, Query, Args, ObjectType, Field, Int, ID } from "@nestjs/graphql";
+import {
+  Resolver,
+  Query,
+  Args,
+  ObjectType,
+  Field,
+  Int,
+  ID,
+} from "@nestjs/graphql";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.module";
 import { RoomsController } from "./rooms.controller";
 import { RoomsService } from "./rooms.service";
 import { GeocodingService } from "./geocoding.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 // ── GraphQL types (code-first) ──
 @ObjectType()
@@ -24,13 +33,13 @@ class RoomType {
 export class RoomsResolver {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redis: RedisService
+    private readonly redis: RedisService,
   ) {}
 
   @Query(() => [RoomType], { name: "rooms" })
   async rooms(
     @Args("region", { nullable: true }) region?: string,
-    @Args("take", { type: () => Int, nullable: true }) take = 20
+    @Args("take", { type: () => Int, nullable: true }) take = 20,
   ) {
     return this.prisma.room.findMany({
       where: { published: true, ...(region ? { region } : {}) },
@@ -52,6 +61,7 @@ export class RoomsResolver {
 }
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [RoomsController],
   providers: [RoomsResolver, RoomsService, GeocodingService],
 })

@@ -3,11 +3,13 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Optional,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.module";
 import { GeocodingService } from "./geocoding.service";
+import { NotificationsGateway } from "../notifications/notifications.gateway";
 
 export interface RoomSearchQuery {
   region?: string;
@@ -72,19 +74,24 @@ type OccupancyReservation = {
  * 1명이고, 공동 예약에서 동반자가 수락(ACCEPTED)했으면 1명을 더 센다.
  * 초대 대기(PENDING)나 거절(DECLINED)은 아직 살고 있는 게 아니므로 빼야 한다.
  */
-function withOccupancy<T extends { reservations?: OccupancyReservation[] }>(room: T) {
+function withOccupancy<T extends { reservations?: OccupancyReservation[] }>(
+  room: T,
+) {
   const { reservations, ...rest } = room;
   const current = reservations ?? [];
 
   const residents = current.reduce((sum, r) => {
-    return sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0);
+    return (
+      sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0)
+    );
   }, 0);
 
   // 가장 늦게 끝나는 예약이 곧 다시 입주 가능한 시점이다.
   // 초기값을 null 로 두면 빈 배열도 자연히 처리되고, 인덱스 접근이 없어
   // 컴파일러가 undefined 를 걱정할 일도 없다.
   const availableAgainFrom = current.reduce<Date | null>(
-    (latest, r) => (latest === null || r.checkOut > latest ? r.checkOut : latest),
+    (latest, r) =>
+      latest === null || r.checkOut > latest ? r.checkOut : latest,
     null,
   );
 
@@ -101,7 +108,9 @@ export class RoomsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
-    private readonly geocoding: GeocodingService
+    private readonly geocoding: GeocodingService,
+    @Optional()
+    private readonly notificationsGateway?: NotificationsGateway,
   ) {}
 
   // ── Search / list (검색 API) — cursor pagination + filters ──
@@ -125,9 +134,11 @@ export class RoomsService {
 
     if (query.q) where.name = { contains: query.q, mode: "insensitive" };
     if (query.petsAllowed !== undefined) where.petsAllowed = query.petsAllowed;
-    if (query.smokingAllowed !== undefined) where.smokingAllowed = query.smokingAllowed;
+    if (query.smokingAllowed !== undefined)
+      where.smokingAllowed = query.smokingAllowed;
     if (query.parking !== undefined) where.parking = query.parking;
-    if (query.availableFrom) where.availableFrom = { lte: new Date(query.availableFrom) };
+    if (query.availableFrom)
+      where.availableFrom = { lte: new Date(query.availableFrom) };
 
     // 인원수 필터. 독채는 capacity 가 null 이라 이 조건에서 자연히 빠진다 —
     // 정원 개념이 없는 매물을 "N명 가능"으로 셀 수는 없기 때문이다.
@@ -152,7 +163,11 @@ export class RoomsService {
     if (query.checkIn && query.checkOut) {
       const from = new Date(query.checkIn);
       const to = new Date(query.checkOut);
-      if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) {
+      if (
+        !Number.isNaN(from.getTime()) &&
+        !Number.isNaN(to.getTime()) &&
+        from < to
+      ) {
         // The room must also be move-in ready by the requested start date.
         where.availableFrom = { lte: from };
         where.reservations = {
@@ -194,14 +209,19 @@ export class RoomsService {
             : { createdAt: "desc" };
 
     // total is computed once (page 1 has no cursor) so the UI can show a count
-    const total = query.cursor ? undefined : await this.prisma.room.count({ where });
+    const total = query.cursor
+      ? undefined
+      : await this.prisma.room.count({ where });
 
     const rows = await this.prisma.room.findMany({
       where,
       take: take + 1,
       ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       orderBy,
-      include: { images: { orderBy: { order: "asc" }, take: 1 }, ...occupancyInclude() },
+      include: {
+        images: { orderBy: { order: "asc" }, take: 1 },
+        ...occupancyInclude(),
+      },
     });
     const items = rows.map(withOccupancy);
 
@@ -220,11 +240,18 @@ export class RoomsService {
   // shape identical to the column-sorted path. Rooms with no reviews sort last.
   private async searchByRating(where: any, take: number, cursor?: string) {
     // 1) Resolve the filtered set with the SAME Prisma `where` — no filter drift.
-    const filtered = await this.prisma.room.findMany({ where, select: { id: true } });
+    const filtered = await this.prisma.room.findMany({
+      where,
+      select: { id: true },
+    });
     const ids = filtered.map((r) => r.id);
     const total = cursor ? undefined : ids.length;
     if (ids.length === 0) {
-      return { items: [], nextCursor: null, ...(total !== undefined ? { total } : {}) };
+      return {
+        items: [],
+        nextCursor: null,
+        ...(total !== undefined ? { total } : {}),
+      };
     }
 
     // 2) Rank those ids by average rating (desc), then newest as a tiebreak.
@@ -248,7 +275,10 @@ export class RoomsService {
     // 4) Fetch the page rows, then restore the ranked order (findMany won't keep it).
     const rows = await this.prisma.room.findMany({
       where: { id: { in: pageIds } },
-      include: { images: { orderBy: { order: "asc" }, take: 1 }, ...occupancyInclude() },
+      include: {
+        images: { orderBy: { order: "asc" }, take: 1 },
+        ...occupancyInclude(),
+      },
     });
     const byId = new Map(rows.map((row) => [row.id, withOccupancy(row)]));
     const items = pageIds.map((id) => byId.get(id)).filter(Boolean);
@@ -285,7 +315,12 @@ export class RoomsService {
     const rating =
       reviewCount > 0
         ? Math.round(
-            (room.reviews.reduce((s: number, rv: { rating: number }) => s + rv.rating, 0) / reviewCount) * 10,
+            (room.reviews.reduce(
+              (s: number, rv: { rating: number }) => s + rv.rating,
+              0,
+            ) /
+              reviewCount) *
+              10,
           ) / 10
         : 0;
     // `address` is the exact street address the host attested to. It must not
@@ -329,27 +364,75 @@ export class RoomsService {
     // client.
     const { lat, lng } = await this.geocoding.geocode(address);
 
-    return this.prisma.room.create({
-      data: {
-        ...rest,
-        hostId,
-        address,
-        lat,
-        lng,
-        availableFrom: new Date(data.availableFrom),
-        images: {
-          create: (images as string[]).map((url, order) => ({ url, order })),
+    const result = await this.prisma.$transaction(async (tx) => {
+      const room = await tx.room.create({
+        data: {
+          ...rest,
+          hostId,
+          address,
+          lat,
+          lng,
+          availableFrom: new Date(data.availableFrom),
+          images: {
+            create: (images as string[]).map((url, order) => ({
+              url,
+              order,
+            })),
+          },
         },
-      },
-      include: { images: { orderBy: { order: "asc" } } },
+        include: {
+          images: {
+            orderBy: {
+              order: "asc",
+            },
+          },
+        },
+      });
+
+      const admins = await tx.user.findMany({
+        where: {
+          role: "ADMIN",
+          suspended: false,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      const notifications = await Promise.all(
+        admins.map((admin) =>
+          tx.notification.create({
+            data: {
+              userId: admin.id,
+              type: "SYSTEM",
+              title: "새 숙소가 등록되었어요",
+              body: `"${room.name}" 숙소가 승인을 기다리고 있습니다.`,
+              targetUrl: "/admin/approvals",
+            },
+          }),
+        ),
+      );
+
+      return {
+        room,
+        notifications,
+      };
     });
+
+    for (const notification of result.notifications) {
+      this.notificationsGateway?.emitToUser(notification.userId, notification);
+    }
+
+    return result.room;
   }
 
   // ── Update (host-scoped) ──
   async update(hostId: string, id: string, data: any) {
     const room = await this.prisma.room.findUnique({ where: { id } });
     if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
-    if (room.hostId !== hostId) throw new ForbiddenException("본인 숙소만 수정할 수 있습니다.");
+    if (room.hostId !== hostId)
+      throw new ForbiddenException("본인 숙소만 수정할 수 있습니다.");
     await this.redis.cacheSet(`room:${id}`, null, 1); // invalidate
 
     const { images, ...rest } = data;
@@ -357,13 +440,18 @@ export class RoomsService {
       where: { id },
       data: {
         ...rest,
-        ...(data.availableFrom ? { availableFrom: new Date(data.availableFrom) } : {}),
+        ...(data.availableFrom
+          ? { availableFrom: new Date(data.availableFrom) }
+          : {}),
         // When a gallery is supplied, replace it wholesale.
         ...(images
           ? {
               images: {
                 deleteMany: {},
-                create: (images as string[]).map((url, order) => ({ url, order })),
+                create: (images as string[]).map((url, order) => ({
+                  url,
+                  order,
+                })),
               },
             }
           : {}),
@@ -376,7 +464,8 @@ export class RoomsService {
   async remove(hostId: string, id: string) {
     const room = await this.prisma.room.findUnique({ where: { id } });
     if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
-    if (room.hostId !== hostId) throw new ForbiddenException("본인 숙소만 삭제할 수 있습니다.");
+    if (room.hostId !== hostId)
+      throw new ForbiddenException("본인 숙소만 삭제할 수 있습니다.");
 
     // 살아 있는 예약이 걸린 방은 지울 수 없다. 지워 버리면 이미 결제한
     // 게스트가 갈 곳을 잃는다. 예약을 먼저 정리(취소·완료)해야 한다.
@@ -415,7 +504,7 @@ export class RoomsService {
   //   - 가격 차이가 적을수록          : 최대 +25점 (5만원 차이당 1점씩 감점)
   //   - 성별 정책(genderPolicy) 일치  : +15점
   //   - 겹치는 편의시설 1개당         : +10점 (최대 +30점)
-  async findSimilar(roomId: string, limit = 4){
+  async findSimilar(roomId: string, limit = 4) {
     // 1) 기준이 되는 숙소(target) 정보를 가져온다.
     // amenities(편의시설)까지 같이 가져와야 뒤에서 겹치는 개수를 셀 수 있음.
     const target = await this.prisma.room.findUnique({
@@ -423,7 +512,7 @@ export class RoomsService {
       include: { amenities: true },
     });
     // 존재하지 않는 숙소 id로 요청이 오면(잘못된 링크 등) 빈 배열로 안전하게 응답.
-    if(!target) return[];
+    if (!target) return [];
 
     // 2) 비교 대상 후보군을 DB에서 미리 좁혀서 가져온다.
     //    - 자기 자신은 제외 (id not equal)
@@ -473,7 +562,9 @@ export class RoomsService {
       }
 
       // 편의시설이 겹치는 개수만큼 10점씩, 최대 30점까지만 인정
-      const shared = r.amenities.filter((a) => targetAmenityIds.has(a.amenityId));
+      const shared = r.amenities.filter((a) =>
+        targetAmenityIds.has(a.amenityId),
+      );
       score += Math.min(30, shared.length * 10);
       if (shared.length > 0) {
         reasons.push(`편의시설 ${shared.length}개 일치`);
@@ -500,31 +591,34 @@ export class RoomsService {
       where: { userId },
       include: { room: true },
     });
-  
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { name: true },
     });
-  
-    if (favorites.length === 0) return { rooms: [], userName: user?.name ?? null };
-  
+
+    if (favorites.length === 0)
+      return { rooms: [], userName: user?.name ?? null };
+
     const preferredTypes = new Set(favorites.map((f) => f.room.roomType));
     const preferredRegions = new Set(favorites.map((f) => f.room.region));
     const favoriteIds = new Set(favorites.map((f) => f.roomId));
-    const avgRent = favorites.reduce((sum, f) => sum + f.room.monthlyRent, 0) / favorites.length;
-  
+    const avgRent =
+      favorites.reduce((sum, f) => sum + f.room.monthlyRent, 0) /
+      favorites.length;
+
     const candidates = await this.prisma.room.findMany({
       where: { published: true, id: { notIn: [...favoriteIds] } },
       include: { images: true },
       take: 50,
     });
-  
+
     // 점수를 매기면서, "왜 이 점수를 줬는지"도 reasons 배열에 같이 기록한다.
     // (유사 숙소 추천 만들 때와 완전히 같은 패턴)
     const scored = candidates.map((room) => {
       let score = 0;
       const reasons: string[] = [];
-  
+
       if (preferredTypes.has(room.roomType)) {
         score += 20;
         reasons.push("평소 관심 있으시던 방 종류");
@@ -538,19 +632,21 @@ export class RoomsService {
       if (rentDiff < 100000) {
         reasons.push("찜하신 곳들과 비슷한 가격대");
       }
-  
+
       return { room, score, reasons };
     });
-  
+
     const top = scored.sort((a, b) => b.score - a.score).slice(0, limit);
-  
+
     // AI 호출 없이, 근거 배열을 그대로 문장으로 조합.
     // 겹치는 게 하나도 없는 예외적인 경우(순수 랜덤 노출)를 대비한 기본 문구도 준비.
     return {
       rooms: top.map(({ room, reasons }) => ({
         ...room,
         personalizedReason:
-          reasons.length > 0 ? `${reasons.join(", ")}라 추천드려요!` : "새로운 스타일의 숙소를 추천드려요",
+          reasons.length > 0
+            ? `${reasons.join(", ")}라 추천드려요!`
+            : "새로운 스타일의 숙소를 추천드려요",
       })),
       userName: user?.name ?? null,
     };
@@ -562,42 +658,47 @@ export class RoomsService {
   // 이 부분이 실패해도 추천 목록 자체는 정상적으로 화면에 뜨게 함).
   private async explainPersonalized(
     favoriteRooms: { name: string; roomType: string; region: string }[],
-    candidates: { id: string; name: string; roomType: string; region: string; monthlyRent: number }[],
+    candidates: {
+      id: string;
+      name: string;
+      roomType: string;
+      region: string;
+      monthlyRent: number;
+    }[],
   ): Promise<Record<string, string>> {
     if (candidates.length === 0) return {};
 
     const prompt = `
-사용자가 찜한 숙소들: ${favoriteRooms.map((r) => `${r.name}(${r.roomType}, ${r.region})`).join(', ')}
+사용자가 찜한 숙소들: ${favoriteRooms.map((r) => `${r.name}(${r.roomType}, ${r.region})`).join(", ")}
 
 아래 추천 후보 숙소마다, 왜 이 사용자에게 어울리는지 한국어로 한 문장씩(15자 내외) 만들어줘.
 반드시 JSON 객체만 출력해. 형식: {"숙소id": "이유 문장", ...}
 
 후보:
-${candidates.map((c) => `${c.id}: ${c.name}(${c.roomType}, ${c.region}, 월${c.monthlyRent}원)`).join('\n')}
+${candidates.map((c) => `${c.id}: ${c.name}(${c.roomType}, ${c.region}, 월${c.monthlyRent}원)`).join("\n")}
 `.trim();
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
         headers: {
-          'x-api-key': process.env.ANTHROPIC_API_KEY ?? '',
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
+          "x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: "claude-sonnet-4-6",
           max_tokens: 500,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [{ role: "user", content: prompt }],
         }),
       });
       const data: any = await res.json();
-      const text = data.content?.[0]?.text ?? '{}';
+      const text = data.content?.[0]?.text ?? "{}";
       // 혹시 모델이 ```json 코드블록으로 감싸서 응답하면 벗겨내기
-      const clean = text.replace(/```json|```/g, '').trim();
+      const clean = text.replace(/```json|```/g, "").trim();
       return JSON.parse(clean);
     } catch {
       return {}; // 실패해도 추천 목록 자체는 살아있어야 하므로 조용히 빈 값
     }
   }
-
 }
