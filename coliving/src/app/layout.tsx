@@ -4,6 +4,7 @@ import { Nav } from "@/components/Nav";
 import { Rings } from "@/components/Rings";
 import { PushListener } from "@/components/PushListener";
 import { QueryProvider } from "@/components/QueryProvider";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://nested.kr"),
@@ -52,7 +53,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ko" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -61,87 +62,90 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <QueryProvider>
-          <Nav />
-          <PushListener />
-          <main>{children}</main>
-          <footer
-            style={{
-              borderTop: "1px solid var(--border)",
-              marginTop: 40,
-              background: "var(--bg-2)",
-            }}
-          >
-            <div className="wrap" style={{ padding: "48px 24px 32px" }}>
-              <div className="footer-grid">
-                <div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 10,
-                    }}
-                  >
-                    <Rings size={24} />
-                    <strong className="display" style={{ fontSize: 19 }}>
-                      Nested
-                    </strong>
+        <LanguageProvider>
+          <QueryProvider>
+            <Nav />
+            <PushListener />
+            <main>{children}</main>
+
+            <footer
+              style={{
+                borderTop: "1px solid var(--border)",
+                marginTop: 40,
+                background: "var(--bg-2)",
+              }}
+            >
+              <div className="wrap" style={{ padding: "48px 24px 32px" }}>
+                <div className="footer-grid">
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <Rings size={24} />
+                      <strong className="display" style={{ fontSize: 19 }}>
+                        Nested
+                      </strong>
+                    </div>
+                    <p
+                      style={{
+                        color: "var(--text-2)",
+                        fontSize: 13.5,
+                        maxWidth: 260,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      20~40대 직장인과 장기 거주자를 위한 공유주거 플랫폼.
+                    </p>
                   </div>
-                  <p
-                    style={{
-                      color: "var(--text-2)",
-                      fontSize: 13.5,
-                      maxWidth: 260,
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    20~40대 직장인과 장기 거주자를 위한 공유주거 플랫폼.
-                  </p>
+                  <FooterCol
+                    title="둘러보기"
+                    links={[
+                      ["숙소 검색", "/search"],
+                      ["통근 검색", "/browse"],
+                      ["룸메이트 매칭", "/match"],
+                    ]}
+                  />
+                  <FooterCol
+                    title="커뮤니티"
+                    links={[
+                      ["하우스 피드", "/community"],
+                      ["예약 내역", "/trips"],
+                    ]}
+                  />
+                  <FooterCol
+                    title="회사"
+                    links={[
+                      ["서비스 소개", "/"],
+                      ["이용약관", "/"],
+                      ["개인정보처리방침", "/"],
+                    ]}
+                  />
                 </div>
-                <FooterCol
-                  title="둘러보기"
-                  links={[
-                    ["숙소 검색", "/search"],
-                    ["통근 검색", "/browse"],
-                    ["룸메이트 매칭", "/match"],
-                  ]}
-                />
-                <FooterCol
-                  title="커뮤니티"
-                  links={[
-                    ["하우스 피드", "/community"],
-                    ["예약 내역", "/trips"],
-                  ]}
-                />
-                <FooterCol
-                  title="회사"
-                  links={[
-                    ["서비스 소개", "/"],
-                    ["이용약관", "/"],
-                    ["개인정보처리방침", "/"],
-                  ]}
-                />
+                <div
+                  style={{
+                    marginTop: 32,
+                    paddingTop: 20,
+                    borderTop: "1px solid var(--border)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 12,
+                    color: "var(--text-2)",
+                    fontSize: 13,
+                  }}
+                >
+                  <span className="mono">© 2026 Nested · Seoul</span>
+                  <span>서울의 셰어하우스를 잇는 두 개의 원.</span>
+                </div>
               </div>
-              <div
-                style={{
-                  marginTop: 32,
-                  paddingTop: 20,
-                  borderTop: "1px solid var(--border)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: 12,
-                  color: "var(--text-2)",
-                  fontSize: 13,
-                }}
-              >
-                <span className="mono">© 2026 Nested · Seoul</span>
-                <span>서울의 셰어하우스를 잇는 두 개의 원.</span>
-              </div>
-            </div>
-          </footer>
-        </QueryProvider>
+            </footer>
+          </QueryProvider>
+        </LanguageProvider>
       </body>
     </html>
   );
