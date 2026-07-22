@@ -8,6 +8,7 @@ import { ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
 import { won } from "@/lib/format";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useFavorite } from "@/lib/api/useFavorites";
+import { regionLabel } from "@/lib/seoul";
 
 const MotionLink = motion.create(Link);
 
@@ -105,7 +106,7 @@ export function PropertyCard({
           </span>
         </div>
         <div style={{ color: "var(--text-2)", fontSize: 13, marginTop: 2, display: "flex", alignItems: "center", gap: 3 }}>
-          <MapPin size={13} /> {house.region} · {house.reviews} reviews
+          <MapPin size={13} /> {regionLabel(house.region)} · 리뷰 {house.reviews}개
           {house.bedrooms ? ` · 방 ${house.bedrooms}개` : ""}
           {house.capacity ? ` · 최대 ${house.capacity}명` : ""}
         </div>

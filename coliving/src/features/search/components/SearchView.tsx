@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { SearchParams, SortKey } from "@/lib/types";
+import { ROOM_TYPE_LABELS } from "@/lib/types";
 import { useSearchProperties } from "../api/useSearchProperties";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 import {
@@ -168,6 +169,16 @@ export function SearchView() {
         >
           {isLoading ? "검색 중…" : `${total}개의 숙소`}
         </div>
+        {(filters.district || filters.verified || (filters.roomTypes?.length ?? 0) > 0 || (filters.checkIn && filters.checkOut)) && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            {filters.district && <button className="chip press" onClick={() => commit({ ...filters, district: "" })}>{filters.district} ×</button>}
+            {filters.roomTypes?.map((roomType) => (
+              <button key={roomType} className="chip press" onClick={() => commit({ ...filters, roomTypes: filters.roomTypes?.filter((item) => item !== roomType) })}>{ROOM_TYPE_LABELS[roomType]} ×</button>
+            ))}
+            {filters.verified && <button className="chip press" onClick={() => commit({ ...filters, verified: false })}>호스트 확인 숙소 ×</button>}
+            {filters.checkIn && filters.checkOut && <button className="chip press" onClick={() => commit({ ...filters, checkIn: "", checkOut: "" })}>{filters.checkIn} ~ {filters.checkOut} ×</button>}
+          </div>
+        )}
       </div>
 
       {/* Map + list split */}

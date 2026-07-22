@@ -7,6 +7,8 @@ import type { House } from "@/lib/types";
 import { won } from "@/lib/format";
 import { jobHubs, commuteBand } from "@/lib/commute";
 import { Thumbnail } from "@/components/Thumbnail";
+import { ROOM_TYPE_LABELS } from "@/lib/types";
+import { regionLabel } from "@/lib/seoul";
 
 // Leaflet touches window, so load the map only on the client.
 const BrowseMap = dynamic(() => import("@/components/BrowseMap"), {
@@ -17,6 +19,7 @@ const BrowseMap = dynamic(() => import("@/components/BrowseMap"), {
 });
 
 const vibes = ["any", "quiet", "social", "creative", "calm", "wellness", "international"];
+const VIBE_LABELS: Record<string, string> = { any: "전체", quiet: "조용한 생활", social: "교류가 활발한 곳", creative: "창작자 중심", calm: "차분한 환경", wellness: "건강한 생활", international: "국제적인 환경" };
 const roomTypes = ["any", "one_room", "share_room", "whole_house", "apartment"];
 
 export default function Browse() {
@@ -57,19 +60,18 @@ export default function Browse() {
 
   return (
     <div className="wrap" style={{ paddingTop: 40, paddingBottom: 60 }}>
-      <span className="eyebrow">Find a home · commute first</span>
+      <span className="eyebrow">직장 위치를 먼저</span>
       <h1 className="display" style={{ fontSize: 40, marginTop: 8, marginBottom: 6 }}>
-        Live close to work
+        직장과 가까운 숙소 찾기
       </h1>
       <p style={{ color: "var(--text-2)", maxWidth: 560 }}>
-        Pick where you work. Every home shows a realistic door-to-door commute,
-        ranked shortest first.
+출근 목적지를 기준으로 실제 이동 시간이 짧은 숙소부터 보여드립니다.
       </p>
 
       {/* Office picker — the commute-first entry point */}
       <div style={{ marginTop: 22 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 10 }}>
-          Where do you work?
+          어디로 출근하시나요?
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {jobHubs.map((h) => {
@@ -111,25 +113,25 @@ export default function Browse() {
         }}
       >
         <div className="field">
-          <label>Search</label>
+          <label>숙소 검색</label>
           <input
-            placeholder="Neighborhood, name, or vibe"
+            placeholder="지역, 숙소명, 분위기 검색"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
         <div className="field">
-          <label>Room type</label>
+          <label>주거 형태</label>
           <select value={roomType} onChange={(e) => setRoomType(e.target.value)}>
             {roomTypes.map((r) => (
               <option key={r} value={r}>
-                {r === "any" ? "Any type" : r}
+                {r === "any" ? "전체 유형" : ROOM_TYPE_LABELS[r as keyof typeof ROOM_TYPE_LABELS]}
               </option>
             ))}
           </select>
         </div>
         <div className="field">
-          <label>Max commute · {maxCommute} min</label>
+          <label>최대 통근 시간 · {maxCommute}분</label>
           <input
             type="range"
             min={15}
@@ -140,13 +142,13 @@ export default function Browse() {
           />
         </div>
         <div className="field">
-          <label>Sort</label>
+          <label>정렬</label>
           <select value={sort} onChange={(e) => setSort(e.target.value)}>
-            <option value="commute">Shortest commute</option>
-            <option value="recommended">Recommended</option>
-            <option value="price-asc">Price: low to high</option>
-            <option value="price-desc">Price: high to low</option>
-            <option value="rating">Top rated</option>
+            <option value="commute">통근 시간 짧은 순</option>
+            <option value="recommended">추천순</option>
+            <option value="price-asc">가격 낮은 순</option>
+            <option value="price-desc">가격 높은 순</option>
+            <option value="rating">평점 높은 순</option>
           </select>
         </div>
       </div>
@@ -160,7 +162,7 @@ export default function Browse() {
             data-active={vibe === v}
             onClick={() => setVibe(v)}
           >
-            {v === "any" ? "All vibes" : v}
+            {VIBE_LABELS[v] ?? v}
           </button>
         ))}
       </div>
@@ -170,8 +172,8 @@ export default function Browse() {
         <div>
           <div style={{ color: "var(--text-2)", fontSize: 14, marginBottom: 14 }}>
             {loading
-              ? "Searching…"
-              : `${results.length} homes within ${maxCommute} min of ${activeHub?.name}`}
+              ? "검색 중…"
+              : `${activeHub?.name ?? "목적지"}까지 ${maxCommute}분 이내 숙소 ${results.length}곳`}
           </div>
           <div className="results-grid">
             {results.map((h) => {
@@ -207,7 +209,7 @@ export default function Browse() {
                             boxShadow: "0 2px 8px rgba(0,0,0,.15)",
                           }}
                         >
-                          {h.commute.mode === "walk" ? "🚶" : "🚇"} {h.commute.minutes} min
+                          {h.commute.mode === "walk" ? "🚶" : "🚇"} {h.commute.minutes}분
                         </span>
                       )}
                       <span
@@ -224,7 +226,7 @@ export default function Browse() {
                       <span style={{ fontSize: 13 }}>★ {h.rating}</span>
                     </div>
                     <div style={{ color: "var(--text-2)", fontSize: 13, marginTop: 2 }}>
-                      {h.neighborhood}
+                      {regionLabel(h.neighborhood)}
                       {h.commute && (
                         <span style={{ color: band?.color, fontWeight: 600 }}>
                           {" · "}{band?.label.toLowerCase()}
@@ -240,7 +242,7 @@ export default function Browse() {
                     </div>
                     <div style={{ marginTop: 12, fontSize: 14 }}>
                       <strong>{won(h.monthlyRent)}</strong>
-                      <span style={{ color: "var(--text-2)", fontSize: 13 }}> /mo</span>
+                      <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월</span>
                     </div>
                   </div>
                 </Link>
@@ -249,8 +251,7 @@ export default function Browse() {
           </div>
           {!loading && results.length === 0 && (
             <div className="card" style={{ padding: 30, textAlign: "center", color: "var(--text-2)" }}>
-              No homes within {maxCommute} min of {activeHub?.name}. Try a longer
-              commute or a different budget.
+조건에 맞는 숙소가 없습니다. 통근 시간이나 예산 범위를 넓혀보세요.
             </div>
           )}
         </div>
@@ -259,8 +260,8 @@ export default function Browse() {
         <div className="map-sticky">
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
-              <strong style={{ fontSize: 14 }}>Distance to {jobHubs.find((h) => h.id === hub)?.name ?? ""}</strong>
-              <span className="mono" style={{ fontSize: 12, color: "var(--primary)" }}>◆ office</span>
+              <strong style={{ fontSize: 14 }}>{jobHubs.find((h) => h.id === hub)?.name ?? ""}까지 통근 거리</strong>
+              <span className="mono" style={{ fontSize: 12, color: "var(--primary)" }}>◆ 직장</span>
             </div>
             <BrowseMap
               houses={results}

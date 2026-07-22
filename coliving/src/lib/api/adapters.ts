@@ -50,6 +50,8 @@ export function filtersToApiQuery(f: SearchParams): URLSearchParams {
   const p = new URLSearchParams();
   if (f.q) p.set("q", f.q);
   if (f.region) p.set("region", f.region);
+  if (f.district) p.set("district", f.district);
+  if (f.verified) p.set("verifiedByHost", "true");
   if (f.roomTypes?.length) p.set("roomTypes", f.roomTypes.map(toApiRoomType).join(","));
   if (f.minRent != null) p.set("minRent", String(f.minRent));
   if (f.maxRent != null) p.set("maxRent", String(f.maxRent));
