@@ -81,7 +81,7 @@ export default function HostDashboardPage() {
           label="새 예약 / 취소"
           value={loading ? "…" : `${data?.newReservationCount ?? 0} / ${data?.cancelledCount ?? 0}`}
           hint="처리 대기 · 최근 취소"
-          accent={!!data && data.newReservationCount > 0}
+          accent={!!data && (data.newReservationCount > 0 || data.cancelledCount > 0)}
         />
         <ClickableStat
           label="이번 달 매출"
@@ -148,6 +148,11 @@ export default function HostDashboardPage() {
                 </tr>
               </thead>
               <tbody>
+                {/* roomRevenue is one row per registered room (mapped from the
+                    host's room list, not from reservations) — a room with no
+                    bookings yet still shows up here with 0/0%/₩0, and the
+                    "등록된 숙소가 없습니다" case above already handles the
+                    truly-empty state, so this only ever renders real rooms. */}
                 {roomRevenue.map((r) => (
                   <tr key={r.roomId} style={{ borderTop: "1px solid var(--border)" }}>
                     <Td>{r.roomName}</Td>
@@ -205,8 +210,18 @@ export default function HostDashboardPage() {
 
         {/* 최근 문의 내역 */}
         <div className="card" style={{ padding: 22 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <strong style={{ fontSize: 15 }}>🧾 최근 문의 내역</strong>
+              {!!data && data.newInquiries > 0 && (
+                <span
+                  className="chip"
+                  style={{ fontSize: 11, background: "var(--primary)", color: "#fff", border: "none" }}
+                >
+                  새 문의 {data.newInquiries}
+                </span>
+              )}
+            </div>
             <Link href="/host/inquiries" style={{ color: "var(--secondary)", fontSize: 13.5, fontWeight: 600 }}>
               전체 보기 →
             </Link>
@@ -300,7 +315,7 @@ function Legend() {
   return (
     <div style={{ display: "flex", gap: 14, fontSize: 12, color: "var(--text-2)" }}>
       <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--primary)", display: "inline-block" }} />
+        <span style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--primary)", display: "inline-block" }} />
           매출
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -429,9 +444,9 @@ function Th({ children, right }: { children: React.ReactNode; right?: boolean })
   );
 }
 
-function Td({ children, right, strong }: { children: React.ReactNode; right?: boolean; strong?: boolean }) {
+function Td({ children, right, strong, muted }: { children: React.ReactNode; right?: boolean; strong?: boolean; muted?: boolean }) {
   return (
-    <td style={{ padding: "12px 16px", textAlign: right ? "right" : "left", fontWeight: strong ? 700 : 400, whiteSpace: "nowrap" }}>
+    <td style={{ padding: "12px 16px", textAlign: right ? "right" : "left", fontWeight: strong ? 700 : 400, color: muted ? "var(--text-2)" : "var(--text)", whiteSpace: "nowrap" }}>
       {children}
     </td>
   );
