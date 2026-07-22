@@ -69,6 +69,8 @@ export class RoomsController {
   search(@Query() q: any) {
     return this.rooms.search({
       region: q.region,
+      district: q.district,
+      verifiedByHost: q.verifiedByHost === "true" ? true : undefined,
       q: q.q,
       roomType: q.roomType,
       roomTypes: q.roomTypes ? String(q.roomTypes).split(",").filter(Boolean) : undefined,
@@ -81,6 +83,10 @@ export class RoomsController {
       parking: q.parking === "true" ? true : undefined,
       sort: q.sort || undefined,
       cursor: q.cursor,
+      minCapacity: q.minCapacity ? Number(q.minCapacity) : undefined,
+      minBedrooms: q.minBedrooms ? Number(q.minBedrooms) : undefined,
+      checkIn: q.checkIn || undefined,
+      checkOut: q.checkOut || undefined,
       take: q.take ? Number(q.take) : undefined,
     });
   }

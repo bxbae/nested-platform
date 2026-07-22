@@ -162,6 +162,16 @@ export interface AdminMember {
   reviewsWritten: number;
 }
 
+export type MemberRole = "GUEST" | "HOST" | "ADMIN";
+
+// PATCH /admin/members/:id/role — promote/demote a member (grants or revokes
+// admin rights). The API blocks changing your own role, and bumping someone
+// to/from ADMIN drops their existing sessions so the new role takes effect
+// on next login.
+export async function setMemberRole(id: string, role: MemberRole): Promise<void> {
+  await api.patch(`/admin/members/${id}/role`, { role });
+}
+
 // PATCH /admin/members/:id/verify — mark identity as checked (or revoke).
 export async function verifyMember(id: string, verified: boolean): Promise<void> {
   await api.patch(`/admin/members/${id}/verify`, { verified });

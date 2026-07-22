@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Rings } from "./Rings";
@@ -9,6 +9,7 @@ import { AuthModal } from "./AuthModal";
 import { useAuth } from "@/lib/api/useAuth";
 import { NotificationBell } from "./NotificationBell";
 import { MessageBell } from "./MessageBell";
+import { UserAvatar } from "./UserAvatar";
 import { LanguageToggle } from "./LanguageToggle";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { translations } from "@/lib/i18n/translations";
@@ -30,37 +31,55 @@ export function Nav() {
     { href: "/admin", label: t.admin },
   ];
 
-  const searchDropdown = [
-    { label: t.oneRoom, href: "/search?roomTypes=one_room" },
-    { label: t.shareRoom, href: "/search?roomTypes=share_room" },
-    { label: t.wholeHouse, href: "/search?roomTypes=whole_house" },
-    { label: t.apartment, href: "/search?roomTypes=apartment" },
-    { label: t.commuteSearch, href: "/browse" },
+  const roomLinks = [
+    {
+      icon: "⌂",
+      label: t.allHomes,
+      description: t.allHomesDescription,
+      href: "/search",
+    },
+    {
+      icon: "▣",
+      label: t.oneRoom,
+      description: t.oneRoomDescription,
+      href: "/search?roomTypes=one_room",
+    },
+    {
+      icon: "♟",
+      label: t.shareRoom,
+      description: t.shareRoomDescription,
+      href: "/search?roomTypes=share_room",
+    },
+    {
+      icon: "◇",
+      label: t.wholeHouse,
+      description: t.wholeHouseDescription,
+      href: "/search?roomTypes=whole_house",
+    },
   ];
 
+  const featureLinks = [
+    {
+      label: t.commuteSearch,
+      description: t.commuteSearchDescription,
+      href: "/browse",
+    },
+    {
+      label: t.verifiedHomes,
+      description: t.verifiedHomesDescription,
+      href: "/search?verified=true",
+    },
+  ];
   const [authOpen, setAuthOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const displayName =
     user?.nicknameCompleted === false ? t.nicknameSetup : (user?.name ?? t.my);
 
-  const avatarFallback =
-    user?.nicknameCompleted === false
-      ? "N"
-      : (user?.name ?? user?.email ?? "U").charAt(0).toUpperCase();
-
-  const avatarColor = user?.avatarColor ?? "var(--brand, #FF5A5F)";
-  const avatarUrl = user?.avatarUrl ?? null;
-
-  // Opened via ?auth=1 (e.g. redirected here from a guarded page while logged
-  // out). Read the query straight off the URL so we don't need a Suspense
-  // boundary around useSearchParams for the global nav.
   useEffect(() => {
     if (typeof window === "undefined") return;
-
     const hasAuthFlag =
       new URLSearchParams(window.location.search).get("auth") === "1";
-
     if (hasAuthFlag && !isAuthenticated) {
       setAuthOpen(true);
       router.replace(path);
@@ -80,12 +99,13 @@ export function Nav() {
       }}
     >
       <div
-        className="wrap"
+        className="wrap nav-shell"
         style={{
-          display: "flex",
+          display: "grid",
+          gridTemplateColumns: "1fr auto 1fr",
           alignItems: "center",
-          justifyContent: "space-between",
           height: 68,
+          gap: 20,
         }}
       >
         <Link
@@ -94,182 +114,239 @@ export function Nav() {
             display: "flex",
             alignItems: "center",
             gap: 10,
+            justifySelf: "start",
           }}
         >
           <Rings size={28} />
-
           <span
             className="display"
-            style={{
-              fontSize: 21,
-              fontWeight: 600,
-              letterSpacing: "-0.03em",
-            }}
+            style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-0.03em" }}
           >
             Nested
           </span>
         </Link>
 
-        <div
+        <nav
+          className="nav-links"
+          aria-label="주요 메뉴"
           style={{
+            justifySelf: "center",
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: 2,
           }}
         >
-          <nav className="nav-links" aria-label="Primary">
-            {links.map((link) => {
-              const active = path.startsWith(link.href);
+          {links.map((link) => {
+            const active = path.startsWith(link.href);
+            const linkElement = (
+              <Link
+                href={link.href}
+                style={{
+                  fontSize: 14.5,
+                  fontWeight: active ? 650 : 480,
+                  padding: "8px 13px",
+                  borderRadius: 999,
+                  color: active ? "var(--text)" : "var(--text-2)",
+                  background: active ? "#fff" : "transparent",
+                  border: active
+                    ? "1px solid var(--border)"
+                    : "1px solid transparent",
+                }}
+                className="navlink"
+              >
+                {link.label}
+              </Link>
+            );
 
-              const linkElement = (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  style={{
-                    fontSize: 14.5,
-                    fontWeight: active ? 600 : 450,
-                    padding: "8px 14px",
-                    borderRadius: 999,
-                    color: active ? "#222222" : "var(--text-2)",
-                    background: active ? "#fff" : "transparent",
-                    border: active
-                      ? "1px solid var(--border)"
-                      : "1px solid transparent",
-                  }}
-                  className="navlink"
-                >
-                  {link.label}
-                </Link>
-              );
+            if (link.href !== "/search")
+              return <span key={link.href}>{linkElement}</span>;
 
-              if (link.href !== "/search") {
-                return linkElement;
-              }
-
-              return (
-                <div
-                  key={link.href}
-                  style={{ position: "relative" }}
-                  onMouseEnter={() => setSearchOpen(true)}
-                  onMouseLeave={() => setSearchOpen(false)}
-                >
-                  {linkElement}
-
-                  {searchOpen && (
+            return (
+              <div
+                key={link.href}
+                style={{ position: "relative" }}
+                onMouseEnter={() => setSearchOpen(true)}
+                onMouseLeave={() => setSearchOpen(false)}
+              >
+                {linkElement}
+                {searchOpen && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: "50%",
+                      transform: "translateX(-34%)",
+                      paddingTop: 10,
+                      zIndex: 60,
+                    }}
+                  >
                     <div
+                      className="card"
                       style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        marginTop: 6,
-                        minWidth: 168,
-                        background: "var(--surface, #fff)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 14,
-                        boxShadow: "0 12px 32px rgba(0,0,0,.12)",
-                        padding: 6,
+                        width: 560,
+                        padding: 16,
+                        borderRadius: 18,
+                        boxShadow: "0 18px 48px rgba(0,0,0,.14)",
                         display: "grid",
-                        zIndex: 60,
+                        gridTemplateColumns: "1.45fr .9fr",
+                        gap: 16,
                       }}
                     >
-                      {searchDropdown.map((item, index) => (
-                        <div key={item.href}>
-                          {index === searchDropdown.length - 1 && (
-                            <div
-                              style={{
-                                height: 1,
-                                background: "var(--border)",
-                                margin: "6px 8px",
-                              }}
-                            />
-                          )}
-
-                          <Link
-                            href={item.href}
-                            onClick={() => setSearchOpen(false)}
-                            style={{
-                              display: "block",
-                              fontSize: 14,
-                              color: "var(--text)",
-                              padding: "9px 12px",
-                              borderRadius: 9,
-                            }}
-                            className="navlink-item"
-                          >
-                            {item.label}
-                          </Link>
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "var(--text-2)",
+                            fontWeight: 700,
+                            marginBottom: 8,
+                          }}
+                        >
+                          {t.findByHousingType}
                         </div>
-                      ))}
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: 8,
+                          }}
+                        >
+                          {roomLinks.map((item) => (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              onClick={() => setSearchOpen(false)}
+                              className="hover-card"
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "30px 1fr",
+                                gap: 9,
+                                padding: 10,
+                                borderRadius: 12,
+                                border: "1px solid var(--border)",
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  width: 30,
+                                  height: 30,
+                                  borderRadius: 999,
+                                  background: "var(--bg-2)",
+                                  display: "grid",
+                                  placeItems: "center",
+                                }}
+                              >
+                                {item.icon}
+                              </span>
+                              <span>
+                                <strong
+                                  style={{ display: "block", fontSize: 13.5 }}
+                                >
+                                  {item.label}
+                                </strong>
+                                <span
+                                  style={{
+                                    display: "block",
+                                    fontSize: 11.5,
+                                    color: "var(--text-2)",
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {item.description}
+                                </span>
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          borderLeft: "1px solid var(--border)",
+                          paddingLeft: 16,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "var(--text-2)",
+                            fontWeight: 700,
+                            marginBottom: 8,
+                          }}
+                        >
+                          {t.findByPurpose}
+                        </div>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {featureLinks.map((item) => (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              onClick={() => setSearchOpen(false)}
+                              className="hover-card"
+                              style={{
+                                padding: 11,
+                                borderRadius: 12,
+                                background: "var(--bg-2)",
+                              }}
+                            >
+                              <strong
+                                style={{ display: "block", fontSize: 13.5 }}
+                              >
+                                {item.label} →
+                              </strong>
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: 11.5,
+                                  color: "var(--text-2)",
+                                  marginTop: 3,
+                                }}
+                              >
+                                {item.description}
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </nav>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
 
+        <div
+          style={{
+            justifySelf: "end",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
           <LanguageToggle />
           <ThemeToggle />
-
           {isAuthenticated ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
+            <>
               <Link
                 href="/me"
                 style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: "var(--text)",
                   display: "flex",
                   alignItems: "center",
                   gap: 7,
+                  fontSize: 14,
+                  fontWeight: 650,
                 }}
               >
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt={`${displayName} ${t.profileImage}`}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 999,
-                      objectFit: "cover",
-                      display: "block",
-                      flexShrink: 0,
-                      border: "1px solid var(--border)",
-                    }}
-                  />
-                ) : (
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 999,
-                      background: avatarColor,
-                      color: "#fff",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {avatarFallback}
-                  </span>
-                )}
-
+                <UserAvatar
+                  name={displayName}
+                  avatarUrl={user?.avatarUrl}
+                  avatarColor={user?.avatarColor}
+                  size={28}
+                />
                 <span>{displayName}</span>
               </Link>
-
               <MessageBell />
               <NotificationBell />
-
               <button
                 onClick={logout}
                 className="press"
@@ -285,23 +362,18 @@ export function Nav() {
               >
                 {t.logout}
               </button>
-            </div>
+            </>
           ) : (
             <button
               onClick={() => setAuthOpen(true)}
-              className="btn btn-primary nav-cta press"
-              style={{
-                padding: "9px 18px",
-                border: "none",
-                cursor: "pointer",
-              }}
+              className="btn btn-primary press"
+              style={{ padding: "9px 18px" }}
             >
               {t.getStarted}
             </button>
           )}
         </div>
       </div>
-
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </header>
   );

@@ -9,7 +9,14 @@
 // Copy this shape for /admin/reports and the dashboard.
 
 import { useCallback, useEffect, useState } from "react";
-import { listMembers, suspendMember, verifyMember, type AdminMember } from "@/lib/api/admin";
+import {
+  listMembers,
+  suspendMember,
+  verifyMember,
+  setMemberRole,
+  type AdminMember,
+  type MemberRole,
+} from "@/lib/api/admin";
 import { useAuth } from "@/lib/api/useAuth";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -28,6 +35,8 @@ export default function AdminMembers() {
   const [busyId, setBusyId] = useState<string | null>(null);
   // id awaiting a second click before we actually suspend.
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // id of the row whose role dropdown is in flight.
+  const [roleBusyId, setRoleBusyId] = useState<string | null>(null);
 
   const load = useCallback(async (search: string) => {
     setLoading(true);
@@ -81,6 +90,37 @@ export default function AdminMembers() {
       setError(e instanceof Error ? e.message : "상태를 변경하지 못했어요.");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  // Change a member's role — most notably, granting ADMIN. Confirm before
+  // granting or revoking admin rights specifically, since that's the
+  // sensitive case; GUEST ↔ HOST is low-stakes and goes through immediately.
+  // Optimistic like the other toggles, with a refetch-on-failure fallback.
+  async function changeRole(m: AdminMember, role: MemberRole) {
+    if (roleBusyId || role === m.role) return;
+    const isAdminChange = role === "ADMIN" || m.role === "ADMIN";
+    if (
+      isAdminChange &&
+      !confirm(
+        role === "ADMIN"
+          ? `${m.name}님에게 관리자 권한을 부여할까요? 이 회원은 다음 로그인부터 관리자로 전환돼요.`
+          : `${m.name}님의 관리자 권한을 해제할까요?`,
+      )
+    ) {
+      return;
+    }
+    setRoleBusyId(m.id);
+    setError(null);
+    const prevRole = m.role;
+    setMembers((prev) => prev.map((x) => (x.id === m.id ? { ...x, role } : x)));
+    try {
+      await setMemberRole(m.id, role);
+    } catch (e) {
+      setMembers((prev) => prev.map((x) => (x.id === m.id ? { ...x, role: prevRole } : x)));
+      setError(e instanceof Error ? e.message : "역할을 변경하지 못했어요.");
+    } finally {
+      setRoleBusyId(null);
     }
   }
 
@@ -152,7 +192,30 @@ export default function AdminMembers() {
                 </span>
               </span>
 
-              <span><span className="chip" style={{ fontSize: 11 }}>{ROLE_LABEL[m.role] ?? m.role}</span></span>
+              <span>
+                {isSelf ? (
+                  <span className="chip" style={{ fontSize: 11 }}>{ROLE_LABEL[m.role] ?? m.role}</span>
+                ) : (
+                  <select
+                    value={m.role}
+                    onChange={(e) => changeRole(m, e.target.value as MemberRole)}
+                    disabled={roleBusyId === m.id}
+                    title="역할 변경 — 관리자 권한 부여/해제도 여기서 처리해요."
+                    style={{
+                      fontSize: 11.5, fontWeight: 600, padding: "4px 8px",
+                      borderRadius: 999, cursor: "pointer",
+                      border: m.role === "ADMIN" ? "1px solid var(--primary)" : "1px solid var(--border)",
+                      color: m.role === "ADMIN" ? "var(--primary)" : "var(--text)",
+                      background: "var(--surface)",
+                      opacity: roleBusyId === m.id ? 0.5 : 1,
+                    }}
+                  >
+                    <option value="GUEST">게스트</option>
+                    <option value="HOST">호스트</option>
+                    <option value="ADMIN">관리자</option>
+                  </select>
+                )}
+              </span>
 
               <span style={{ fontSize: 13, color: "var(--text-2)" }}>
                 {new Date(m.createdAt).toLocaleDateString("ko-KR")}

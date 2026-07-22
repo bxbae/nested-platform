@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { houses } from "@/lib/data";
 import type { House, RoomType, GenderPolicy, SortKey, PaginatedRooms } from "@/lib/types";
+import { districtForRegion } from "@/lib/seoul";
 
 // GET /api/search — cursor-paginated, filtered room search.
 // Mirrors the /search contract in ARCHITECTURE.md §7.2.
@@ -9,6 +10,7 @@ export async function GET(req: NextRequest) {
 
   const q = (p.get("q") ?? "").toLowerCase().trim();
   const region = p.get("region") ?? "";
+  const district = p.get("district") ?? "";
   const roomTypes = (p.get("roomTypes") ?? "")
     .split(",")
     .filter(Boolean) as RoomType[];
@@ -28,6 +30,7 @@ export async function GET(req: NextRequest) {
     if (q && !`${h.name} ${h.neighborhood} ${h.region} ${h.blurb}`.toLowerCase().includes(q))
       return false;
     if (region && h.region !== region) return false;
+    if (district && districtForRegion(h.region) !== district) return false;
     if (roomTypes.length && !roomTypes.includes(h.roomType)) return false;
     if (minRent != null && h.monthlyRent < minRent) return false;
     if (maxRent != null && h.monthlyRent > maxRent) return false;

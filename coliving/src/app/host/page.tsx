@@ -413,21 +413,21 @@ function TrendLineChart({ points }: { points: { month: string; revenue: number; 
         <g style={{ pointerEvents: "none" }}>
           <rect
             x={tipXFor(hover)} y={tipYFor(hover)} width={TIP_W} height={TIP_H} rx={8}
-            fill="var(--text)" opacity={0.94}
+            fill="transparent" opacity={0.94}
           />
           <text
             x={tipXFor(hover) + TIP_W / 2}
-            y={tipYFor(hover) + TIP_H / 2}
+            y={tipYFor(hover) + TIP_H / 2 - 40}
             textAnchor="middle"
           >
-            <tspan x={tipXFor(hover) + TIP_W / 2} dy="20" fontSize={11} fill="#fff" fontWeight={600}>
+            <tspan x={tipXFor(hover) + TIP_W / 2} dy="20" fontSize={10} fill="var(--primary)" fontWeight={700}>
+              {points[hover].month}
+            </tspan>
+            <tspan x={tipXFor(hover) + TIP_W / 2} dy="20" fontSize={11} fill="var(--text)" fontWeight={600}>
               {won(points[hover].revenue)}
             </tspan>
-            <tspan x={tipXFor(hover) + TIP_W / 2} dy="18" fontSize={11} fill="#fff" fontWeight={600}>
+            <tspan x={tipXFor(hover) + TIP_W / 2} dy="18" fontSize={11} fill="var(--text)" fontWeight={600}>
               {points[hover].occupancy || 0}%
-            </tspan>
-            <tspan x={tipXFor(hover) + 15} dy="-25" fontSize={10} fill="var(--primary)" fontWeight={700}>
-              {points[hover].month}
             </tspan>
           </text>
         </g>

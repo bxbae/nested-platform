@@ -14,6 +14,7 @@ import { becomeHost } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { uploadImage } from "@/lib/api/storage";
 import { USE_REAL_API } from "@/lib/api/config";
+import { getAmenityLabel } from "@/lib/amenities";
 
 const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
@@ -436,7 +437,15 @@ export default function NewListing() {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {AMENITIES.map((a) => (
-            <button key={a} type="button" className="chip" data-active={amenities.includes(a)} onClick={() => toggleAmenity(a)}>{a}</button>
+            <button
+              key={a}
+              type="button"
+              className="chip"
+              data-active={amenities.includes(a)}
+              onClick={() => toggleAmenity(a)}
+            >
+              {getAmenityLabel(a)}
+            </button>
           ))}
         </div>
       </Section>
