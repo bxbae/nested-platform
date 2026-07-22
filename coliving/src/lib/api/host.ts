@@ -7,7 +7,41 @@ import { USE_REAL_API } from "./config";
 import { api } from "./client";
 import { API_BASE_URL } from "./config";
 import { authStore } from "./auth-store";
-import { revenueSummary, revenueTrend, inquiries } from "@/lib/host";
+import { listHostReservations } from "./reservations";
+import {
+  revenueSummary,
+  revenueTrend,
+  roomRevenue as demoRoomRevenue,
+  settlementBreakdown as demoSettlementBreakdown,
+  inquiries,
+} from "@/lib/host";
+
+// Mirrors nested-mono/apps/api/src/modules/host/host-analytics.util.ts —
+// same field names on both the real API response and the demo fallback so
+// the dashboard page never has to branch on USE_REAL_API itself.
+export interface RoomRevenueRow {
+  roomId: string;
+  roomName: string;
+  reservationCount: number;
+  occupancyPct: number;
+  revenue: number;
+  netRevenue: number;
+}
+
+export interface SettlementBreakdown {
+  paid: { amount: number; count: number; lastPaidDate: string | null };
+  scheduled: { amount: number; count: number; nextDate: string | null };
+  unsettled: { amount: number; count: number };
+}
+
+export interface RecentInquiry {
+  chatRoomId: string;
+  roomName: string;
+  guestName: string;
+  lastMessage: string;
+  isImage: boolean;
+  createdAt: string;
+}
 
 export interface HostDashboard {
   thisMonth: number;
@@ -15,17 +49,26 @@ export interface HostDashboard {
   changePct: number | null;
   listingCount: number;
   reservationCount: number;
-  occupancy: number;
+  occupancy: number; // 0–100, trailing 30 days
   newInquiries: number;
-  trend: { month: string; value: number }[];
+  newReservationCount: number; // pending, needs host action
+  cancelledCount: number; // cancelled in the last 30 days
+  trend: { month: string; revenue: number; occupancy: number }[]; // last 6 months
+  roomRevenue: RoomRevenueRow[];
+  settlement: SettlementBreakdown;
+  recentInquiries: RecentInquiry[];
 }
 
 export async function getHostDashboard(): Promise<HostDashboard> {
   if (!USE_REAL_API) {
-    // Demo: reuse the existing mock helpers.
+    // Demo: reuse the existing mock helpers, no backend involved.
     const s = revenueSummary();
     const trend = revenueTrend();
-    const newInquiries = inquiries().filter((i) => i.unread).length;
+    const allInquiries = inquiries();
+    const unread = allInquiries.filter((i) => i.unread);
+    // Pending/cancelled counts come from the same demo reservation list the
+    // 예약 관리 page reads, so the dashboard card and that page always agree.
+    const hostReservations = await listHostReservations();
     return {
       thisMonth: s.thisMonth,
       lastMonth: s.lastMonth,
@@ -34,8 +77,22 @@ export async function getHostDashboard(): Promise<HostDashboard> {
       listingCount: s.listingCount,
       reservationCount: s.reservationCount,
       occupancy: s.occupancy,
-      newInquiries,
+      newInquiries: unread.length,
+      newReservationCount: hostReservations.filter((r) => r.status === "PENDING_PAYMENT").length,
+      cancelledCount: hostReservations.filter(
+        (r) => r.status === "CANCELLED_BY_GUEST" || r.status === "CANCELLED_BY_HOST",
+      ).length,
       trend,
+      roomRevenue: demoRoomRevenue(),
+      settlement: demoSettlementBreakdown(),
+      recentInquiries: unread.slice(0, 5).map((i) => ({
+        chatRoomId: i.id,
+        roomName: i.houseName,
+        guestName: i.guest,
+        lastMessage: i.message,
+        isImage: false,
+        createdAt: i.date,
+      })),
     };
   }
   return api.get<HostDashboard>("/host/dashboard");

@@ -32,10 +32,47 @@ export function revenueSummary() {
 // 6-month revenue trend for the dashboard chart
 export function revenueTrend() {
   const base = revenueSummary().thisMonth;
+  const occ = revenueSummary().occupancy;
   const months = ["1월", "2월", "3월", "4월", "5월", "6월"];
   const factors = [0.72, 0.78, 0.85, 0.88, 0.94, 1];
-  return months.map((m, i) => ({ month: m, value: Math.round(base * factors[i]) }));
+  return months.map((m, i) => ({ 
+    month: m, 
+    // value: Math.round(base * factors[i])
+    revenue: Math.round(base * factors[i]),
+    occupancy: Math.round(occ * factors[i]),
+  }));
 }
+// ── Per-room revenue table (demo) ──
+export function roomRevenue() {
+  return myListings().map((h) => ({
+    roomId: h.id,
+    roomName: h.name.trim(),
+    reservationCount: Math.max(1, Math.round(h.residents * 1.5)),
+    occupancyPct: h.capacity ? Math.round((h.residents / h.capacity) * 100) : 100,
+    revenue: h.monthlyRent * h.residents,
+    netRevenue: Math.round(h.monthlyRent * h.residents * 0.95),
+  }));
+}
+
+// ── Settlement breakdown (demo) — a fixed, deterministic split of net
+// revenue across the three states so the dashboard has something to show
+// without a backend. Real numbers come from GET /host/dashboard.
+export function settlementBreakdown() {
+  const totalNet = roomRevenue().reduce((s, r) => s + r.netRevenue, 0);
+  const now = new Date();
+  const nextMonth5th = new Date(now.getFullYear(), now.getMonth() + 1, 5)
+    .toISOString()
+    .slice(0, 10);
+  const thisMonth5th = new Date(now.getFullYear(), now.getMonth(), 5)
+    .toISOString()
+    .slice(0, 10);
+  return {
+    paid: { amount: Math.round(totalNet * 0.6), count: 3, lastPaidDate: thisMonth5th },
+    scheduled: { amount: Math.round(totalNet * 0.3), count: 2, nextDate: nextMonth5th },
+    unsettled: { amount: Math.round(totalNet * 0.1), count: 1 },
+  };
+}
+
 
 // ── Inquiries (문의 관리) ──
 export interface Inquiry {

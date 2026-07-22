@@ -44,6 +44,13 @@ export default function HostReservations() {
 
   useEffect(() => {
     load();
+    // Deep link from the dashboard's "새 예약/취소" card, e.g.
+    // /host/reservations?filter=PENDING_PAYMENT. Read straight off the URL
+    // (rather than useSearchParams) so this page doesn't need a Suspense
+    // boundary just for an initial-filter deep link.
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search).get("filter");
+    if (q === "PENDING_PAYMENT" || q === "CONFIRMED" || q === "done") setFilter(q);
   }, []);
 
   async function act(
