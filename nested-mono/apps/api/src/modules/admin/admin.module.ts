@@ -236,7 +236,7 @@ export class AdminService {
               type: "ROOM_APPROVED",
               title: "숙소 등록이 승인되었어요",
               body: `"${room.name}" 숙소가 승인되어 서비스에 공개되었습니다.`,
-              targetUrl: "/host/rooms",
+              targetUrl: "/host/listings",
             },
           })
         : null;
@@ -284,7 +284,24 @@ export class AdminService {
         message: "예약이 있는 숙소는 삭제할 수 없습니다.",
       });
     }
-    await this.prisma.room.delete({ where: { id } });
+    const notification = await this.prisma.$transaction(async (tx) => {
+      await tx.room.delete({
+        where: { id },
+      });
+
+      return tx.notification.create({
+        data: {
+          userId: room.hostId,
+          type: "ROOM_REJECTED",
+          title: "숙소 등록이 반려되었어요",
+          body: `"${room.name}" 숙소 등록이 반려되었습니다. 내용을 확인한 뒤 다시 등록해주세요.`,
+          targetUrl: "/host/listings",
+        },
+      });
+    });
+
+    this.notificationsGateway.emitToUser(room.hostId, notification);
+
     return { ok: true };
   }
 

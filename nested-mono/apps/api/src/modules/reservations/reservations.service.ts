@@ -460,10 +460,37 @@ export class ReservationsService {
         message: "조기 퇴실이 요청된 예약만 처리할 수 있습니다.",
       });
     }
-    return this.repo.updateStatus(
+    const room = await this.repo.findRoom(r.roomId);
+
+    const updated = await this.repo.updateStatus(
       id,
       decision === "approve" ? "EARLY_CHECKOUT_APPROVED" : "CONFIRMED",
     );
+
+    if (this.prisma) {
+      const approved = decision === "approve";
+      const roomName = room?.name ?? "예약한 숙소";
+
+      const notification = await this.prisma.notification.create({
+        data: {
+          userId: r.guestId,
+          type: approved
+            ? "EARLY_CHECKOUT_APPROVED"
+            : "EARLY_CHECKOUT_REJECTED",
+          title: approved
+            ? "조기 퇴실 요청이 승인되었어요"
+            : "조기 퇴실 요청이 거절되었어요",
+          body: approved
+            ? `"${roomName}"의 조기 퇴실 요청이 승인되었습니다.`
+            : `"${roomName}"의 조기 퇴실 요청이 거절되어 기존 예약이 유지됩니다.`,
+          targetUrl: "/me/trips",
+        },
+      });
+
+      this.notificationsGateway?.emitToUser(r.guestId, notification);
+    }
+
+    return updated;
   }
 
   // ── 계약 연장 ──────────────────────────────────────────────
@@ -526,16 +553,43 @@ export class ReservationsService {
         message: "연장이 요청된 예약만 처리할 수 있습니다.",
       });
     }
-    if (decision === "reject") return this.repo.clearExtension(id);
-
     const months = r.extensionMonths ?? 0;
-    if (months < 1) {
+
+    if (decision === "approve" && months < 1) {
       throw new BadRequestException({
         code: "INVALID_MONTHS",
         message: "요청된 연장 개월 수가 올바르지 않습니다.",
       });
     }
-    return this.repo.applyExtension(id, months);
+
+    const updated =
+      decision === "approve"
+        ? await this.repo.applyExtension(id, months)
+        : await this.repo.clearExtension(id);
+
+    if (this.prisma) {
+      const approved = decision === "approve";
+      const room = await this.repo.findRoom(r.roomId);
+      const roomName = room?.name ?? "예약한 숙소";
+
+      const notification = await this.prisma.notification.create({
+        data: {
+          userId: r.guestId,
+          type: "SYSTEM",
+          title: approved
+            ? "계약 연장이 승인되었어요"
+            : "계약 연장이 거절되었어요",
+          body: approved
+            ? `"${roomName}" 계약이 ${months}개월 연장되었습니다. 변경된 퇴실 일정을 확인해주세요.`
+            : `"${roomName}" 계약 연장 요청이 거절되어 기존 계약 일정이 유지됩니다.`,
+          targetUrl: "/me/trips",
+        },
+      });
+
+      this.notificationsGateway?.emitToUser(r.guestId, notification);
+    }
+
+    return updated;
   }
 
   // All reservations for the logged-in guest (my trips).
@@ -562,26 +616,83 @@ export class ReservationsService {
       "COMPLETED",
       "NO_SHOW",
     ];
+
     if (!allowed.includes(status)) {
       throw new BadRequestException({
         code: "INVALID_STATUS",
         message: "호스트가 설정할 수 없는 상태입니다.",
       });
     }
-    const ownerId = await this.repo.findRoomHostId(id);
-    if (ownerId === null) {
+
+    const reservation = await this.repo.findById(id);
+
+    if (!reservation) {
       throw new NotFoundException({
         code: "RESERVATION_NOT_FOUND",
         message: "예약을 찾을 수 없습니다.",
       });
     }
+
+    const ownerId = await this.repo.findRoomHostId(id);
+
     if (ownerId !== hostId) {
       throw new ForbiddenException({
         code: "NOT_HOST",
         message: "본인 숙소의 예약만 처리할 수 있습니다.",
       });
     }
-    return this.repo.updateStatus(id, status);
+
+    if (status === "NO_SHOW" && reservation.status !== "CONFIRMED") {
+      throw new BadRequestException({
+        code: "INVALID_NO_SHOW_STATUS",
+        message: "확정된 예약만 노쇼 처리할 수 있습니다.",
+      });
+    }
+
+    if (status === "COMPLETED" && reservation.status !== "CONFIRMED") {
+      throw new BadRequestException({
+        code: "INVALID_COMPLETED_STATUS",
+        message: "확정된 예약만 이용 완료 처리할 수 있습니다.",
+      });
+    }
+
+    const updated = await this.repo.updateStatus(id, status);
+
+    if (status === "NO_SHOW" && this.prisma) {
+      const room = await this.repo.findRoom(reservation.roomId);
+      const roomName = room?.name ?? "예약한 숙소";
+
+      const notification = await this.prisma.notification.create({
+        data: {
+          userId: reservation.guestId,
+          type: "SYSTEM",
+          title: "예약이 노쇼로 처리되었어요",
+          body: `"${roomName}" 예약이 호스트에 의해 노쇼로 처리되었습니다. 사실과 다르다면 호스트 또는 운영팀에 문의해주세요.`,
+          targetUrl: "/me/trips",
+        },
+      });
+
+      this.notificationsGateway?.emitToUser(reservation.guestId, notification);
+    }
+
+    if (status === "COMPLETED" && this.prisma) {
+      const room = await this.repo.findRoom(reservation.roomId);
+      const roomName = room?.name ?? "이용한 숙소";
+
+      const notification = await this.prisma.notification.create({
+        data: {
+          userId: reservation.guestId,
+          type: "REVIEW",
+          title: "숙소 이용은 어떠셨나요?",
+          body: `"${roomName}" 이용이 완료되었습니다. 다른 이용자들을 위해 숙소 후기를 남겨주세요.`,
+          targetUrl: `/me/reviews?reservationId=${id}`,
+        },
+      });
+
+      this.notificationsGateway?.emitToUser(reservation.guestId, notification);
+    }
+
+    return updated;
   }
 
   private async resolveDiscount(
