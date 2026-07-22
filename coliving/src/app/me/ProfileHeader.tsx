@@ -127,7 +127,7 @@ export function ProfileHeader() {
           />
         </div>
         <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
-          {joinYear}년 가입 · {email}
+          {joinYear}년 가입{user?.gender && user.gender !== "OTHER" ? ` · ${user.gender === "MALE" ? "남성" : "여성"}` : ""} · {email}
         </div>
         <p
           style={{

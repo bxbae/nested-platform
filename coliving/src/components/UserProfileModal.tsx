@@ -19,6 +19,7 @@ interface PublicProfile {
   avatarColor: string;
   avatarUrl: string | null;
   bio: string | null;
+  gender: "MALE" | "FEMALE" | "OTHER";
   joinedYear: number;
   verified: boolean;
   tier: ActivityTier;
@@ -158,6 +159,8 @@ export function UserProfileModal({
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
                   {profile.joinedYear}년 가입
+                  {profile.gender !== "OTHER" &&
+                    ` · ${profile.gender === "MALE" ? "남성" : "여성"}`}
                 </div>
               </div>
             </div>
