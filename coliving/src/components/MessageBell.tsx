@@ -150,15 +150,18 @@ export function MessageBell() {
           cursor: "pointer",
         }}
       >
-        <span
+        <img
+          src="/icons/message-icon.png"
+          alt=""
           aria-hidden="true"
           style={{
-            fontSize: 17,
-            lineHeight: 1,
+            width: 22,
+            height: 22,
+            objectFit: "contain",
+            display: "block",
+            flexShrink: 0,
           }}
-        >
-          
-        </span>
+        />
 
         {unread > 0 && (
           <span
