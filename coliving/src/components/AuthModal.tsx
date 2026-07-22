@@ -39,6 +39,7 @@ export function AuthModal({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [gender, setGender] = useState<"MALE" | "FEMALE" | "OTHER" | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // Set when registration returns "verification required" instead of a session:
@@ -64,12 +65,16 @@ export function AuthModal({
       setError("비밀번호는 8자 이상이어야 합니다.");
       return;
     }
+    if (mode === "register" && !gender) {
+      setError("성별을 선택해주세요.");
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "login") {
         await login(email, password);
       } else {
-        const res = await register(email, password, name);
+        const res = await register(email, password, name, gender as "MALE" | "FEMALE" | "OTHER");
         // Real API with a mail provider: no session yet — prompt for email
         // verification and keep the modal open.
         if ("verificationRequired" in res) {
@@ -170,6 +175,26 @@ export function AuthModal({
               닉네임은 룸메이트 매칭, 프로필, 친구 목록 및 메시지에 공개됩니다.
               개인정보 보호를 위해 실명, 이메일, 전화번호 대신 별명을 사용해주세요.
             </p>
+          )}
+          {mode === "register" && (
+            <div style={{ display: "flex", gap: 8 }}>
+              {([["MALE", "남성"], ["FEMALE", "여성"], ["OTHER", "기타"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setGender(val)}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: "var(--r-sm)",
+                    border: gender === val ? "1.5px solid var(--primary)" : "1px solid var(--border)",
+                    background: gender === val ? "rgba(255,90,95,0.08)" : "var(--surface)",
+                    color: gender === val ? "var(--primary)" : "var(--text)",
+                    fontWeight: gender === val ? 600 : 400, cursor: "pointer", fontSize: 14,
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           )}
           <input
             type="email"

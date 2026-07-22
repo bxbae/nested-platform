@@ -35,6 +35,7 @@ export async function register(
   email: string,
   password: string,
   name: string,
+  gender: "MALE" | "FEMALE" | "OTHER",
 ): Promise<RegisterResult> {
   if (!USE_REAL_API) {
     const t = demoTokens(email, name);
@@ -43,7 +44,7 @@ export async function register(
   }
   const res = await api.post<
     AuthTokens | { verificationRequired: true; email: string; message: string }
-  >("/auth/register", { email, password, name }, { auth: false });
+  >("/auth/register", { email, password, name, gender }, { auth: false });
 
   if ("verificationRequired" in res) {
     // No session yet — the caller shows a "check your email" state.
@@ -104,6 +105,7 @@ interface ApiMe {
   bio?: string | null;
   avatarColor?: string;
   avatarUrl?: string | null;
+  gender?: "MALE" | "FEMALE" | "OTHER";
   hasPassword?: boolean;
   createdAt?: string | null;
 }
@@ -118,6 +120,7 @@ function toAuthUser(me: ApiMe): AuthUser {
     bio: me.bio ?? null,
     avatarColor: me.avatarColor,
     avatarUrl: me.avatarUrl ?? null,
+    gender: me.gender ?? "OTHER",
     hasPassword: me.hasPassword,
     createdAt: me.createdAt ?? null,
   };
@@ -130,6 +133,7 @@ export async function updateProfile(data: {
   bio?: string;
   avatarColor?: string;
   avatarUrl?: string | null;
+  gender?: "MALE" | "FEMALE" | "OTHER";
 }): Promise<AuthUser> {
   const me = await api.patch<ApiMe>("/auth/me", data);
   const user = toAuthUser(me);

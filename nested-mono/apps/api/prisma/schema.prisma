@@ -23,6 +23,12 @@ enum RoomType {
   APARTMENT
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
 enum GenderPolicy {
   ANY
   MALE_ONLY
@@ -84,6 +90,7 @@ model User {
   // blocked and the personal fields above have been anonymised.
   deletedAt         DateTime?
   createdAt         DateTime  @default(now())
+  gender            Gender    @default(OTHER)
 
   listings              Room[]                   @relation("HostRooms")
   reservations          Reservation[]

@@ -17,6 +17,7 @@ export interface AuthUser {
   bio?: string | null;
   avatarColor?: string;
   avatarUrl?: string | null;
+  gender?: "MALE" | "FEMALE" | "OTHER";
   // false for social-login accounts, which have no password to change.
   hasPassword?: boolean;
   createdAt?: string | null;
