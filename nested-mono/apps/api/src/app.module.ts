@@ -30,6 +30,7 @@ import { MatchModule } from "./modules/match/match.module";
 import { UsersModule } from "./modules/users/users.module";
 import { FriendsModule } from "./modules/friends/friends.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { TransitModule } from './modules/transit/transit.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { ReportsModule } from "./modules/reports/reports.module";
     UsersModule,
     FriendsModule,
     ReportsModule,
+    TransitModule,
   ],
 })
 export class AppModule {}
