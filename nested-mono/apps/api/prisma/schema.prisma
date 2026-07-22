@@ -76,7 +76,7 @@ model User {
   // Profile photo (S3 URL). null → fall back to the avatarColor circle.
   avatarUrl         String?
   bio               String? // self-introduction (스토리보드 1-1 자기소개)
-  age               Int? // optional, shown as "25세" on the profile card
+  birthDate         DateTime? // 생년월일. 연령대 표시(20/30/40대)와 생일 쿠폰 판단에 사용
   job               String? // optional occupation label (e.g. "학생")
   suspended         Boolean   @default(false)
   // Timestamp of email ownership confirmation. null = unverified.
