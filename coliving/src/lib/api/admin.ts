@@ -312,6 +312,7 @@ export interface AdminBanner {
   color: string;
   position: string;
   linkUrl: string | null;
+  imageUrl: string | null;
   active: boolean;
   order: number;
   createdAt: string;
@@ -334,6 +335,7 @@ export async function createBanner(input: {
   color: string;
   position: string;
   linkUrl?: string | null;
+  imageUrl?: string | null;
   active?: boolean;
   order?: number;
 }): Promise<AdminBanner> {
@@ -348,6 +350,7 @@ export async function updateBanner(
     color: string;
     position: string;
     linkUrl: string | null;
+    imageUrl: string | null;
     active: boolean;
     order: number;
   }>,

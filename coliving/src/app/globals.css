@@ -635,3 +635,41 @@ input[type="range"] { accent-color: var(--primary); }
   .hero-search-bar > * { border-left: 0 !important; border-top: 1px solid var(--border); }
   .hero-search-bar > *:first-child { border-top: 0 !important; }
 }
+
+/* 헤더 한 줄 정렬 */
+.nav-links {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+header .wrap {
+  min-width: 0;
+}
+
+header nav {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+header a,
+header button {
+  white-space: nowrap;
+}
+
+header button {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1180px) {
+  .nav-links .navlink {
+    padding-left: 9px !important;
+    padding-right: 9px !important;
+    font-size: 13.5px !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .nav-links {
+    display: none !important;
+  }
+}
