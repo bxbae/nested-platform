@@ -32,29 +32,19 @@ export default async function Home() {
   return (
     <>
       <NoticeBar />
-      <HomeBanner />
 
       {/* 메인 히어로 */}
       <section
         style={{
           position: "relative",
           minHeight: 620,
-          overflow: "hidden",
+          overflow: "visible",
           background: "#f7f2ec",
+          zIndex: 10,
         }}
       >
-        {/* 새 이미지 자체에 왼쪽 여백이 포함되어 있으므로 블러와 확대를 사용하지 않습니다. */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            backgroundImage: "url(/hero-friends.png)",
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "center center",
-            backgroundSize: "cover",
-          }}
-        />
+        {/* 관리자가 등록한 메인 배너 이미지를 자동 슬라이드로 표시합니다. */}
+        <HomeBanner />
 
         {/* 텍스트 가독성을 위한 아주 약한 밝기 보정만 적용합니다. */}
         <div

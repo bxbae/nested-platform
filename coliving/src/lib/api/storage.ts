@@ -29,7 +29,7 @@ const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
 export async function uploadImage(
   file: File,
-  folder: "rooms" | "avatars" | "chat" = "rooms",
+  folder: "rooms" | "avatars" | "chat" | "banners" = "rooms",
 ): Promise<string> {
   if (!ALLOWED.includes(file.type)) {
     throw new Error("JPG, PNG, WebP, AVIF 형식만 올릴 수 있어요.");

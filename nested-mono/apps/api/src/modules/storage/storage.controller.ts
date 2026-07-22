@@ -13,7 +13,7 @@ const presignSchema = z.object({
 });
 
 const cloudinarySchema = z.object({
-  folder: z.enum(["rooms", "avatars", "chat"]).default("rooms"),
+  folder: z.enum(["rooms", "avatars", "chat", "banners"]).default("rooms"),
 });
 
 @Controller("storage")

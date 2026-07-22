@@ -38,6 +38,7 @@ const bannerCreateSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요."),
   position: z.string().min(1).max(50),
   linkUrl: z.string().url().max(500).nullable().optional(),
+  imageUrl: z.string().url().max(1000).nullable().optional(),
   active: z.boolean().optional(),
   order: z.number().int().optional(),
 });
@@ -49,6 +50,7 @@ const bannerUpdateSchema = z.object({
     .optional(),
   position: z.string().min(1).max(50).optional(),
   linkUrl: z.string().url().max(500).nullable().optional(),
+  imageUrl: z.string().url().max(1000).nullable().optional(),
   active: z.boolean().optional(),
   order: z.number().int().optional(),
 });
@@ -706,6 +708,7 @@ export class AdminService {
     color: string;
     position: string;
     linkUrl?: string | null;
+    imageUrl?: string | null;
     active?: boolean;
     order?: number;
   }) {
@@ -715,6 +718,7 @@ export class AdminService {
         color: data.color,
         position: data.position,
         linkUrl: data.linkUrl ?? null,
+        imageUrl: data.imageUrl ?? null,
         active: data.active ?? true,
         order: data.order ?? 0,
       },
@@ -728,6 +732,7 @@ export class AdminService {
       color?: string;
       position?: string;
       linkUrl?: string | null;
+      imageUrl?: string | null;
       active?: boolean;
       order?: number;
     },
@@ -740,6 +745,7 @@ export class AdminService {
         ...(data.color !== undefined ? { color: data.color } : {}),
         ...(data.position !== undefined ? { position: data.position } : {}),
         ...(data.linkUrl !== undefined ? { linkUrl: data.linkUrl } : {}),
+        ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
         ...(data.active !== undefined ? { active: data.active } : {}),
         ...(data.order !== undefined ? { order: data.order } : {}),
       },
