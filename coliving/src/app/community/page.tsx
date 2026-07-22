@@ -182,7 +182,7 @@ export default function Community() {
                   {p.category}
                 </span>
                 {p.pinned && (
-                  <span style={{ fontSize: 12, color: "var(--text-2)" }}>📌 pinned</span>
+                  <span style={{ fontSize: 12, color: "var(--text-2)" }}> 고정</span>
                 )}
               </div>
               <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>
@@ -212,7 +212,7 @@ export default function Community() {
                 />
                 <span>{p.author}</span>
               </div>
-              <span>💬 {p.replies}</span>
+              <span> 댓글 {p.replies}</span>
             </div>
           </Link>
         ))}
@@ -224,8 +224,8 @@ export default function Community() {
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const h = Math.floor(diff / 3600000);
-  if (h < 1) return "just now";
-  if (h < 24) return `${h}h ago`;
+  if (h < 1) return "방금 전";
+  if (h < 24) return `${h}시간 전`;
   const d = Math.floor(h / 24);
-  return `${d}d ago`;
+  return `${d}일 전`;
 }

@@ -739,7 +739,7 @@ export default function MessagesPage() {
                 )}
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <button type="button" className="press" aria-label="이미지 전송" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ width: 38, height: 38, borderRadius: 999, background: "var(--bg-2)" }}>
-                    🖼️
+                    🖼
                   </button>
                   <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => onPickImage(event.target.files)} />
                   <input

@@ -91,7 +91,7 @@ export function SearchView() {
               borderRadius: "var(--r-pill)",
             }}
           >
-            <span aria-hidden="true">🔍</span>
+            <span aria-hidden="true"></span>
             <input
               defaultValue={filters.q ?? ""}
               placeholder="지역, 숙소명으로 검색"
@@ -111,7 +111,7 @@ export function SearchView() {
             className="btn btn-ghost press"
             style={{ position: "relative" }}
           >
-            <span aria-hidden="true">⚙</span> 필터
+            <span aria-hidden="true"></span> 필터
             {activeCount > 0 && (
               <span
                 style={{

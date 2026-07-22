@@ -141,7 +141,7 @@ export default function AdminCoupons() {
             return (
               <div key={c.id} className="card" style={{ padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", opacity: c.active ? 1 : 0.55 }}>
                 <div style={{ display: "flex", gap: 16, alignItems: "center", minWidth: 0 }}>
-                  <span aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, background: "var(--bg-2)", display: "grid", placeItems: "center", fontSize: 22 }}>🎟️</span>
+                  <span aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, background: "var(--bg-2)", display: "grid", placeItems: "center", fontSize: 22 }}>🎟</span>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <strong className="mono" style={{ fontSize: 15 }}>{c.code}</strong>
