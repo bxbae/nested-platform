@@ -209,7 +209,14 @@ export class CommunityService {
       where: { id },
       data: dto,
       include: {
-        author: { select: { id: true, name: true } },
+        author: {
+          select: {
+            id: true,
+            name: true,
+            avatarColor: true,
+            avatarUrl: true,
+          },
+        },
         _count: { select: { comments: true } },
       },
     });

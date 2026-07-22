@@ -15,6 +15,7 @@ import { LocationMap } from "@/components/LocationMap";
 import { USE_REAL_API } from "@/lib/api/config";
 import { getRoom, getSimilarRooms } from "@/lib/api/rooms"; // 유사 숙소 추천(비슷한 숙소) API 함수 추가
 import { DistanceFromMe } from "@/components/DistanceFromMe"; // 내 위치 거리 표시
+import { UserAvatar } from "@/components/UserAvatar";
 
 // Render this page on demand so it always reads live data and the current
 // USE_REAL_API value at request time — never a stale build-time snapshot.
@@ -186,17 +187,12 @@ export default async function HomeDetail({
           {/* ── 호스트 소개 ── */}
           <Section title="호스트 소개">
             <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-              <div
-                style={{
-                  width: 56, height: 56, borderRadius: 99, flexShrink: 0,
-                  background: house.host.avatarColor,
-                  display: "grid", placeItems: "center",
-                  color: "#fff", fontWeight: 700, fontSize: 20,
-                }}
-                aria-hidden="true"
-              >
-                {house.host.name[0]}
-              </div>
+              <UserAvatar
+                name={house.host.name}
+                avatarUrl={house.host.avatarUrl}
+                avatarColor={house.host.avatarColor}
+                size={56}
+              />
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <strong style={{ fontSize: 16 }}>{house.host.name} 호스트</strong>
@@ -310,16 +306,13 @@ export default async function HomeDetail({
               {house.houseReviews.map((r, i) => (
                 <div key={i} className="card" style={{ padding: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div
-                      style={{
-                        width: 38, height: 38, borderRadius: 99, flexShrink: 0,
-                        background: r.avatarColor, display: "grid", placeItems: "center",
-                        color: "#fff", fontWeight: 700, fontSize: 15,
-                      }}
-                      aria-hidden="true"
-                    >
-                      {r.author[0]}
-                    </div>
+                    <UserAvatar
+                      name={r.author}
+                      avatarUrl={r.avatarUrl}
+                      avatarColor={r.avatarColor}
+                      size={38}
+                      fontSize={15}
+                    />
                     <div>
                       <strong style={{ fontSize: 14.5 }}>{r.author}</strong>
                       <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>

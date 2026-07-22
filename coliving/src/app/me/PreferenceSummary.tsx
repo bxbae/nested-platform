@@ -66,7 +66,7 @@ export function PreferenceSummary() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
         {SURVEY.map(({ axis, options }) => {
-          const value = (pref as any)[axis] as string;
+          const value = String(pref[axis as keyof typeof pref] ?? "");
           const label = options.find((o) => o.value === value)?.label ?? value;
           return (
             <div key={axis} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>

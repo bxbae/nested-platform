@@ -9,7 +9,22 @@ interface ApiPost { id: string; roomId: string; category: ApiCategory; status: P
 export interface PostDetail extends Post { authorId: string; status: PostStatus; comments: ApiComment[]; lifestyleSnapshot: Record<string, unknown> | null; sharedLifestyleFields: string[]; }
 const toUi=(c:ApiCategory)=>c.toLowerCase() as Post["category"];
 const toApi=(c:string)=>c.toUpperCase() as ApiCategory;
-function adapt(p:ApiPost):Post { return { id:p.id, houseId:p.roomId, author:p.author?.name??"알 수 없음", authorId:p.author?.id, category:toUi(p.category), title:p.title, body:p.body, createdAt:p.createdAt, replies:p._count?.comments??0, pinned:p.pinned }; }
+function adapt(p: ApiPost): Post {
+  return {
+    id: p.id,
+    houseId: p.roomId,
+    author: p.author?.name ?? "알 수 없음",
+    authorId: p.author?.id,
+    authorAvatarColor: p.author?.avatarColor ?? null,
+    authorAvatarUrl: p.author?.avatarUrl ?? null,
+    category: toUi(p.category),
+    title: p.title,
+    body: p.body,
+    createdAt: p.createdAt,
+    replies: p._count?.comments ?? 0,
+    pinned: p.pinned,
+  };
+}
 export async function listPosts(category="all",q="",status="all"):Promise<Post[]> { const keyword=q.trim(); if(!USE_REAL_API){ const r=await fetch(`/api/posts?category=${category}`); if(!r.ok)return[]; let rows:(Post[])=(await r.json()).posts??[]; if(keyword){const k=keyword.toLowerCase();rows=rows.filter(x=>x.title.toLowerCase().includes(k)||x.body.toLowerCase().includes(k));}return rows;} try { const p=new URLSearchParams({category,status}); if(keyword)p.set("q",keyword); return (await api.get<ApiPost[]>(`/posts?${p}`,{auth:false})).map(adapt); } catch{return[];} }
 export async function getPost(id:string):Promise<PostDetail|null>{ if(!USE_REAL_API)return null; try{const p=await api.get<ApiPost>(`/posts/${id}`,{auth:false}); return {...adapt(p),authorId:p.author.id,status:p.status,comments:p.comments??[],lifestyleSnapshot:p.lifestyleSnapshot??null,sharedLifestyleFields:p.sharedLifestyleFields??[]};}catch{return null;} }
 export async function createPost(input:{roomId:string;category:string;title:string;body:string;status?:PostStatus;sharedLifestyleFields?:string[]}):Promise<Post|null>{ if(!USE_REAL_API)return null; const p=await api.post<ApiPost>("/posts",{...input,category:toApi(input.category)});return adapt(p); }

@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { won } from "@/lib/format";
@@ -497,7 +497,7 @@ function Field({ label, error, children }: { label: string; error?: string; chil
   );
 }
 
-function PriceField({ label, error, reg, step }: { label: string; error?: string; reg: any; step: number }) {
+function PriceField({ label, error, reg, step }: { label: string; error?: string; reg: UseFormRegisterReturn; step: number }) {
   return (
     <Field label={label} error={error}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

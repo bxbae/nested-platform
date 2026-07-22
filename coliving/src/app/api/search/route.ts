@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(24, Math.max(4, Number(p.get("limit") ?? 12)));
 
   // ── filter ──
-  let result: House[] = houses.filter((h) => {
+  const result: House[] = houses.filter((h) => {
     if (q && !`${h.name} ${h.neighborhood} ${h.region} ${h.blurb}`.toLowerCase().includes(q))
       return false;
     if (region && h.region !== region) return false;
