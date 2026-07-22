@@ -21,7 +21,8 @@ export function useAuth() {
 
   const login = useCallback((email: string, password: string) => loginApi(email, password), []);
   const register = useCallback(
-    (email: string, password: string, name: string) => registerApi(email, password, name),
+    (email: string, password: string, name: string, gender: "MALE" | "FEMALE" | "OTHER") =>
+      registerApi(email, password, name, gender),
     []
   );
   const logout = useCallback(() => logoutApi(), []);

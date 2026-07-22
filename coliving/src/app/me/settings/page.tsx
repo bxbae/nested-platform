@@ -16,6 +16,7 @@ export default function Settings() {
 
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
+  const [gender, setGender] = useState<"MALE" | "FEMALE" | "OTHER">("OTHER");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +24,7 @@ export default function Settings() {
   useEffect(() => {
     if (user?.name) setName(user.name);
     setBio(user?.bio ?? "");
+    if (user?.gender) setGender(user.gender);
   }, [user]);
 
   async function save() {
@@ -35,7 +37,7 @@ export default function Settings() {
     setSaving(true);
     setError(null);
     try {
-      await updateProfile({ name: nickname, bio: bio.trim() });
+      await updateProfile({ name: nickname, bio: bio.trim(), gender });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
@@ -102,6 +104,27 @@ export default function Settings() {
             <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>
               {bio.length}/500
             </p>
+          </Field>
+
+          <Field label="성별">
+            <div style={{ display: "flex", gap: 8 }}>
+              {([["MALE", "남성"], ["FEMALE", "여성"], ["OTHER", "기타"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setGender(val)}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: "var(--r-sm)",
+                    border: gender === val ? "1.5px solid var(--primary)" : "1px solid var(--border)",
+                    background: gender === val ? "rgba(255,90,95,0.08)" : "var(--surface)",
+                    color: gender === val ? "var(--primary)" : "var(--text)",
+                    fontWeight: gender === val ? 600 : 400, cursor: "pointer", fontSize: 14,
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </Field>
         </div>
       </section>

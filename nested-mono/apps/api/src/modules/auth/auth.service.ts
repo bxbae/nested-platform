@@ -31,7 +31,7 @@ export class AuthService {
       where: { id: userId },
       select: {
         id: true, email: true, name: true, nicknameCompleted: true, role: true, createdAt: true,
-        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true,
+        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true, gender: true,
         // Lets the client hide "change password" for OAuth-only accounts,
         // which have no password to change.
         passwordHash: true,
@@ -58,6 +58,7 @@ export class AuthService {
       avatarUrl: user.avatarUrl,
       age: user.age,
       job: user.job,
+      gender: user.gender,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
       // 인증·활동 뱃지
@@ -80,6 +81,7 @@ export class AuthService {
       avatarUrl?: string | null;
       age?: number | null;
       job?: string | null;
+      gender?: "MALE" | "FEMALE" | "OTHER";
     },
   ) {
     const user = await this.prisma.user.update({
@@ -91,10 +93,11 @@ export class AuthService {
         ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
         ...(data.age !== undefined ? { age: data.age } : {}),
         ...(data.job !== undefined ? { job: data.job } : {}),
+        ...(data.gender !== undefined ? { gender: data.gender } : {}),
       },
       select: {
         id: true, email: true, name: true, nicknameCompleted: true, role: true, createdAt: true,
-        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true,
+        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true, gender: true,
         passwordHash: true,
       },
     });
@@ -109,6 +112,7 @@ export class AuthService {
       avatarUrl: user.avatarUrl,
       age: user.age,
       job: user.job,
+      gender: user.gender,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
     };
@@ -148,7 +152,7 @@ export class AuthService {
   }
 
   // ── Email/password registration ──
-  async register(email: string, password: string, name: string) {
+  async register(email: string, password: string, name: string, gender: "MALE" | "FEMALE" | "OTHER") {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new ConflictException("이미 가입된 이메일입니다.");
     const passwordHash = await bcrypt.hash(password, 10);
@@ -164,6 +168,7 @@ export class AuthService {
         email,
         passwordHash,
         name,
+        gender,
         nicknameCompleted: true,
         emailVerified: autoVerify ? new Date() : null,
       },

@@ -24,6 +24,7 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   name: z.string().trim().min(2, "닉네임은 2자 이상 입력해주세요.").max(20, "닉네임은 20자 이하로 입력해주세요."),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"], { required_error: "성별을 선택해주세요." }),
 });
 const loginSchema = z.object({
   email: z.string().email(),
@@ -41,6 +42,7 @@ const updateMeSchema = z.object({
   avatarUrl: z.string().url("이미지 주소가 올바르지 않아요.").max(500).nullable().optional(),
   age: z.number().int().min(0).max(120).nullable().optional(),
   job: z.string().max(40).nullable().optional(),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
 });
 
 const forgotPasswordSchema = z.object({
@@ -65,7 +67,7 @@ export class AuthController {
 
   @Post("register")
   register(@Body(new ZodValidationPipe(registerSchema)) dto: z.infer<typeof registerSchema>) {
-    return this.auth.register(dto.email, dto.password, dto.name);
+    return this.auth.register(dto.email, dto.password, dto.name, dto.gender);
   }
 
   @Post("login")
