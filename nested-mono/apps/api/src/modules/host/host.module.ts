@@ -106,16 +106,19 @@ export class HostService {
 
     const withUnread = chatRooms.filter((c) => c.messages.length > 0);
     const recentInquiries: RecentInquiry[] = withUnread
-      .sort((a, b) => +b.messages[0].createdAt - +a.messages[0].createdAt)
+      .sort((a, b) => +b.messages[0]!.createdAt - +a.messages[0]!.createdAt)
       .slice(0, 5)
-      .map((c) => ({
-        chatRoomId: c.id,
-        roomName: c.room.name.trim(),
-        guestName: c.guest?.name ?? "게스트",
-        lastMessage: c.messages[0].imageUrl ? "📷 사진" : (c.messages[0].body ?? ""),
-        isImage: !!c.messages[0].imageUrl,
-        createdAt: c.messages[0].createdAt.toISOString(),
-      }));
+      .map((c) => {
+        const last = c.messages[0]!;
+        return {
+          chatRoomId: c.id,
+          roomName: c.room.name.trim(),
+          guestName: c.guest?.name ?? "게스트",
+          lastMessage: last.imageUrl ? "📷 사진" : (last.body ?? ""),
+          isImage: !!last.imageUrl,
+          createdAt: last.createdAt.toISOString(),
+        };
+      });
 
     const cancelledCount = reservations.filter(
       (r) =>
