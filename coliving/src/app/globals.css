@@ -470,6 +470,7 @@ input[type="range"] { accent-color: var(--primary); }
   .stat-row { grid-template-columns: repeat(4, 1fr); }
   .photo-grid { grid-template-columns: repeat(4, 1fr); }
   .inquiry-split { grid-template-columns: 340px 1fr; }
+  .dashboard-bottom-grid { grid-template-columns: 1fr 1fr; }
 }
 
 /* ── Chat ───────────────────────────────────────────────────── */
