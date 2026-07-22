@@ -2,19 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { searchRooms } from "@/lib/api/rooms";
-
-// The hero search entry point: 지역 + 숙박 기간.
-// Picking a range filters out rooms that are already booked for those dates
-// (the API applies the same overlap rule the reservation flow uses), and the
-// live count under the calendar tells you how many rooms match before you
-// commit to the search.
+import type { RoomType } from "@/lib/types";
+import { WORKPLACE_PRESETS } from "@/lib/seoul";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-const PRESETS = [
-  { label: "1주 (7일)", days: 7 },
-  { label: "2주 (14일)", days: 14 },
-  { label: "1개월 (30일)", days: 30 },
+const HOUSING_OPTIONS: { label: string; value: "" | RoomType }[] = [
+  { label: "전체", value: "" },
+  { label: "개인실·원룸", value: "one_room" },
+  { label: "쉐어룸", value: "share_room" },
+  { label: "독채", value: "whole_house" },
+  { label: "아파트", value: "apartment" },
 ];
 
 function startOfDay(d: Date): Date {
@@ -22,86 +19,44 @@ function startOfDay(d: Date): Date {
   x.setHours(0, 0, 0, 0);
   return x;
 }
-function addDays(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-}
-function sameDay(a: Date, b: Date): boolean {
-  return a.toDateString() === b.toDateString();
-}
+function sameDay(a: Date, b: Date): boolean { return a.toDateString() === b.toDateString(); }
 function isoDate(d: Date): string {
-  // Local YYYY-MM-DD (avoids the UTC shift toISOString() would introduce).
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function fmtShort(d: Date): string {
-  return `${d.getMonth() + 1}.${d.getDate()}`;
-}
-
-// Calendar cells for one month, padded so the 1st lands on its weekday.
+function fmtShort(d: Date): string { return `${d.getMonth() + 1}.${d.getDate()}`; }
 function monthCells(year: number, month: number): (Date | null)[] {
   const first = new Date(year, month, 1);
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (Date | null)[] = Array(first.getDay()).fill(null);
-  for (let day = 1; day <= daysInMonth; day++) {
-    cells.push(new Date(year, month, day));
-  }
+  const days = new Date(year, month + 1, 0).getDate();
+  for (let day = 1; day <= days; day++) cells.push(new Date(year, month, day));
   return cells;
 }
+
+type OpenPanel = "location" | "date" | null;
 
 export function HeroSearch() {
   const router = useRouter();
   const today = useMemo(() => startOfDay(new Date()), []);
-
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
+  const [roomType, setRoomType] = useState<"" | RoomType>("");
+  const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
   const [viewMonth, setViewMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [checkIn, setCheckIn] = useState<Date | null>(null);
   const [checkOut, setCheckOut] = useState<Date | null>(null);
-  const [count, setCount] = useState<number | null>(null);
-  const [counting, setCounting] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Close the calendar when clicking outside it.
   useEffect(() => {
-    if (!open) return;
-    function onClick(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
-    }
+    if (!openPanel) return;
+    const onClick = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpenPanel(null);
+    };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  // Live match count, debounced so typing/date-picking doesn't spam the API.
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    setCounting(true);
-    const t = setTimeout(async () => {
-      try {
-        const res = await searchRooms({
-          q: q.trim() || undefined,
-          checkIn: checkIn ? isoDate(checkIn) : undefined,
-          checkOut: checkOut ? isoDate(checkOut) : undefined,
-          limit: 1,
-        });
-        if (alive) setCount(res.total);
-      } catch {
-        if (alive) setCount(null);
-      } finally {
-        if (alive) setCounting(false);
-      }
-    }, 350);
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [q, checkIn, checkOut, open]);
+  }, [openPanel]);
 
   function pickDate(d: Date) {
     if (d < today) return;
-    // First click (or restarting a range) sets check-in; second sets check-out.
-    if (!checkIn || (checkIn && checkOut) || d <= checkIn) {
+    if (!checkIn || checkOut || d <= checkIn) {
       setCheckIn(d);
       setCheckOut(null);
     } else {
@@ -109,192 +64,103 @@ export function HeroSearch() {
     }
   }
 
-  function applyPreset(days: number) {
-    const from = checkIn ?? today;
-    setCheckIn(from);
-    setCheckOut(addDays(from, days));
-  }
-
   function go() {
     const params = new URLSearchParams();
     if (q.trim()) params.set("q", q.trim());
+    if (roomType) params.set("roomTypes", roomType);
     if (checkIn) params.set("checkIn", isoDate(checkIn));
     if (checkOut) params.set("checkOut", isoDate(checkOut));
-    router.push(params.toString() ? `/search?${params}` : "/search");
+    router.push(params.toString() ? `/search?${params.toString()}` : "/search");
   }
 
   const months = [viewMonth, new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1)];
-  const rangeLabel =
-    checkIn && checkOut
-      ? `${fmtShort(checkIn)} ~ ${fmtShort(checkOut)}`
-      : checkIn
-        ? `${fmtShort(checkIn)} ~ 퇴실일 선택`
-        : "입주일 ~ 퇴실일";
+  const rangeLabel = checkIn && checkOut
+    ? `${fmtShort(checkIn)} ~ ${fmtShort(checkOut)}`
+    : checkIn ? `${fmtShort(checkIn)} ~ 퇴실일 선택` : "입주일 ~ 퇴실일 선택";
 
   return (
-    <div ref={boxRef} style={{ position: "relative", maxWidth: 620, zIndex: 100 }}>
-      <div
-        className="card"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          padding: 8,
-          borderRadius: "var(--r-pill)",
-          boxShadow: "var(--shadow-md)",
-        }}
-      >
-        {/* Where */}
-        <div style={{ flex: 1.2, display: "flex", alignItems: "center", gap: 10, padding: "4px 8px 4px 14px", minWidth: 0 }}>
-          <span aria-hidden="true" style={{ fontSize: 16, opacity: 0.7 }}>📍</span>
+    <div ref={boxRef} style={{ position: "relative", maxWidth: 900, zIndex: 100 }}>
+      <div className="card hero-search-bar" style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr .9fr auto", alignItems: "stretch", padding: 8, borderRadius: 22, boxShadow: "var(--shadow-lg)" }}>
+        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "8px 16px" }}>
+          <span aria-hidden="true" style={{ fontSize: 20 }}>📍</span>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--text)" }}>Where</div>
+            <div style={{ fontSize: 12, fontWeight: 700 }}>직장 또는 목적지</div>
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              onFocus={() => setOpen(true)}
+              onFocus={() => setOpenPanel("location")}
               onKeyDown={(e) => e.key === "Enter" && go()}
-              placeholder="지역, 동네, 숙소 이름으로 검색"
-              aria-label="숙소 검색"
-              style={{
-                width: "100%", border: "none", outline: "none", background: "transparent",
-                fontSize: 14, padding: "2px 0", color: "var(--text)",
-              }}
+              placeholder="회사명, 지하철역, 지역을 검색하세요"
+              aria-label="직장 또는 목적지"
+              style={{ width: "100%", border: "none", outline: "none", background: "transparent", fontSize: 14, padding: "4px 0 0" }}
             />
           </div>
         </div>
 
-        <div aria-hidden="true" style={{ width: 1, height: 34, background: "var(--border)" }} />
-
-        {/* When */}
-        <button
-          onClick={() => setOpen((o) => !o)}
-          style={{
-            flex: 1, display: "flex", alignItems: "center", gap: 10,
-            padding: "4px 8px 4px 14px", background: "transparent", border: "none",
-            cursor: "pointer", textAlign: "left", minWidth: 0,
-          }}
-        >
-          <span aria-hidden="true" style={{ fontSize: 15, opacity: 0.7 }}>🗓️</span>
+        <button type="button" onClick={() => setOpenPanel(openPanel === "date" ? null : "date")} style={{ border: 0, borderLeft: "1px solid var(--border)", background: "transparent", textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", cursor: "pointer" }}>
+          <span aria-hidden="true" style={{ fontSize: 19 }}>🗓️</span>
           <span style={{ minWidth: 0 }}>
-            <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--text)" }}>When</span>
-            <span style={{ display: "block", fontSize: 14, color: checkIn ? "var(--text)" : "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {rangeLabel}
-            </span>
+            <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>입주 기간</span>
+            <span style={{ display: "block", fontSize: 14, color: checkIn ? "var(--text)" : "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rangeLabel}</span>
           </span>
         </button>
 
-        <button onClick={go} className="btn btn-primary press" style={{ padding: "12px 26px", whiteSpace: "nowrap", flexShrink: 0 }}>
-          Search
-        </button>
+        <label style={{ borderLeft: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, padding: "8px 16px" }}>
+          <span aria-hidden="true" style={{ fontSize: 19 }}>🏠</span>
+          <span style={{ minWidth: 0, flex: 1 }}>
+            <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>주거 형태</span>
+            <select value={roomType} onChange={(e) => setRoomType(e.target.value as "" | RoomType)} aria-label="주거 형태" style={{ width: "100%", border: 0, outline: 0, background: "transparent", padding: "4px 0 0", fontSize: 14, cursor: "pointer" }}>
+              {HOUSING_OPTIONS.map((option) => <option key={option.value || "all"} value={option.value}>{option.label}</option>)}
+            </select>
+          </span>
+        </label>
+
+        <button onClick={go} className="btn btn-primary press" style={{ padding: "0 28px", borderRadius: 18, whiteSpace: "nowrap", justifyContent: "center" }}>숙소 찾기</button>
       </div>
 
-      {/* Calendar popover */}
-      {open && (
-        <div
-          className="card"
-          style={{
-            position: "absolute", top: "calc(100% + 10px)", left: 0, zIndex: 200,
-            padding: 20, boxShadow: "var(--shadow-lg, 0 12px 40px rgba(0,0,0,0.16))",
-            borderRadius: "var(--r-md, 16px)", width: "min(560px, 92vw)",
-          }}
-        >
-          {/* month nav */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-            <button
-              onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}
-              aria-label="이전 달"
-              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, padding: "2px 8px", color: "var(--text-2)" }}
-            >
-              ‹
-            </button>
-            <div style={{ display: "flex", gap: 60, fontSize: 14, fontWeight: 700 }}>
-              {months.map((m) => (
-                <span key={m.getTime()}>{m.getFullYear()}년 {m.getMonth() + 1}월</span>
-              ))}
-            </div>
-            <button
-              onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))}
-              aria-label="다음 달"
-              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, padding: "2px 8px", color: "var(--text-2)" }}
-            >
-              ›
-            </button>
+      {openPanel === "location" && (
+        <div className="card" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, width: "min(470px, 92vw)", padding: 18, borderRadius: 18, boxShadow: "var(--shadow-lg)" }}>
+          <strong style={{ fontSize: 14 }}>주요 업무 지역</strong>
+          <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 4 }}>자주 찾는 출근 목적지를 빠르게 선택하세요.</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+            {WORKPLACE_PRESETS.map((item) => (
+              <button key={item.label} type="button" className="chip press" onClick={() => { setQ(item.query); setOpenPanel(null); }}>{item.label}</button>
+            ))}
           </div>
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: "var(--text-2)" }}>직장 기준 통근시간으로 보고 싶다면</span>
+            <button type="button" onClick={() => router.push("/browse")} style={{ color: "var(--secondary)", fontWeight: 700, fontSize: 13 }}>직장 근처 숙소 →</button>
+          </div>
+        </div>
+      )}
 
-          {/* two months */}
+      {openPanel === "date" && (
+        <div className="card" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, padding: 20, width: "min(620px, 94vw)", borderRadius: 18, boxShadow: "var(--shadow-lg)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <button type="button" onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))} aria-label="이전 달" style={{ fontSize: 22 }}>‹</button>
+            <strong style={{ fontSize: 14 }}>입주일과 퇴실일을 선택하세요</strong>
+            <button type="button" onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))} aria-label="다음 달" style={{ fontSize: 22 }}>›</button>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
             {months.map((m) => (
               <div key={m.getTime()}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 6 }}>
-                  {WEEKDAYS.map((w) => (
-                    <span key={w} style={{ textAlign: "center", fontSize: 11, color: "var(--text-2)" }}>{w}</span>
-                  ))}
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+                <div style={{ textAlign: "center", fontWeight: 700, fontSize: 13, marginBottom: 10 }}>{m.getFullYear()}년 {m.getMonth() + 1}월</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
+                  {WEEKDAYS.map((w) => <span key={w} style={{ textAlign: "center", fontSize: 11, color: "var(--text-2)", paddingBottom: 4 }}>{w}</span>)}
                   {monthCells(m.getFullYear(), m.getMonth()).map((d, i) => {
-                    if (!d) return <span key={i} />;
+                    if (!d) return <span key={`blank-${i}`} />;
                     const past = d < today;
-                    const isIn = checkIn && sameDay(d, checkIn);
-                    const isOut = checkOut && sameDay(d, checkOut);
-                    const inRange = checkIn && checkOut && d > checkIn && d < checkOut;
-                    const selected = isIn || isOut;
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => pickDate(d)}
-                        disabled={past}
-                        style={{
-                          aspectRatio: "1", border: "none", borderRadius: selected ? "50%" : 6,
-                          cursor: past ? "default" : "pointer", fontSize: 12.5,
-                          background: selected ? "var(--primary)" : inRange ? "var(--bg-2)" : "transparent",
-                          color: past ? "var(--border)" : selected ? "#fff" : "var(--text)",
-                          fontWeight: selected ? 700 : 400,
-                        }}
-                      >
-                        {d.getDate()}
-                      </button>
-                    );
+                    const selected = !!((checkIn && sameDay(d, checkIn)) || (checkOut && sameDay(d, checkOut)));
+                    const inRange = !!(checkIn && checkOut && d > checkIn && d < checkOut);
+                    return <button key={d.toISOString()} type="button" disabled={past} onClick={() => pickDate(d)} style={{ aspectRatio: "1", border: 0, borderRadius: selected ? 999 : 8, background: selected ? "var(--primary)" : inRange ? "var(--bg-2)" : "transparent", color: past ? "var(--border)" : selected ? "#fff" : "var(--text)", cursor: past ? "default" : "pointer", fontSize: 12 }}>{d.getDate()}</button>;
                   })}
                 </div>
               </div>
             ))}
           </div>
-
-          {/* presets */}
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 18, flexWrap: "wrap" }}>
-            {PRESETS.map((p) => {
-              const active = checkIn && checkOut && Math.round((+checkOut - +checkIn) / 86400000) === p.days;
-              return (
-                <button
-                  key={p.days}
-                  onClick={() => applyPreset(p.days)}
-                  className="chip"
-                  style={{
-                    fontSize: 12.5, padding: "8px 18px",
-                    background: active ? "var(--primary)" : "transparent",
-                    color: active ? "#fff" : "var(--text)",
-                    border: active ? "none" : "1px solid var(--border)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* live count */}
-          <div style={{ textAlign: "center", marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)", fontSize: 13, color: "var(--text-2)" }}>
-            {counting ? (
-              "조건에 맞는 숙소를 세는 중…"
-            ) : count == null ? (
-              "조건을 선택해 보세요"
-            ) : (
-              <>
-                선택 조건에 맞는 숙소{" "}
-                <strong style={{ color: "var(--primary)", fontSize: 14.5 }}>{count}곳</strong>
-              </>
-            )}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <button type="button" onClick={() => { setCheckIn(null); setCheckOut(null); }} style={{ fontSize: 13, color: "var(--text-2)" }}>날짜 초기화</button>
+            <button type="button" className="btn btn-primary press" onClick={() => setOpenPanel(null)} disabled={!checkIn || !checkOut}>날짜 적용</button>
           </div>
         </div>
       )}

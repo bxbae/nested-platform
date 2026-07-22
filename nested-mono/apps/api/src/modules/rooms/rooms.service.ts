@@ -13,6 +13,8 @@ import { NotificationsGateway } from "../notifications/notifications.gateway";
 
 export interface RoomSearchQuery {
   region?: string;
+  district?: string;
+  verifiedByHost?: boolean;
   q?: string;
   roomType?: string;
   roomTypes?: string[]; // multi-select (frontend sends CSV → array)
@@ -117,12 +119,32 @@ export class RoomsService {
   async search(query: RoomSearchQuery) {
     const take = Math.min(query.take ?? 20, 50);
     const where: any = { published: true };
-    if (query.region) {
-      // Partial, case-insensitive so "Seocho-gu" also matches "Seocho-dong",
-      // and a bare neighborhood term still works.
+    const districtAliases: Record<string, string[]> = {
+      "강남구": ["Gangnam-gu", "Yeoksam-dong"],
+      "서초구": ["Seocho-gu"],
+      "송파구": ["Songpa-gu"],
+      "마포구": ["Mapo-gu", "Mangwon-dong", "Seogyo-dong", "Yeonnam-dong", "Hongdae"],
+      "성동구": ["Seongdong-gu", "Seongsu-dong"],
+      "용산구": ["Yongsan-gu", "Itaewon"],
+      "영등포구": ["Yeongdeungpo-gu", "Yeouido"],
+      "종로구": ["Jongno-gu", "Hyehwa-dong"],
+      "관악구": ["Gwanak-gu", "Sillim", "Bongcheon-dong"],
+      "구로구": ["Guro-gu", "Gasan-dong"],
+      "분당구": ["Bundang-gu", "Pangyo"],
+    };
+    const aliases = query.district
+      ? districtAliases[query.district]
+      : undefined;
+
+    if (aliases) {
+      where.OR = aliases.map((alias) => ({
+        region: { contains: alias, mode: "insensitive" },
+      }));
+    } else if (query.region) {
       const term = query.region.split("-")[0] || query.region;
       where.region = { contains: term, mode: "insensitive" };
     }
+    if (query.verifiedByHost) where.verifiedByHost = true;
 
     // roomType (single) or roomTypes (multi-select) → Prisma `in`
     const types = query.roomTypes?.length

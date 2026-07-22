@@ -15,6 +15,7 @@ import { loadHouses } from "@/lib/houses-source";
 import type { House } from "@/lib/types";
 import { getPersonalizedRooms } from "@/lib/api/rooms"; // 개인화 숙소 추천
 import { PersonalizedSection } from "@/components/PersonalizedSection";
+import { regionLabel } from "@/lib/seoul";
 
 // Always render on demand so the recommended list reflects live DB rooms.
 export const dynamic = "force-dynamic";
@@ -56,10 +57,10 @@ export default async function Home() {
             style={{
               position: "absolute",
               inset: 0,
-              backgroundImage: "url(/hero.png)",
-              backgroundSize: "120% auto",
-              backgroundPosition: "left calc(50% + 136px)",
-              opacity: 0.9,
+              backgroundImage: "url(/hero-coliving.jpg)",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              opacity: 0.96,
             }}
           />
           {/* readability scrim: solid behind the text, clearing toward the photo */}
@@ -68,7 +69,7 @@ export default async function Home() {
               position: "absolute",
               inset: 0,
               background:
-                "linear-gradient(90deg, var(--bg) 0%, var(--bg) 38%, rgba(255,255,255,0.78) 56%, rgba(255,255,255,0) 80%)",
+"linear-gradient(90deg, rgba(255,255,255,.98) 0%, rgba(255,255,255,.95) 30%, rgba(255,255,255,.68) 48%, rgba(255,255,255,.08) 72%)",
             }}
           />
           {/* warm brand gradient wash */}
@@ -83,7 +84,7 @@ export default async function Home() {
         </div>
         <div
           className="wrap"
-          style={{ position: "relative", paddingTop: 88, paddingBottom: 72 }}
+          style={{ position: "relative", paddingTop: 72, paddingBottom: 38 }}
         >
           <div style={{ maxWidth: "clamp(720px, 58vw, 900px)" }}>
             <span className="eyebrow">서울의 공유주거</span>
@@ -105,8 +106,7 @@ export default async function Home() {
                 maxWidth: 520,
               }}
             >
-              20~40대 직장인과 장기 거주자를 위한 셰어하우스·룸메이트 매칭.
-              통근 시간부터 라이프스타일까지 맞춰 찾아보세요.
+출근 시간과 생활 성향을 기준으로 나에게 맞는 공유주거를 찾아보세요.
             </p>
 
             {/* 검색창 */}
@@ -114,19 +114,21 @@ export default async function Home() {
               <HeroSearch />
             </div>
 
-            {/* trust stats */}
-            <div style={{ display: "flex", gap: 32, marginTop: 40 }}>
+            {/* 핵심 서비스 바로가기 */}
+            <div className="hero-benefit-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginTop: 32 }}>
               {[
-                [`${totalListings}+`, "등록 숙소"],
-                ["4.8", "평균 평점"],
-                ["3개월~", "월 단위 계약"],
-              ].map(([n, l]) => (
-                <div key={l}>
-                  <div className="display" style={{ fontSize: 28, fontWeight: 700 }}>
-                    {n}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-2)" }}>{l}</div>
-                </div>
+                { icon: "🚇", title: "짧은 출근 시간", body: "직장까지 실제 통근 시간이 짧은 숙소를 찾아보세요.", href: "/browse", cta: "직장 근처 숙소 →" },
+                { icon: "👥", title: "마음 맞는 룸메이트", body: "생활 성향과 습관이 비슷한 사람을 매칭해드려요.", href: "/match", cta: "룸메이트 찾기 →" },
+                { icon: "🛡️", title: "안심하고 편리한 주거", body: "호스트 확인과 관리자 승인을 거친 숙소를 둘러보세요.", href: "/search?verified=true", cta: "검증된 숙소 보기 →" },
+              ].map((item) => (
+                <Link key={item.title} href={item.href} className="card hover-card" style={{ padding: 16, display: "grid", gridTemplateColumns: "40px 1fr", gap: 12, alignItems: "start", background: "rgba(255,255,255,.9)" }}>
+                  <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 999, background: "var(--bg-2)", display: "grid", placeItems: "center", fontSize: 20 }}>{item.icon}</span>
+                  <span>
+                    <strong style={{ display: "block", fontSize: 14.5 }}>{item.title}</strong>
+                    <span style={{ display: "block", fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.45, marginTop: 4 }}>{item.body}</span>
+                    <span style={{ display: "block", fontSize: 12.5, color: "var(--secondary)", fontWeight: 700, marginTop: 8 }}>{item.cta}</span>
+                  </span>
+                </Link>
               ))}
             </div>
           </div>
@@ -144,34 +146,13 @@ export default async function Home() {
           />
           <div className="region-grid">
             {regions.map((r) => (
-              <Link
-                key={r.region}
-                href={`/search?region=${encodeURIComponent(r.region)}`}
-                className="card hover-card"
-                style={{ overflow: "hidden" }}
-              >
-                <div
-                  style={{
-                    height: 96,
-                    background: `linear-gradient(135deg, var(--primary), var(--secondary))`,
-                    opacity: 0.9,
-                    display: "flex",
-                    alignItems: "flex-end",
-                    padding: 14,
-                  }}
-                >
-                  <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>
-                    {r.region}
-                  </span>
+              <Link key={r.district} href={`/search?district=${encodeURIComponent(r.district)}`} className="card hover-card" style={{ overflow: "hidden" }}>
+                <div style={{ height: 126, backgroundImage: r.photo ? `linear-gradient(180deg, transparent 35%, rgba(0,0,0,.62)), url(${r.photo})` : "linear-gradient(135deg, var(--primary), var(--secondary))", backgroundSize: "cover", backgroundPosition: "center", display: "flex", alignItems: "flex-end", padding: 14 }}>
+                  <span style={{ color: "#fff", fontWeight: 700, fontSize: 17 }}>{r.district}</span>
                 </div>
-                <div
-                  style={{
-                    padding: "12px 14px",
-                    fontSize: 13.5,
-                    color: "var(--text-2)",
-                  }}
-                >
-                  숙소 {r.count}곳
+                <div style={{ padding: "12px 14px" }}>
+                  <div style={{ fontSize: 13, color: "var(--text-2)", minHeight: 38, lineHeight: 1.45 }}>{r.description}</div>
+                  <div style={{ fontSize: 12.5, color: "var(--secondary)", fontWeight: 700, marginTop: 8 }}>숙소 {r.count}곳 →</div>
                 </div>
               </Link>
             ))}
@@ -224,7 +205,7 @@ export default async function Home() {
                 <div style={{ padding: 15 }}>
                   <strong style={{ fontSize: 15 }}>{h.name.trim()}</strong>
                   <div style={{ color: "var(--text-2)", fontSize: 13, marginTop: 2 }}>
-                    {h.region} · 리뷰 {h.reviews}
+                    {regionLabel(h.region)} · 리뷰 {h.reviews}
                   </div>
                   <div style={{ marginTop: 10, fontSize: 15 }}>
                     <strong>{wonShort(h.monthlyRent)}</strong>

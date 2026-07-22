@@ -5,7 +5,7 @@ export type RoomType = "one_room" | "share_room" | "whole_house" | "apartment";
 export type GenderPolicy = "any" | "male_only" | "female_only";
 
 export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
-  one_room: "원룸",
+  one_room: "개인실·원룸",
   share_room: "쉐어룸",
   whole_house: "독채",
   apartment: "아파트",
@@ -151,6 +151,8 @@ export type SortKey = "recommended" | "price_asc" | "price_desc" | "rating" | "n
 export interface SearchParams {
   q?: string;
   region?: string;
+  district?: string;
+  verified?: boolean;
   roomTypes?: RoomType[];
   minRent?: number;
   maxRent?: number;

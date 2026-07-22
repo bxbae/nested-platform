@@ -598,3 +598,20 @@ input[type="range"] { accent-color: var(--primary); }
   .wrap { padding: 0 20px; }
   body { font-size: 15px; }
 }
+
+/* 2026 landing/search refresh */
+@media (max-width: 1080px) {
+  .nav-shell { grid-template-columns: auto 1fr auto !important; }
+  .nav-links { justify-self: end !important; }
+  .hero-search-bar { grid-template-columns: 1fr 1fr !important; }
+  .hero-search-bar > .btn { min-height: 52px; }
+  .hero-benefit-grid { grid-template-columns: 1fr !important; max-width: 620px; }
+}
+
+@media (max-width: 760px) {
+  .nav-shell { display: flex !important; justify-content: space-between; }
+  .nav-links { display: none !important; }
+  .hero-search-bar { grid-template-columns: 1fr !important; border-radius: 18px !important; }
+  .hero-search-bar > * { border-left: 0 !important; border-top: 1px solid var(--border); }
+  .hero-search-bar > :first-child { border-top: 0 !important; }
+}

@@ -5,11 +5,11 @@ import type { SearchParams, RoomType, GenderPolicy } from "@/lib/types";
 import { ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
 import { won } from "@/lib/format";
 import { RENT_MIN, RENT_MAX, DEFAULT_FILTERS } from "../schema";
-import { houses } from "@/lib/data";
+import { DISTRICT_OPTIONS } from "@/lib/seoul";
 
 const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
-const REGIONS = Array.from(new Set(houses.map((h) => h.region))).sort();
+const ROOM_TYPE_DESCRIPTIONS: Record<RoomType, string> = { one_room: "개인 공간 중심", share_room: "침실 또는 공간 공유", whole_house: "집 전체 단독 사용", apartment: "아파트형 주거" };
 
 export function FilterSheet({
   open,
@@ -84,31 +84,27 @@ export function FilterSheet({
         </div>
 
         <div style={{ padding: 22, display: "grid", gap: 26 }}>
-          {/* Region */}
-          <Section title="지역">
+          {/* District */}
+          <Section title="지역(구)">
+            <p style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 12 }}>
+              서울은 구 단위로 먼저 선택하고, 검색창에서 역·동 이름을 추가할 수 있습니다.
+            </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                className="chip"
-                data-active={!draft.region}
-                onClick={() => set({ region: "" })}
-              >
-                전체
-              </button>
-              {REGIONS.map((r) => (
-                <button
-                  key={r}
-                  className="chip"
-                  data-active={draft.region === r}
-                  onClick={() => set({ region: draft.region === r ? "" : r })}
-                >
-                  {r}
+              <button className="chip" data-active={!draft.district} onClick={() => set({ district: "", region: "" })}>전체</button>
+              {DISTRICT_OPTIONS.map((item) => (
+                <button key={item.value} className="chip" data-active={draft.district === item.value} onClick={() => set({ district: draft.district === item.value ? "" : item.value, region: "" })}>
+                  {item.label}
                 </button>
               ))}
             </div>
           </Section>
 
+          <Section title="안심 조건">
+            <ToggleRow label="호스트 확인 숙소만" value={!!draft.verified} onChange={(v) => set({ verified: v })} />
+          </Section>
+
           {/* Room type */}
-          <Section title="방 종류">
+          <Section title="주거 형태">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {ROOM_TYPES.map((rt) => {
                 const on = (draft.roomTypes ?? []).includes(rt);
@@ -128,7 +124,8 @@ export function FilterSheet({
                       textAlign: "left",
                     }}
                   >
-                    {ROOM_TYPE_LABELS[rt]}
+                    <span style={{ display: "block" }}>{ROOM_TYPE_LABELS[rt]}</span>
+                    <span style={{ display: "block", marginTop: 3, fontSize: 11.5, fontWeight: 450, opacity: 0.72 }}>{ROOM_TYPE_DESCRIPTIONS[rt]}</span>
                   </button>
                 );
               })}
