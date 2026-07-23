@@ -120,9 +120,9 @@ export default function RootLayout({
                   <FooterCol
                     title="회사"
                     links={[
-                      ["서비스 소개", "/"],
-                      ["이용약관", "/"],
-                      ["개인정보처리방침", "/"],
+                      ["서비스 소개", "/about"],
+                      // ["이용약관", "/"],
+                      // ["개인정보처리방침", "/"],
                     ]}
                   />
                 </div>
