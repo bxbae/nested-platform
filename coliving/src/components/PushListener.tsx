@@ -3,16 +3,26 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { PushEvent } from "@/lib/chat-types";
+import { useAuth } from "@/lib/api/useAuth";
 
 // Global push-notification listener. Polls the push queue and shows a toast
 // (stand-in for FCM / Web Push). Mounted once in the root layout.
 export function PushListener() {
   const [toasts, setToasts] = useState<PushEvent[]>([]);
+  const { user } = useAuth();
 
   useEffect(() => {
+    // No session, no push queue to drain. Polling while logged out kept
+    // connections pinned to the origin and starved /auth/me on the OAuth
+    // callback, which left social logins stuck on "확인하는 중…".
+    if (!user) return;
     const poll = async () => {
       try {
-        const res = await fetch("/api/chat/push");
+        // Abort rather than letting a hung serverless call hold a connection.
+        const ctrl = new AbortController();
+        const t = window.setTimeout(() => ctrl.abort(), 4000);
+        const res = await fetch("/api/chat/push", { signal: ctrl.signal });
+        window.clearTimeout(t);
         const data = await res.json();
         if (data.events?.length) {
           setToasts((t) => [...t, ...data.events].slice(-3));
@@ -28,7 +38,7 @@ export function PushListener() {
     };
     const interval = setInterval(poll, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user]);
 
   if (toasts.length === 0) return null;
 
