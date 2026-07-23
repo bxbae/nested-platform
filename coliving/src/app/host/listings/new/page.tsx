@@ -26,7 +26,7 @@ const listingSchema = z.object({
   city: z.string().min(1, "주소를 검색하세요."),
   district: z.string().min(1, "주소를 검색하세요."),
   neighborhood: z.string().min(1, "주소를 검색하세요."),
-  legalDongCode: z.string().min(5, "주소를 다시 검색하세요."),
+  legalDongCode: z.string(),
   roadAddress: z.string().min(5, "도로명 주소를 검색하세요."),
   jibunAddress: z.string(),
   detailAddress: z.string(),
@@ -39,7 +39,6 @@ const listingSchema = z.object({
   maintenanceFee: z.coerce.number().min(0),
   minStay: z.coerce.number().min(1).max(12),
   availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
-  address: z.string().min(5, "도로명 주소를 입력하세요."),
   // 독채가 아니면 필수. 아래 superRefine 에서 타입에 따라 갈린다.
   capacity: z.coerce.number().int().min(1).max(20).optional(),
   // 침실 개수 — 선택 항목이라 비워도 등록된다.
@@ -513,7 +512,16 @@ export default function NewListing() {
       {error && (
         <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 10 }}>{error}</p>
       )}
-      <button type="submit" className="btn btn-primary press" style={{ width: "100%", justifyContent: "center", opacity: isValid && !saving ? 1 : 0.6 }} disabled={!isValid || saving}>
+      <button
+        type="submit"
+        className="btn btn-primary press"
+        style={{
+          width: "100%",
+          justifyContent: "center",
+          opacity: saving ? 0.6 : 1,
+        }}
+        disabled={saving}
+      >
         {saving ? "등록 중…" : "숙소 등록하기"}
       </button>
       {!isValid && <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 8, textAlign: "center" }}>필수 항목을 올바르게 입력하면 등록할 수 있어요.</p>}

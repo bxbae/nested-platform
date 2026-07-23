@@ -24,7 +24,7 @@ const addressSchema = z.object({
   city: z.string().min(1),
   district: z.string().min(1),
   neighborhood: z.string().min(1),
-  legalDongCode: z.string().min(5),
+  legalDongCode: z.string().optional().default(""),
   roadAddress: z.string().min(5),
   jibunAddress: z.string().optional().default(""),
   detailAddress: z.string().max(120).optional().default(""),
@@ -34,7 +34,7 @@ const addressSchema = z.object({
 const createRoomSchema = z
   .object({
     name: z.string().min(2),
-    region: z.string().min(1),
+    region: z.string().optional(),
     ...addressSchema.shape,
     verifiedByHost: z.literal(true, {
       errorMap: () => ({ message: "실제 매물임을 확인해주세요." }),
@@ -69,14 +69,6 @@ const createRoomSchema = z
         code: z.ZodIssueCode.custom,
         path: ["capacity"],
         message: "함께 지낼 인원수를 입력해주세요.",
-      });
-    }
-
-    if (data.region !== data.neighborhood) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["region"],
-        message: "지역값과 법정동명이 일치하지 않습니다.",
       });
     }
   });
