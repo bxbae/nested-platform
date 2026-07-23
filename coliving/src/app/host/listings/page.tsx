@@ -306,21 +306,21 @@ export default function HostListings() {
                   )}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, justifyContent: "center", flexShrink: 0 }}>
-                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press text-center" style={{ fontSize: 13, padding: "8px 14px" }}>
+                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 14px", justifyContent: "center" }}>
                     미리보기
                   </Link>
                   {editingId === h.id ? (
                     <>
                       <button
-                        className="btn btn-primary press text-center"
-                        style={{ fontSize: 13, padding: "8px 14px", opacity: saving ? 0.6 : 1 }}
+                        className="btn btn-primary press"
+                        style={{ fontSize: 13, padding: "8px 14px", justifyContent: "center", opacity: saving ? 0.6 : 1 }}
                         onClick={() => saveEdit(h.id)}
                         disabled={saving}
                       >
                         {saving ? "저장 중…" : "저장"}
                       </button>
                       <button
-                        className="btn btn-ghost press text-center"
+                        className="btn btn-ghost press"
                         style={{ fontSize: 13, padding: "8px 14px" }}
                         onClick={() => setEditingId(null)}
                       >
@@ -331,14 +331,14 @@ export default function HostListings() {
                     <>
                       <button
                         className="btn btn-ghost press"
-                        style={{ fontSize: 13, padding: "8px 14px" }}
+                        style={{ fontSize: 13, padding: "8px 14px", justifyContent: "center" }}
                         onClick={() => startEdit(h)}
                       >
                         수정
                       </button>
                       <button
                         className="btn btn-ghost press"
-                        style={{ fontSize: 13, padding: "8px 14px", color: "#e5484d" }}
+                        style={{ fontSize: 13, padding: "8px 14px", color: "#e5484d", justifyContent: "center" }}
                         onClick={() => remove(h)}
                         disabled={busyId === h.id}
                       >

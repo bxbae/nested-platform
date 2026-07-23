@@ -122,22 +122,23 @@ export default function Approvals() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
-                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press text-center" style={{ fontSize: 13, padding: "8px 14px" }}>
+                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 14px", justifyContent: "center" }}>
                     미리보기
                   </Link>
                   <button
-                    className="btn btn-primary press text-center"
-                    style={{ fontSize: 13, padding: "8px 14px" }}
+                    className="btn btn-primary press"
+                    style={{ fontSize: 13, padding: "8px 14px", justifyContent: "center" }}
                     onClick={() => approve(h.id)}
                     disabled={busy === h.id}
                   >
                     {busy === h.id ? "처리 중…" : "승인"}
                   </button>
                   <button
-                    className="btn btn-ghost press text-center"
+                    className="btn btn-ghost press"
                     style={{
                       fontSize: 13,
                       padding: "8px 14px",
+                      justifyContent: "center",
                       color: confirmId === h.id ? "#fff" : "var(--primary)",
                       background: confirmId === h.id ? "var(--primary)" : undefined,
                       borderColor: "var(--primary)",

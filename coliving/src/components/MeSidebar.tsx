@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/api/useAuth";
 const items = [
   { href: "/me", label: "프로필", icon: "", exact: true },
   { href: "/me/trips", label: "예약 내역", icon: "" },
-  { href: "/me/wishlist", label: "찜 목록", icon: "♥" },
+  { href: "/me/wishlist", label: "찜 목록", icon: "" },
   { href: "/me/friends", label: "친구 목록", icon: "" },
   { href: "/me/payments", label: "결제 내역", icon: "" },
   { href: "/me/notifications", label: "알림", icon: "" },
