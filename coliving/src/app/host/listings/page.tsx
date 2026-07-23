@@ -306,13 +306,13 @@ export default function HostListings() {
                   )}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, justifyContent: "center", flexShrink: 0 }}>
-                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 14px" }}>
+                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press text-center" style={{ fontSize: 13, padding: "8px 14px" }}>
                     미리보기
                   </Link>
                   {editingId === h.id ? (
                     <>
                       <button
-                        className="btn btn-primary press"
+                        className="btn btn-primary press text-center"
                         style={{ fontSize: 13, padding: "8px 14px", opacity: saving ? 0.6 : 1 }}
                         onClick={() => saveEdit(h.id)}
                         disabled={saving}
@@ -320,7 +320,7 @@ export default function HostListings() {
                         {saving ? "저장 중…" : "저장"}
                       </button>
                       <button
-                        className="btn btn-ghost press"
+                        className="btn btn-ghost press text-center"
                         style={{ fontSize: 13, padding: "8px 14px" }}
                         onClick={() => setEditingId(null)}
                       >

@@ -1,0 +1,435 @@
+/* about 페이지 전용 스타일.
+   :root 토큰(--primary, --r-lg 등)과 .wrap/.eyebrow/.display/.btn/.card 같은
+   공통 클래스는 이미 src/app/globals.css 에 정의돼 있어 여기서는 다시
+   선언하지 않는다. 헤더/네비/푸터도 layout.tsx 의 <Nav />, <footer> 가
+   전역으로 렌더링하므로 원본 HTML의 <header>/<footer>는 옮기지 않았다. */
+
+.eyebrow2 {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: "Spline Sans Mono", ui-monospace, monospace; font-size: 12.5px; letter-spacing: .04em;
+    color: #ff5a5f; background: #ffeff0;
+    padding: 6px 14px; border-radius: 999px; font-weight: 500;
+  }
+.eyebrow2::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #ff5a5f; }
+.eyebrow2.teal { color: #00a699; background: #e5f6f4; }
+.eyebrow2.teal::before { background: #00a699; }
+
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 92px 0 64px;
+}
+.heroBg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(900px 460px at 85% -10%, #00a69920, transparent 60%),
+    radial-gradient(700px 380px at 0% 10%, #ff5a5f18, transparent 55%);
+}
+.hero h1 {
+  font-size: clamp(32px, 4.6vw, 48px);
+  margin: 18px 0 0;
+  max-width: 780px;
+}
+.lede {
+  font-size: 17px;
+  color: var(--text-2);
+  margin-top: 18px;
+  max-width: 620px;
+  line-height: 1.7;
+}
+
+.section {
+  padding: 84px 0;
+}
+.alt {
+  background: var(--bg-2);
+}
+.sectionHead {
+  max-width: 600px;
+  margin-bottom: 48px;
+}
+.sectionHead h2 {
+  font-size: clamp(26px, 3.6vw, 36px);
+  margin: 14px 0 0;
+}
+.sectionHead p {
+  color: var(--text-2);
+  font-size: 15.5px;
+  margin-top: 14px;
+  line-height: 1.65;
+}
+
+/* 문제 / 해법 비교 */
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.splitCol {
+  padding: 40px 36px;
+}
+.problem {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+.solution {
+  background: var(--secondary-soft);
+}
+.splitTag {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+
+.solution .splitTag {
+  color: var(--secondary);
+}
+.splitCol h3 {
+  font-size: 20px;
+  margin: 10px 0 20px;
+  font-weight: 800;
+}
+.splitList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.splitList li {
+  font-size: 14.5px;
+  color: var(--text-2);
+  display: flex;
+  gap: 10px;
+  line-height: 1.55;
+}
+.problem .splitList li::before {
+  content: "—";
+  color: #c9c9c9;
+  flex-shrink: 0;
+}
+.solution .splitList li::before {
+  content: "✓";
+  color: var(--secondary);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.solution .splitList li {
+  color: var(--text);
+}
+
+/* 신뢰·안전 4단계 */
+.trustGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.trustCard {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 26px;
+}
+.trustStep {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--secondary);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.trustCard h3 {
+  font-size: 16.5px;
+  margin: 8px 0 8px;
+  font-weight: 800;
+}
+.trustCard p {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* 호스트 프로그램 */
+.hostSection {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+.hostCopy h2 {
+  font-size: clamp(26px, 3.6vw, 34px);
+  margin: 14px 0 16px;
+}
+.hostCopy p {
+  color: var(--text-2);
+  font-size: 15.5px;
+  line-height: 1.7;
+  margin-bottom: 28px;
+}
+.hostStats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.hostStat {
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+}
+.hostStat .num {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+}
+.hostStat .label {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+.hostPanel {
+  background: var(--text);
+  border-radius: var(--r-lg);
+  padding: 30px;
+  color: var(--bg);
+}
+.panelRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 14px;
+}
+.panelRow:last-child {
+  border-bottom: none;
+}
+.panelRow span:last-child {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.panelRow span:first-child {
+  color: #ababab;
+}
+.hostPanelTitle {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #ababab;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+/* 커뮤니티 */
+.communityGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.commCard {
+  border-radius: var(--r-lg);
+  padding: 26px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.commCard .tag {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
+.commCard h3 {
+  font-size: 16.5px;
+  font-weight: 800;
+  margin: 10px 0 8px;
+}
+.commCard p {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* 임팩트 숫자 */
+.impactStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.impactCell {
+  background: var(--bg);
+  padding: 32px 24px;
+  text-align: center;
+}
+.impactNum {
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.impactLabel {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-top: 8px;
+}
+
+/* FAQ 아코디언 */
+.faqList {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+}
+.faqItem {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--bg);
+}
+.faqQ {
+  width: 100%;
+  text-align: left;
+  padding: 20px 22px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15.5px;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  color: var(--text);
+  font-family: var(--font-body);
+}
+.faqQ .plus {
+  font-size: 20px;
+  color: var(--text-2);
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+.faqItem.open .faqQ .plus {
+  transform: rotate(45deg);
+  color: var(--primary);
+}
+.faqA {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+.faqItem.open .faqA {
+  max-height: 320px;
+}
+.faqAInner {
+  padding: 0 22px 20px;
+  font-size: 14.5px;
+  color: var(--text-2);
+  line-height: 1.7;
+}
+
+/* 기능 요약 (자동 기능 vs 게시판) */
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.summaryCard {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 26px 22px;
+}
+.summaryKind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+}
+.summaryKind.auto {
+  color: var(--secondary);
+  background: var(--secondary-soft);
+}
+.summaryKind.board {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.summaryCard h3 {
+  font-size: 16px;
+  margin: 14px 0 8px;
+  font-weight: 800;
+}
+.summaryCard p {
+  font-size: 13.5px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0;
+}
+.summaryNote {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 20px;
+  padding: 16px 20px;
+  background: var(--bg-2);
+  border-radius: var(--r-md);
+  font-size: 13.5px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.summaryNote b {
+  color: var(--text);
+}
+
+/* 마무리 CTA */
+.cta {
+  background: var(--text);
+  color: var(--bg);
+  border-radius: var(--r-xl);
+  padding: 68px 48px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.cta::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(500px 260px at 50% 0%, #00a69930, transparent 70%);
+}
+.cta h2 {
+  position: relative;
+  font-size: clamp(24px, 3.6vw, 32px);
+  margin: 0 0 12px;
+  font-weight: 800;
+}
+.cta p {
+  position: relative;
+  color: #b8b8b8;
+  font-size: 15.5px;
+  margin: 0 0 28px;
+}
+
+@media (max-width: 860px) {
+  .split,
+  .hostSection,
+  .communityGrid,
+  .impactStrip,
+  .trustGrid,
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+  .problem {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}

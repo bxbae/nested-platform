@@ -420,14 +420,14 @@ function TrendLineChart({ points }: { points: { month: string; revenue: number; 
             y={tipYFor(hover) + TIP_H / 2}
             textAnchor="middle"
           >
-            <tspan x={tipXFor(hover) + TIP_W / 2} dy="20" fontSize={11} fill="#fff" fontWeight={600}>
+            <tspan x={tipXFor(hover) + 15} dy="-10" fontSize={10} fill="var(--primary)" fontWeight={700}>
+              {points[hover].month}
+            </tspan>
+            <tspan x={tipXFor(hover) + TIP_W / 2} dy="8" fontSize={11} fill="#fff" fontWeight={600}>
               {won(points[hover].revenue)}
             </tspan>
-            <tspan x={tipXFor(hover) + TIP_W / 2} dy="18" fontSize={11} fill="#fff" fontWeight={600}>
+            <tspan x={tipXFor(hover) + TIP_W / 2} dy="16" fontSize={11} fill="#fff" fontWeight={600}>
               {points[hover].occupancy || 0}%
-            </tspan>
-            <tspan x={tipXFor(hover) + 15} dy="-25" fontSize={10} fill="var(--primary)" fontWeight={700}>
-              {points[hover].month}
             </tspan>
           </text>
         </g>

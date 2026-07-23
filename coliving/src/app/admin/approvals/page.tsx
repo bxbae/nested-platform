@@ -122,11 +122,11 @@ export default function Approvals() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
-                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 14px" }}>
+                  <Link href={`/homes/${h.id}`} className="btn btn-ghost press text-center" style={{ fontSize: 13, padding: "8px 14px" }}>
                     미리보기
                   </Link>
                   <button
-                    className="btn btn-primary press"
+                    className="btn btn-primary press text-center"
                     style={{ fontSize: 13, padding: "8px 14px" }}
                     onClick={() => approve(h.id)}
                     disabled={busy === h.id}
@@ -134,7 +134,7 @@ export default function Approvals() {
                     {busy === h.id ? "처리 중…" : "승인"}
                   </button>
                   <button
-                    className="btn btn-ghost press"
+                    className="btn btn-ghost press text-center"
                     style={{
                       fontSize: 13,
                       padding: "8px 14px",
