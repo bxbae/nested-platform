@@ -26,6 +26,7 @@ import { HostOverdueModule } from "./modules/host/host-overdue.module";
 import { HostSettlementModule } from "./modules/host/host-settlement.module";
 import { TenantReviewModule } from "./modules/reviews/tenant-review.module";
 import { PreferenceModule } from "./modules/preference/preference.module";
+import { BirthdayCouponModule } from "./modules/coupons/birthday-coupon.module";
 import { MatchModule } from "./modules/match/match.module";
 import { UsersModule } from "./modules/users/users.module";
 import { FriendsModule } from "./modules/friends/friends.module";
@@ -72,6 +73,7 @@ import { TransitModule } from './modules/transit/transit.module';
     HostSettlementModule,
     TenantReviewModule,
     PreferenceModule,
+    BirthdayCouponModule,
     MatchModule,
     UsersModule,
     FriendsModule,

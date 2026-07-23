@@ -21,6 +21,18 @@ export function ProfileHeader() {
   const role =
     user?.role === "HOST" ? "호스트" : user ? "게스트" : currentUser.role;
   const initial = name.trim()[0] ?? "N";
+  // 본인 조회에는 생년월일 원본이 실려 오므로 여기서 연령대를 계산한다.
+  // 20세 미만은 라벨을 붙이지 않는다(서버 쪽 ageGroup과 같은 규칙).
+  const band = (() => {
+    if (!user?.birthDate) return null;
+    const b = new Date(user.birthDate);
+    const now = new Date();
+    let age = now.getFullYear() - b.getFullYear();
+    const m = now.getMonth() - b.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+    return age >= 20 && age < 150 ? Math.floor(age / 10) * 10 : null;
+  })();
+
   const joinYear = user?.createdAt
     ? new Date(user.createdAt).getFullYear()
     : currentUser.joined;
@@ -127,7 +139,7 @@ export function ProfileHeader() {
           />
         </div>
         <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
-          {joinYear}년 가입{user?.gender && user.gender !== "OTHER" ? ` · ${user.gender === "MALE" ? "남성" : "여성"}` : ""} · {email}
+          {joinYear}년 가입{band ? ` · ${band}대` : ""}{user?.gender && user.gender !== "OTHER" ? ` · ${user.gender === "MALE" ? "남성" : "여성"}` : ""} · {email}
         </div>
         <p
           style={{

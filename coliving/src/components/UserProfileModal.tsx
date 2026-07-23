@@ -20,6 +20,8 @@ interface PublicProfile {
   avatarUrl: string | null;
   bio: string | null;
   gender: "MALE" | "FEMALE" | "OTHER";
+  // 서버가 생년월일에서 계산한 연령대. 생일 원본은 내려오지 않는다.
+  ageGroup: number | null;
   joinedYear: number;
   verified: boolean;
   tier: ActivityTier;
@@ -159,6 +161,7 @@ export function UserProfileModal({
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
                   {profile.joinedYear}년 가입
+                  {profile.ageGroup && ` · ${profile.ageGroup}대`}
                   {profile.gender !== "OTHER" &&
                     ` · ${profile.gender === "MALE" ? "남성" : "여성"}`}
                 </div>
