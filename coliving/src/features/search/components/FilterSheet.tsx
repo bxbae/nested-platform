@@ -1,15 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import type { SearchParams, RoomType, GenderPolicy } from "@/lib/types";
-import { ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
+import { useEffect, useState } from "react";
+import type { GenderPolicy, RoomType, SearchParams } from "@/lib/types";
+import { GENDER_LABELS, ROOM_TYPE_LABELS } from "@/lib/types";
 import { won } from "@/lib/format";
-import { RENT_MIN, RENT_MAX, DEFAULT_FILTERS } from "../schema";
-import { DISTRICT_OPTIONS } from "@/lib/seoul";
+import { DISTRICT_OPTIONS, NEIGHBORHOOD_OPTIONS } from "@/lib/seoul";
+import { DEFAULT_FILTERS, RENT_MAX, RENT_MIN } from "../schema";
 
-const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
+const ROOM_TYPES: RoomType[] = [
+  "one_room",
+  "share_room",
+  "whole_house",
+  "apartment",
+];
+
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
-const ROOM_TYPE_DESCRIPTIONS: Record<RoomType, string> = { one_room: "개인 공간 중심", share_room: "침실 또는 공간 공유", whole_house: "집 전체 단독 사용", apartment: "아파트형 주거" };
+
+const ROOM_TYPE_DESCRIPTIONS: Record<RoomType, string> = {
+  one_room: "개인 공간 중심",
+  share_room: "침실 또는 공간 공유",
+  whole_house: "집 전체 단독 사용",
+  apartment: "아파트형 주거",
+};
 
 export function FilterSheet({
   open,
@@ -19,28 +31,46 @@ export function FilterSheet({
 }: {
   open: boolean;
   initial: SearchParams;
-  onApply: (f: SearchParams) => void;
+  onApply: (filters: SearchParams) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<SearchParams>(initial);
 
-  // sync when reopened with fresh initial
   useEffect(() => {
-    if (open) setDraft(initial);
+    if (open) {
+      setDraft(initial);
+    }
   }, [open, initial]);
 
-  if (!open) return null;
+  if (!open) {
+    return null;
+  }
 
-  const set = (patch: Partial<SearchParams>) => setDraft((d) => ({ ...d, ...patch }));
-
-  const toggleRoomType = (rt: RoomType) => {
-    const cur = draft.roomTypes ?? [];
-    set({ roomTypes: cur.includes(rt) ? cur.filter((x) => x !== rt) : [...cur, rt] });
+  const set = (patch: Partial<SearchParams>) => {
+    setDraft((current) => ({
+      ...current,
+      ...patch,
+    }));
   };
+
+  const toggleRoomType = (roomType: RoomType) => {
+    const current = draft.roomTypes ?? [];
+
+    set({
+      roomTypes: current.includes(roomType)
+        ? current.filter((item) => item !== roomType)
+        : [...current, roomType],
+    });
+  };
+
+  const neighborhoods = draft.district
+    ? (NEIGHBORHOOD_OPTIONS[
+        draft.district as keyof typeof NEIGHBORHOOD_OPTIONS
+      ] ?? [])
+    : [];
 
   return (
     <>
-      {/* scrim */}
       <div
         onClick={onClose}
         style={{
@@ -52,7 +82,7 @@ export function FilterSheet({
         }}
         aria-hidden="true"
       />
-      {/* drawer */}
+
       <div
         role="dialog"
         aria-label="검색 필터"
@@ -73,105 +103,295 @@ export function FilterSheet({
           }}
         >
           <strong style={{ fontSize: 17 }}>필터</strong>
+
           <button
+            type="button"
             onClick={onClose}
             className="press"
             aria-label="닫기"
-            style={{ fontSize: 22, lineHeight: 1, color: "var(--text-2)" }}
+            style={{
+              fontSize: 22,
+              lineHeight: 1,
+              color: "var(--text-2)",
+            }}
           >
             ×
           </button>
         </div>
 
-        <div style={{ padding: 22, display: "grid", gap: 26 }}>
-          {/* District */}
+        <div
+          style={{
+            padding: 22,
+            display: "grid",
+            gap: 26,
+          }}
+        >
           <Section title="지역(구)">
-            <p style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 12 }}>
-              서울은 구 단위로 먼저 선택하고, 검색창에서 역·동 이름을 추가할 수 있습니다.
+            <p
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-2)",
+                marginBottom: 12,
+              }}
+            >
+              구를 선택하면 해당 지역의 세부 동을 선택할 수 있습니다.
             </p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="chip" data-active={!draft.district} onClick={() => set({ district: "", region: "" })}>전체</button>
-              {DISTRICT_OPTIONS.map((item) => (
-                <button key={item.value} className="chip" data-active={draft.district === item.value} onClick={() => set({ district: draft.district === item.value ? "" : item.value, region: "" })}>
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </Section>
 
-          <Section title="안심 조건">
-            <ToggleRow label="호스트 확인 숙소만" value={!!draft.verified} onChange={(v) => set({ verified: v })} />
-          </Section>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                className="chip"
+                data-active={!draft.district}
+                onClick={() =>
+                  set({
+                    district: "",
+                    region: "",
+                  })
+                }
+              >
+                전체
+              </button>
 
-          {/* Room type */}
-          <Section title="주거 형태">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {ROOM_TYPES.map((rt) => {
-                const on = (draft.roomTypes ?? []).includes(rt);
+              {DISTRICT_OPTIONS.map((item) => {
+                const active = draft.district === item.value;
+
                 return (
                   <button
-                    key={rt}
-                    onClick={() => toggleRoomType(rt)}
-                    className="press"
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: "var(--r-sm)",
-                      border: on ? "1.5px solid var(--text)" : "1px solid var(--border)",
-                      background: on ? "var(--text)" : "#fff",
-                      color: on ? "var(--bg)" : "var(--text)",
-                      fontWeight: 600,
-                      fontSize: 14,
-                      textAlign: "left",
-                    }}
+                    key={item.value}
+                    type="button"
+                    className="chip"
+                    data-active={active}
+                    onClick={() =>
+                      set({
+                        district: active ? "" : item.value,
+                        region: "",
+                      })
+                    }
                   >
-                    <span style={{ display: "block" }}>{ROOM_TYPE_LABELS[rt]}</span>
-                    <span style={{ display: "block", marginTop: 3, fontSize: 11.5, fontWeight: 450, opacity: 0.72 }}>{ROOM_TYPE_DESCRIPTIONS[rt]}</span>
+                    {item.label}
                   </button>
                 );
               })}
             </div>
           </Section>
 
-          {/* Price */}
-          <Section title="가격 (월세)">
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 8 }}>
-              <span>{won(draft.minRent ?? RENT_MIN)}</span>
-              <span>{won(draft.maxRent ?? RENT_MAX)}{(draft.maxRent ?? RENT_MAX) >= RENT_MAX ? "+" : ""}</span>
+          {draft.district && (
+            <Section title="세부 지역(동)">
+              <p
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--text-2)",
+                  marginBottom: 12,
+                }}
+              >
+                동을 선택하지 않으면 {draft.district} 전체 숙소를 검색합니다.
+              </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className="chip"
+                  data-active={!draft.region}
+                  onClick={() =>
+                    set({
+                      region: "",
+                    })
+                  }
+                >
+                  전체
+                </button>
+
+                {neighborhoods.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className="chip"
+                    data-active={draft.region === item.value}
+                    onClick={() =>
+                      set({
+                        region: draft.region === item.value ? "" : item.value,
+                      })
+                    }
+                  >
+                    {item.label}
+                  </button>
+                ))}
+
+                {neighborhoods.length === 0 && (
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: "var(--text-2)",
+                    }}
+                  >
+                    등록된 세부 지역이 없습니다.
+                  </span>
+                )}
+              </div>
+            </Section>
+          )}
+
+          <Section title="안심 조건">
+            <ToggleRow
+              label="호스트 확인 숙소만"
+              value={Boolean(draft.verified)}
+              onChange={(value) =>
+                set({
+                  verified: value,
+                })
+              }
+            />
+          </Section>
+
+          <Section title="주거 형태">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 10,
+              }}
+            >
+              {ROOM_TYPES.map((roomType) => {
+                const active = (draft.roomTypes ?? []).includes(roomType);
+
+                return (
+                  <button
+                    key={roomType}
+                    type="button"
+                    onClick={() => toggleRoomType(roomType)}
+                    className="press"
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: "var(--r-sm)",
+                      border: active
+                        ? "1.5px solid var(--text)"
+                        : "1px solid var(--border)",
+                      background: active ? "var(--text)" : "#fff",
+                      color: active ? "var(--bg)" : "var(--text)",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      textAlign: "left",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "block",
+                      }}
+                    >
+                      {ROOM_TYPE_LABELS[roomType]}
+                    </span>
+
+                    <span
+                      style={{
+                        display: "block",
+                        marginTop: 3,
+                        fontSize: 11.5,
+                        fontWeight: 450,
+                        opacity: 0.72,
+                      }}
+                    >
+                      {ROOM_TYPE_DESCRIPTIONS[roomType]}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            <div style={{ display: "grid", gap: 10 }}>
-              <label style={{ fontSize: 12, color: "var(--text-2)" }}>최소</label>
+          </Section>
+
+          <Section title="가격 (월세)">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: 14,
+                marginBottom: 8,
+              }}
+            >
+              <span>{won(draft.minRent ?? RENT_MIN)}</span>
+
+              <span>
+                {won(draft.maxRent ?? RENT_MAX)}
+                {(draft.maxRent ?? RENT_MAX) >= RENT_MAX ? "+" : ""}
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <label
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-2)",
+                }}
+              >
+                최소
+              </label>
+
               <input
                 type="range"
                 min={RENT_MIN}
                 max={RENT_MAX}
                 step={10000}
                 value={draft.minRent ?? RENT_MIN}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  set({ minRent: Math.min(v, (draft.maxRent ?? RENT_MAX)) });
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+
+                  set({
+                    minRent: Math.min(value, draft.maxRent ?? RENT_MAX),
+                  });
                 }}
               />
-              <label style={{ fontSize: 12, color: "var(--text-2)" }}>최대</label>
+
+              <label
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-2)",
+                }}
+              >
+                최대
+              </label>
+
               <input
                 type="range"
                 min={RENT_MIN}
                 max={RENT_MAX}
                 step={10000}
                 value={draft.maxRent ?? RENT_MAX}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  set({ maxRent: Math.max(v, (draft.minRent ?? RENT_MIN)) });
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+
+                  set({
+                    maxRent: Math.max(value, draft.minRent ?? RENT_MIN),
+                  });
                 }}
               />
             </div>
           </Section>
 
-          {/* Available from */}
           <Section title="입주 가능일">
             <input
               type="date"
               value={draft.availableFrom ?? ""}
-              onChange={(e) => set({ availableFrom: e.target.value })}
+              onChange={(event) =>
+                set({
+                  availableFrom: event.target.value,
+                })
+              }
               style={{
                 padding: "11px 14px",
                 border: "1px solid var(--border)",
@@ -179,89 +399,141 @@ export function FilterSheet({
                 width: "100%",
               }}
             />
-            <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 6 }}>
+
+            <p
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-2)",
+                marginTop: 6,
+              }}
+            >
               선택한 날짜에 입주 가능한 숙소만 표시됩니다.
             </p>
           </Section>
 
-          {/* Gender */}
-          {/* 방 개수 — 미입력 매물은 조건을 만족하지 않아 제외된다 */}
           <Section title="방 개수">
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {[1, 2, 3, 4].map((n) => (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {[1, 2, 3, 4].map((count) => (
                 <button
-                  key={n}
+                  key={count}
                   type="button"
                   className="chip"
-                  data-active={draft.minBedrooms === n}
+                  data-active={draft.minBedrooms === count}
                   onClick={() =>
-                    set({ minBedrooms: draft.minBedrooms === n ? undefined : n })
+                    set({
+                      minBedrooms:
+                        draft.minBedrooms === count ? undefined : count,
+                    })
                   }
                 >
-                  {n}개 이상
+                  {count}개 이상
                 </button>
               ))}
             </div>
           </Section>
 
-          {/* 인원수 — 독채는 정원이 없어 이 필터를 걸면 자연히 제외된다 */}
           <Section title="함께 지낼 인원">
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {[2, 3, 4, 5].map((n) => (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {[2, 3, 4, 5].map((count) => (
                 <button
-                  key={n}
+                  key={count}
                   type="button"
                   className="chip"
-                  data-active={draft.minCapacity === n}
+                  data-active={draft.minCapacity === count}
                   onClick={() =>
-                    set({ minCapacity: draft.minCapacity === n ? undefined : n })
+                    set({
+                      minCapacity:
+                        draft.minCapacity === count ? undefined : count,
+                    })
                   }
                 >
-                  {n}명 이상
+                  {count}명 이상
                 </button>
               ))}
             </div>
           </Section>
 
           <Section title="성별">
-            <div style={{ display: "flex", gap: 8 }}>
-              {GENDERS.map((g) => (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+              }}
+            >
+              {GENDERS.map((gender) => (
                 <button
-                  key={g}
+                  key={gender}
+                  type="button"
                   className="chip"
-                  data-active={(draft.gender ?? "any") === g}
-                  onClick={() => set({ gender: g })}
-                  style={{ flex: 1, justifyContent: "center" }}
+                  data-active={(draft.gender ?? "any") === gender}
+                  onClick={() =>
+                    set({
+                      gender,
+                    })
+                  }
+                  style={{
+                    flex: 1,
+                    justifyContent: "center",
+                  }}
                 >
-                  {GENDER_LABELS[g]}
+                  {GENDER_LABELS[gender]}
                 </button>
               ))}
             </div>
           </Section>
 
-          {/* Toggles */}
           <Section title="옵션">
-            <div style={{ display: "grid", gap: 4 }}>
+            <div
+              style={{
+                display: "grid",
+                gap: 4,
+              }}
+            >
               <ToggleRow
                 label="반려동물 가능"
-                value={!!draft.pets}
-                onChange={(v) => set({ pets: v })}
+                value={Boolean(draft.pets)}
+                onChange={(value) =>
+                  set({
+                    pets: value,
+                  })
+                }
               />
+
               <ToggleRow
                 label="흡연 가능"
-                value={!!draft.smoking}
-                onChange={(v) => set({ smoking: v })}
+                value={Boolean(draft.smoking)}
+                onChange={(value) =>
+                  set({
+                    smoking: value,
+                  })
+                }
               />
+
               <ToggleRow
                 label="주차 가능"
-                value={!!draft.parking}
-                onChange={(v) => set({ parking: v })}
+                value={Boolean(draft.parking)}
+                onChange={(value) =>
+                  set({
+                    parking: value,
+                  })
+                }
               />
             </div>
           </Section>
         </div>
 
-        {/* footer actions */}
         <div
           style={{
             position: "sticky",
@@ -274,15 +546,29 @@ export function FilterSheet({
           }}
         >
           <button
+            type="button"
             className="btn btn-ghost press"
-            style={{ flex: "0 0 auto" }}
-            onClick={() => setDraft({ ...DEFAULT_FILTERS, q: draft.q, sort: draft.sort })}
+            style={{
+              flex: "0 0 auto",
+            }}
+            onClick={() =>
+              setDraft({
+                ...DEFAULT_FILTERS,
+                q: draft.q,
+                sort: draft.sort,
+              })
+            }
           >
             초기화
           </button>
+
           <button
+            type="button"
             className="btn btn-primary press"
-            style={{ flex: 1, justifyContent: "center" }}
+            style={{
+              flex: 1,
+              justifyContent: "center",
+            }}
             onClick={() => onApply(draft)}
           >
             적용하기
@@ -293,10 +579,25 @@ export function FilterSheet({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>{title}</div>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 700,
+          marginBottom: 12,
+        }}
+      >
+        {title}
+      </div>
+
       {children}
     </div>
   );
@@ -309,10 +610,11 @@ function ToggleRow({
 }: {
   label: string;
   value: boolean;
-  onChange: (v: boolean) => void;
+  onChange: (value: boolean) => void;
 }) {
   return (
     <button
+      type="button"
       onClick={() => onChange(!value)}
       style={{
         display: "flex",
@@ -325,6 +627,7 @@ function ToggleRow({
       aria-checked={value}
     >
       <span>{label}</span>
+
       <span
         style={{
           width: 44,

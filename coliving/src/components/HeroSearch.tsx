@@ -66,7 +66,18 @@ export function HeroSearch() {
 
   function go() {
     const params = new URLSearchParams();
-    if (q.trim()) params.set("q", q.trim());
+    const query = q.trim();
+    const workplace = WORKPLACE_PRESETS.find(
+      (item) => item.query === query,
+    );
+
+    if (query) params.set("q", query);
+
+    if (workplace) {
+      params.set("district", workplace.district);
+      params.set("region", workplace.region);
+    }
+
     if (roomType) params.set("roomTypes", roomType);
     if (checkIn) params.set("checkIn", isoDate(checkIn));
     if (checkOut) params.set("checkOut", isoDate(checkOut));

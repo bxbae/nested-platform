@@ -28,9 +28,6 @@ export function Nav() {
     { href: "/community", label: t.community },
     { href: "/host", label: t.host },
     { href: "/me", label: t.my },
-    // "관리자" tab only for admins. /admin itself should also be gated
-    // server/route-side (AdminGate) — this just keeps a non-admin from
-    // seeing the link in the first place.
     ...(user?.role === "ADMIN" ? [{ href: "/admin", label: t.admin }] : []),
   ];
 
@@ -73,6 +70,7 @@ export function Nav() {
       href: "/search?verified=true",
     },
   ];
+
   const [authOpen, setAuthOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -81,8 +79,10 @@ export function Nav() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const hasAuthFlag =
       new URLSearchParams(window.location.search).get("auth") === "1";
+
     if (hasAuthFlag && !isAuthenticated) {
       setAuthOpen(true);
       router.replace(path);
@@ -121,9 +121,14 @@ export function Nav() {
           }}
         >
           <Rings size={28} />
+
           <span
             className="display"
-            style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-0.03em" }}
+            style={{
+              fontSize: 21,
+              fontWeight: 600,
+              letterSpacing: "-0.03em",
+            }}
           >
             Nested
           </span>
@@ -141,9 +146,11 @@ export function Nav() {
         >
           {links.map((link) => {
             const active = path.startsWith(link.href);
+
             const linkElement = (
               <Link
                 href={link.href}
+                className="navlink"
                 style={{
                   fontSize: 14.5,
                   fontWeight: active ? 650 : 480,
@@ -155,36 +162,39 @@ export function Nav() {
                     ? "1px solid var(--border)"
                     : "1px solid transparent",
                 }}
-                className="navlink"
               >
                 {link.label}
               </Link>
             );
 
-            if (link.href !== "/search")
+            if (link.href !== "/search") {
               return <span key={link.href}>{linkElement}</span>;
+            }
 
             return (
               <div
                 key={link.href}
+                className="nav-search-menu"
                 style={{ position: "relative" }}
                 onMouseEnter={() => setSearchOpen(true)}
                 onMouseLeave={() => setSearchOpen(false)}
               >
                 {linkElement}
+
                 {searchOpen && (
                   <div
+                    className="nav-search-menu-wrap"
                     style={{
                       position: "absolute",
                       top: "100%",
                       left: "50%",
-                      transform: "translateX(-34%)",
+                      transform: "translateX(-50%)",
                       paddingTop: 10,
                       zIndex: 60,
                     }}
                   >
                     <div
-                      className="card"
+                      className="card nav-search-menu-card"
                       style={{
                         width: 560,
                         padding: 16,
@@ -193,9 +203,10 @@ export function Nav() {
                         display: "grid",
                         gridTemplateColumns: "1.45fr .9fr",
                         gap: 16,
+                        background: "var(--surface)",
                       }}
                     >
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div
                           style={{
                             fontSize: 12,
@@ -206,7 +217,9 @@ export function Nav() {
                         >
                           {t.findByHousingType}
                         </div>
+
                         <div
+                          className="nav-search-room-grid"
                           style={{
                             display: "grid",
                             gridTemplateColumns: "1fr 1fr",
@@ -218,14 +231,16 @@ export function Nav() {
                               key={item.href}
                               href={item.href}
                               onClick={() => setSearchOpen(false)}
-                              className="hover-card"
+                              className="hover-card nav-search-room-link"
                               style={{
                                 display: "grid",
-                                gridTemplateColumns: "30px 1fr",
+                                gridTemplateColumns: "30px minmax(0, 1fr)",
                                 gap: 9,
                                 padding: 10,
                                 borderRadius: 12,
                                 border: "1px solid var(--border)",
+                                minWidth: 0,
+                                background: "var(--surface)",
                               }}
                             >
                               <span
@@ -237,22 +252,31 @@ export function Nav() {
                                   background: "var(--bg-2)",
                                   display: "grid",
                                   placeItems: "center",
+                                  flexShrink: 0,
                                 }}
                               >
                                 {item.icon}
                               </span>
-                              <span>
+
+                              <span style={{ minWidth: 0 }}>
                                 <strong
-                                  style={{ display: "block", fontSize: 13.5 }}
+                                  style={{
+                                    display: "block",
+                                    fontSize: 13.5,
+                                    overflowWrap: "anywhere",
+                                  }}
                                 >
                                   {item.label}
                                 </strong>
+
                                 <span
                                   style={{
                                     display: "block",
                                     fontSize: 11.5,
                                     color: "var(--text-2)",
                                     marginTop: 2,
+                                    lineHeight: 1.4,
+                                    overflowWrap: "anywhere",
                                   }}
                                 >
                                   {item.description}
@@ -262,10 +286,13 @@ export function Nav() {
                           ))}
                         </div>
                       </div>
+
                       <div
+                        className="nav-search-feature-section"
                         style={{
                           borderLeft: "1px solid var(--border)",
                           paddingLeft: 16,
+                          minWidth: 0,
                         }}
                       >
                         <div
@@ -278,30 +305,41 @@ export function Nav() {
                         >
                           {t.findByPurpose}
                         </div>
+
                         <div style={{ display: "grid", gap: 8 }}>
                           {featureLinks.map((item) => (
                             <Link
                               key={item.href}
                               href={item.href}
                               onClick={() => setSearchOpen(false)}
-                              className="hover-card"
+                              className="hover-card nav-search-feature-link"
                               style={{
                                 padding: 11,
                                 borderRadius: 12,
-                                background: "var(--bg-2)",
+                                background: "var(--surface)",
+                                border: "1px solid var(--border)",
+                                minWidth: 0,
                               }}
                             >
                               <strong
-                                style={{ display: "block", fontSize: 13.5 }}
+                                style={{
+                                  display: "block",
+                                  fontSize: 13.5,
+                                  lineHeight: 1.35,
+                                  overflowWrap: "anywhere",
+                                }}
                               >
                                 {item.label} →
                               </strong>
+
                               <span
                                 style={{
                                   display: "block",
                                   fontSize: 11.5,
                                   color: "var(--text-2)",
                                   marginTop: 3,
+                                  lineHeight: 1.4,
+                                  overflowWrap: "anywhere",
                                 }}
                               >
                                 {item.description}
@@ -328,6 +366,7 @@ export function Nav() {
         >
           <LanguageToggle />
           <ThemeToggle />
+
           {isAuthenticated ? (
             <>
               <Link
@@ -346,10 +385,13 @@ export function Nav() {
                   avatarColor={user?.avatarColor}
                   size={28}
                 />
+
                 <span>{displayName}</span>
               </Link>
+
               <MessageBell />
               <NotificationBell />
+
               <button
                 onClick={logout}
                 className="press"
@@ -377,6 +419,7 @@ export function Nav() {
           )}
         </div>
       </div>
+
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
     </header>
   );
