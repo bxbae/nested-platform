@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { won } from "@/lib/format";
 import { ROOM_TYPE_LABELS } from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
 import { listMyRooms, updateRoom, deleteRoom, type HostListing } from "@/lib/api/rooms";
+import { uploadImage } from "@/lib/api/storage";
 
 // 숙소 관리 — only *my* listings, and unlike search this includes rooms still
 // waiting on admin approval. Previously this page showed every room in the DB
@@ -18,6 +19,11 @@ export default function HostListings() {
   // 자주 손보는 금액·조건만 이 화면에서 바로 고친다.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ monthlyRent: 0, deposit: 0, minStayMonths: 1 });
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -43,6 +49,44 @@ export default function HostListings() {
       deposit: h.deposit,
       minStayMonths: h.minStayMonths ?? 1,
     });
+    // gallery is already in display order (index 0 = 대표 사진).
+    setPhotos(h.gallery ?? []);
+    setPhotoError(null);
+  }
+
+  function addPhoto() {
+    const url = photoUrl.trim();
+    if (!url) return;
+    try {
+      new URL(url); // reject anything the API's z.string().url() would refuse
+    } catch {
+      setPhotoError("올바른 이미지 URL이 아니에요.");
+      return;
+    }
+    setPhotoError(null);
+    setPhotos((prev) => [...prev, url].slice(0, 8));
+    setPhotoUrl("");
+  }
+
+  async function onFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    setPhotoError(null);
+    try {
+      const room = 8 - photos.length;
+      const picked = Array.from(files).slice(0, room);
+      const urls = await Promise.all(picked.map((file) => uploadImage(file)));
+      setPhotos((prev) => [...prev, ...urls].slice(0, 8));
+    } catch (e) {
+      setPhotoError(
+        e instanceof Error
+          ? `${e.message} 이미지 URL 붙여넣기로 추가할 수도 있어요.`
+          : "이미지 업로드에 실패했어요.",
+      );
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
 
   async function saveEdit(id: string) {
@@ -53,6 +97,7 @@ export default function HostListings() {
         monthlyRent: Number(draft.monthlyRent),
         deposit: Number(draft.deposit),
         minStayMonths: Number(draft.minStayMonths),
+        images: photos,
       });
       setEditingId(null);
       await load();
@@ -133,7 +178,87 @@ export default function HostListings() {
                     {h.region} · ★ {h.rating} · 후기 {h.reviews}
                   </div>
                   {editingId === h.id ? (
-                    <div style={{ display: "grid", gap: 8, marginTop: 12, maxWidth: 320 }}>
+                    <div style={{ display: "grid", gap: 10, marginTop: 12, maxWidth: 420 }}>
+                      <div>
+                        <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>
+                          사진 (최대 8장 · 첫 번째가 대표)
+                        </div>
+                        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                          <input
+                            value={photoUrl}
+                            onChange={(e) => setPhotoUrl(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                addPhoto();
+                              }
+                            }}
+                            placeholder="이미지 URL 붙여넣기 (https://…)"
+                            style={{ flex: 1, fontSize: 13 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-ghost press"
+                            style={{ fontSize: 12.5, padding: "6px 10px" }}
+                            onClick={addPhoto}
+                            disabled={photos.length >= 8}
+                          >
+                            URL추가
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost press"
+                            style={{ fontSize: 12.5, padding: "6px 10px" }}
+                            onClick={() => fileRef.current?.click()}
+                            disabled={uploading || photos.length >= 8}
+                          >
+                            {uploading ? "업로드 중…" : "＋ 파일"}
+                          </button>
+                          <input
+                            ref={fileRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/avif"
+                            multiple
+                            // hidden 대신 화면 밖으로 밀어둔다 — display:none 인풋은
+                            // .click()으로 열어도 change 이벤트가 안 오는 브라우저가 있다.
+                            style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+                            tabIndex={-1}
+                            onChange={(e) => onFiles(e.target.files)}
+                          />
+                        </div>
+                        {photoError && (
+                          <p style={{ fontSize: 12, color: "var(--primary)", marginBottom: 8 }}>{photoError}</p>
+                        )}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                          {photos.map((src, i) => (
+                            <div key={i} style={{ position: "relative", height: 64, borderRadius: 8, overflow: "hidden" }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={src} alt={`사진 ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              {i === 0 && (
+                                <span className="chip" style={{ position: "absolute", top: 3, left: 3, fontSize: 9, padding: "1px 5px", background: "#fff" }}>
+                                  대표
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                                aria-label="사진 삭제"
+                                style={{
+                                  position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: 99,
+                                  background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 12, lineHeight: 1,
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          {photos.length === 0 && (
+                            <div style={{ fontSize: 12, color: "var(--text-2)", gridColumn: "1 / -1" }}>
+                              사진이 없어요. URL을 붙여넣거나 파일을 올려주세요.
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
                         월세 (원)
                         <input
@@ -164,7 +289,7 @@ export default function HostListings() {
                         />
                       </label>
                       <p style={{ fontSize: 12, color: "var(--text-2)" }}>
-                        사진·주소·소개글은 등록 화면에서 수정할 수 있어요.
+                        주소·소개글은 등록 화면에서만 수정할 수 있어요.
                       </p>
                     </div>
                   ) : (
