@@ -26,7 +26,7 @@ const listingSchema = z.object({
   city: z.string().min(1, "주소를 검색하세요."),
   district: z.string().min(1, "주소를 검색하세요."),
   neighborhood: z.string().min(1, "주소를 검색하세요."),
-  legalDongCode: z.string().min(5, "주소를 다시 검색하세요."),
+  legalDongCode: z.string(),
   roadAddress: z.string().min(5, "도로명 주소를 검색하세요."),
   jibunAddress: z.string(),
   detailAddress: z.string(),
@@ -39,7 +39,6 @@ const listingSchema = z.object({
   maintenanceFee: z.coerce.number().min(0),
   minStay: z.coerce.number().min(1).max(12),
   availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
-  address: z.string().min(5, "도로명 주소를 입력하세요."),
   // 독채가 아니면 필수. 아래 superRefine 에서 타입에 따라 갈린다.
   capacity: z.coerce.number().int().min(1).max(20).optional(),
   // 침실 개수 — 선택 항목이라 비워도 등록된다.
