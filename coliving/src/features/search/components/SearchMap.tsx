@@ -41,7 +41,7 @@ export function SearchMap({
         <strong style={{ color: "var(--text)", fontSize: 14 }}>지도</strong>
         <span>{houses.length}곳 표시</span>
       </div>
-      <div style={{ flex: 1, minHeight: 300 }}>
+      <div style={{ flex: 1, minHeight: 300, zIndex: 10 }}>
         <SearchMapInner houses={houses} hover={hover} onHover={onHover} />
       </div>
     </div>
