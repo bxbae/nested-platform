@@ -34,9 +34,19 @@ const listingSchema = z.object({
   availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
   address: z.string().min(5, "도로명 주소를 입력하세요."),
   // 독채가 아니면 필수. 아래 superRefine 에서 타입에 따라 갈린다.
-  capacity: z.coerce.number().int().min(1).max(20).optional(),
+  //
+  // 빈 문자열을 먼저 undefined 로 바꾼다. 입력이 언마운트돼도(독채 선택)
+  // react-hook-form 에는 "" 가 남는데, coerce 가 이를 0 으로 바꾸면서
+  // .min(1) 에 걸려 독채인데도 제출이 막혔다.
+  capacity: z.preprocess(
+    (val) => (val === "" || val === null ? undefined : val),
+    z.coerce.number().int().min(1).max(20).optional(),
+  ),
   // 침실 개수 — 선택 항목이라 비워도 등록된다.
-  bedrooms: z.coerce.number().int().min(1).max(10).optional(),
+  bedrooms: z.preprocess(
+    (val) => (val === "" || val === null ? undefined : val),
+    z.coerce.number().int().min(1).max(10).optional(),
+  ),
   verifiedByHost: z.literal(true, {
     errorMap: () => ({ message: "실제 매물임을 확인해주세요." }),
   }),
