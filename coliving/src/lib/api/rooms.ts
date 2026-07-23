@@ -111,8 +111,9 @@ export async function listMyRooms(): Promise<HostListing[]> {
 }
 
 // PATCH /rooms/:id — 호스트 본인 매물만. 서버가 소유권을 확인한다.
-// 사진·주소처럼 등록 흐름 전체가 필요한 항목은 제외하고, 자주 손보는 값만
-// 부분 수정으로 받는다.
+// 주소처럼 등록 흐름 전체(지오코딩)가 필요한 항목은 제외하고, 자주 손보는
+// 값과 사진만 부분 수정으로 받는다. images를 보내면 서버가 기존 갤러리를
+// 통째로 교체한다 — 순서 그대로, 부분 추가/삭제 개념은 없다.
 export interface UpdateRoomInput {
   monthlyRent?: number;
   deposit?: number;
@@ -121,6 +122,7 @@ export interface UpdateRoomInput {
   minStayMonths?: number;
   availableFrom?: string; // ISO date
   capacity?: number | null;
+  images?: string[]; // full gallery, in display order — index 0 is the cover
 }
 
 export async function updateRoom(id: string, input: UpdateRoomInput): Promise<void> {
