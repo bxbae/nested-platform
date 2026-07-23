@@ -20,6 +20,7 @@ export interface AuthUser {
   gender?: "MALE" | "FEMALE" | "OTHER";
   // 생년월일(ISO). 본인 조회에만 내려온다 — 설정 화면 편집과 생일 쿠폰 판정용.
   birthDate?: string | null;
+  preferredLocale?: "KO" | "EN";
   // false for social-login accounts, which have no password to change.
   hasPassword?: boolean;
   createdAt?: string | null;
@@ -59,7 +60,8 @@ function load(): AuthTokens | null {
 function persist() {
   if (typeof window === "undefined") return;
   try {
-    if (tokens) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
+    if (tokens)
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
     else window.localStorage.removeItem(STORAGE_KEY);
   } catch {
     /* private mode / quota — stay in-memory only */

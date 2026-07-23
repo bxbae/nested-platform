@@ -10,7 +10,11 @@ import { authStore, type AuthTokens, type AuthUser } from "./auth-store";
 // In demo mode (no backend) we fabricate a local session so the login UI is
 // fully clickable on the portfolio deployment. Tokens are dummy strings — the
 // app never calls a real API in this mode.
-function demoTokens(email: string, name?: string): AuthTokens {
+function demoTokens(
+  email: string,
+  name?: string,
+  preferredLocale: "KO" | "EN" = "KO",
+): AuthTokens {
   return {
     accessToken: "demo-access",
     refreshToken: "demo-refresh",
@@ -20,6 +24,7 @@ function demoTokens(email: string, name?: string): AuthTokens {
       role: "USER",
       name: name ?? `사용자${Math.random().toString(36).slice(2, 8)}`,
       nicknameCompleted: Boolean(name?.trim()),
+      preferredLocale,
     },
   };
 }
@@ -36,6 +41,7 @@ export async function register(
   password: string,
   name: string,
   gender: "MALE" | "FEMALE" | "OTHER",
+  preferredLocale: "KO" | "EN",
 ): Promise<RegisterResult> {
   if (!USE_REAL_API) {
     const t = demoTokens(email, name);
@@ -44,7 +50,11 @@ export async function register(
   }
   const res = await api.post<
     AuthTokens | { verificationRequired: true; email: string; message: string }
-  >("/auth/register", { email, password, name, gender }, { auth: false });
+  >(
+    "/auth/register",
+    { email, password, name, gender, preferredLocale },
+    { auth: false },
+  );
 
   if ("verificationRequired" in res) {
     // No session yet — the caller shows a "check your email" state.
@@ -56,7 +66,11 @@ export async function register(
 
 // POST /auth/verify-email — consume the emailed token, log the user in.
 export async function verifyEmail(token: string): Promise<AuthUser> {
-  const res = await api.post<AuthTokens>("/auth/verify-email", { token }, { auth: false });
+  const res = await api.post<AuthTokens>(
+    "/auth/verify-email",
+    { token },
+    { auth: false },
+  );
   authStore.set(res);
   return res.user;
 }
@@ -66,13 +80,20 @@ export async function resendVerification(email: string): Promise<void> {
   await api.post("/auth/resend-verification", { email }, { auth: false });
 }
 
-export async function login(email: string, password: string): Promise<AuthUser> {
+export async function login(
+  email: string,
+  password: string,
+): Promise<AuthUser> {
   if (!USE_REAL_API) {
     const t = demoTokens(email);
     authStore.set(t);
     return t.user;
   }
-  const res = await api.post<AuthTokens>("/auth/login", { email, password }, { auth: false });
+  const res = await api.post<AuthTokens>(
+    "/auth/login",
+    { email, password },
+    { auth: false },
+  );
   authStore.set(res);
   return res.user;
 }
@@ -107,6 +128,7 @@ interface ApiMe {
   avatarUrl?: string | null;
   gender?: "MALE" | "FEMALE" | "OTHER";
   birthDate?: string | null;
+  preferredLocale?: "KO" | "EN";
   hasPassword?: boolean;
   createdAt?: string | null;
 }
@@ -123,6 +145,7 @@ function toAuthUser(me: ApiMe): AuthUser {
     avatarUrl: me.avatarUrl ?? null,
     gender: me.gender ?? "OTHER",
     birthDate: me.birthDate ?? null,
+    preferredLocale: me.preferredLocale ?? "KO",
     hasPassword: me.hasPassword,
     createdAt: me.createdAt ?? null,
   };
@@ -147,6 +170,45 @@ export async function updateProfile(data: {
   return user;
 }
 
+export async function updatePreferredLocale(
+  preferredLocale: "KO" | "EN",
+): Promise<"KO" | "EN"> {
+  const current = authStore.get();
+
+  if (!USE_REAL_API) {
+    if (current) {
+      authStore.set({
+        ...current,
+        user: {
+          ...current.user,
+          preferredLocale,
+        },
+      });
+    }
+
+    return preferredLocale;
+  }
+
+  const result = await api.patch<{
+    id: string;
+    preferredLocale: "KO" | "EN";
+  }>("/auth/me/locale", {
+    preferredLocale,
+  });
+
+  if (current) {
+    authStore.set({
+      ...current,
+      user: {
+        ...current.user,
+        preferredLocale: result.preferredLocale,
+      },
+    });
+  }
+
+  return result.preferredLocale;
+}
+
 // POST /auth/forgot-password — always resolves, even for an unknown address.
 // The API deliberately gives no signal about whether the email is registered.
 export async function forgotPassword(email: string): Promise<void> {
@@ -154,8 +216,15 @@ export async function forgotPassword(email: string): Promise<void> {
 }
 
 // POST /auth/reset-password — consumes the token from the emailed link.
-export async function resetPassword(token: string, newPassword: string): Promise<void> {
-  await api.post("/auth/reset-password", { token, newPassword }, { auth: false });
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  await api.post(
+    "/auth/reset-password",
+    { token, newPassword },
+    { auth: false },
+  );
 }
 
 // DELETE /auth/me — soft-delete own account. Clears local auth on success so

@@ -1,4 +1,15 @@
-import { Controller, Post, Get, Patch, Delete, Body, UseGuards, Req, Res, HttpCode } from "@nestjs/common";
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Body,
+  UseGuards,
+  Req,
+  Res,
+  HttpCode,
+} from "@nestjs/common";
 import type { Response } from "express";
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
@@ -23,9 +34,19 @@ import { z } from "zod";
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  name: z.string().trim().min(2, "닉네임은 2자 이상 입력해주세요.").max(20, "닉네임은 20자 이하로 입력해주세요."),
-  gender: z.enum(["MALE", "FEMALE", "OTHER"], { required_error: "성별을 선택해주세요." }),
+  name: z
+    .string()
+    .trim()
+    .min(2, "닉네임은 2자 이상 입력해주세요.")
+    .max(20, "닉네임은 20자 이하로 입력해주세요."),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"], {
+    required_error: "성별을 선택해주세요.",
+  }),
+  preferredLocale: z.enum(["KO", "EN"], {
+    required_error: "언어를 선택해주세요.",
+  }),
 });
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -35,15 +56,34 @@ const refreshSchema = z.object({ refreshToken: z.string().min(1) });
 // Only these three are writable. `email` and `role` are deliberately absent:
 // Zod strips unknown keys, so a client can't sneak `role: "ADMIN"` through.
 const updateMeSchema = z.object({
-  name: z.string().trim().min(2, "닉네임은 2자 이상 입력해주세요.").max(20, "닉네임은 20자 이하로 입력해주세요.").optional(),
+  name: z
+    .string()
+    .trim()
+    .min(2, "닉네임은 2자 이상 입력해주세요.")
+    .max(20, "닉네임은 20자 이하로 입력해주세요.")
+    .optional(),
   bio: z.string().max(500, "자기소개는 500자 이내로 입력해주세요.").optional(),
-  avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요.").optional(),
+  avatarColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요.")
+    .optional(),
   // Profile card fields (스토리보드 1-1 / 08). All optional.
-  avatarUrl: z.string().url("이미지 주소가 올바르지 않아요.").max(500).nullable().optional(),
+  avatarUrl: z
+    .string()
+    .url("이미지 주소가 올바르지 않아요.")
+    .max(500)
+    .nullable()
+    .optional(),
   // ISO 날짜 문자열(YYYY-MM-DD 또는 전체 ISO). 서비스에서 Date로 변환한다.
   birthDate: z.string().min(1).nullable().optional(),
   job: z.string().max(40).nullable().optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+});
+
+const updateLocaleSchema = z.object({
+  preferredLocale: z.enum(["KO", "EN"], {
+    required_error: "언어를 선택해주세요.",
+  }),
 });
 
 const forgotPasswordSchema = z.object({
@@ -67,19 +107,33 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post("register")
-  register(@Body(new ZodValidationPipe(registerSchema)) dto: z.infer<typeof registerSchema>) {
-    return this.auth.register(dto.email, dto.password, dto.name, dto.gender);
+  register(
+    @Body(new ZodValidationPipe(registerSchema))
+    dto: z.infer<typeof registerSchema>,
+  ) {
+    return this.auth.register(
+      dto.email,
+      dto.password,
+      dto.name,
+      dto.gender,
+      dto.preferredLocale,
+    );
   }
 
   @Post("login")
   @HttpCode(200)
-  login(@Body(new ZodValidationPipe(loginSchema)) dto: z.infer<typeof loginSchema>) {
+  login(
+    @Body(new ZodValidationPipe(loginSchema)) dto: z.infer<typeof loginSchema>,
+  ) {
     return this.auth.login(dto.email, dto.password);
   }
 
   @Post("refresh")
   @HttpCode(200)
-  refresh(@Body(new ZodValidationPipe(refreshSchema)) dto: z.infer<typeof refreshSchema>) {
+  refresh(
+    @Body(new ZodValidationPipe(refreshSchema))
+    dto: z.infer<typeof refreshSchema>,
+  ) {
     return this.auth.refresh(dto.refreshToken);
   }
 
@@ -95,9 +149,20 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   updateMe(
     @Req() req: any,
-    @Body(new ZodValidationPipe(updateMeSchema)) dto: z.infer<typeof updateMeSchema>,
+    @Body(new ZodValidationPipe(updateMeSchema))
+    dto: z.infer<typeof updateMeSchema>,
   ) {
     return this.auth.updateMe(req.user.id, dto);
+  }
+
+  @Patch("me/locale")
+  @UseGuards(JwtAuthGuard)
+  updateLocale(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(updateLocaleSchema))
+    dto: z.infer<typeof updateLocaleSchema>,
+  ) {
+    return this.auth.updateLocale(req.user.id, dto.preferredLocale);
   }
 
   // POST /auth/change-password — verifies the current password first.
@@ -107,9 +172,14 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   changePassword(
     @Req() req: any,
-    @Body(new ZodValidationPipe(changePasswordSchema)) dto: z.infer<typeof changePasswordSchema>,
+    @Body(new ZodValidationPipe(changePasswordSchema))
+    dto: z.infer<typeof changePasswordSchema>,
   ) {
-    return this.auth.changePassword(req.user.id, dto.currentPassword, dto.newPassword);
+    return this.auth.changePassword(
+      req.user.id,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 
   // POST /auth/forgot-password — emails a reset link.
@@ -119,7 +189,8 @@ export class AuthController {
   @Post("forgot-password")
   @HttpCode(200)
   forgotPassword(
-    @Body(new ZodValidationPipe(forgotPasswordSchema)) dto: z.infer<typeof forgotPasswordSchema>,
+    @Body(new ZodValidationPipe(forgotPasswordSchema))
+    dto: z.infer<typeof forgotPasswordSchema>,
   ) {
     return this.auth.forgotPassword(dto.email);
   }
@@ -128,7 +199,8 @@ export class AuthController {
   @Post("reset-password")
   @HttpCode(200)
   resetPassword(
-    @Body(new ZodValidationPipe(resetPasswordSchema)) dto: z.infer<typeof resetPasswordSchema>,
+    @Body(new ZodValidationPipe(resetPasswordSchema))
+    dto: z.infer<typeof resetPasswordSchema>,
   ) {
     return this.auth.resetPassword(dto.token, dto.newPassword);
   }
@@ -138,7 +210,8 @@ export class AuthController {
   @Post("verify-email")
   @HttpCode(200)
   verifyEmail(
-    @Body(new ZodValidationPipe(verifyEmailSchema)) dto: z.infer<typeof verifyEmailSchema>,
+    @Body(new ZodValidationPipe(verifyEmailSchema))
+    dto: z.infer<typeof verifyEmailSchema>,
   ) {
     return this.auth.verifyEmail(dto.token);
   }
@@ -148,7 +221,8 @@ export class AuthController {
   @Post("resend-verification")
   @HttpCode(200)
   resendVerification(
-    @Body(new ZodValidationPipe(resendVerificationSchema)) dto: z.infer<typeof resendVerificationSchema>,
+    @Body(new ZodValidationPipe(resendVerificationSchema))
+    dto: z.infer<typeof resendVerificationSchema>,
   ) {
     return this.auth.resendVerification(dto.email);
   }
@@ -239,7 +313,15 @@ export class AuthController {
     JwtModule.register({}), // secrets passed per-sign call
   ],
   controllers: [AuthController],
-  providers: [AuthService, MailService, JwtStrategy, GoogleStrategy, KakaoStrategy, NaverStrategy, AppleStrategy],
+  providers: [
+    AuthService,
+    MailService,
+    JwtStrategy,
+    GoogleStrategy,
+    KakaoStrategy,
+    NaverStrategy,
+    AppleStrategy,
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}
