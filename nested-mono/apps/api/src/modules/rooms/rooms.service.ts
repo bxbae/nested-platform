@@ -392,8 +392,9 @@ export class RoomsService {
   // `images` is a relation, not a column — spreading it into `data` makes
   // Prisma throw, which is why listings were saving with no photos.
   //
-  // The room is created unpublished (schema default) and stays invisible to
-  // search until an admin approves it via PATCH /admin/rooms/:id/publish.
+  // The room is created published (schema default) and is visible in search
+  // immediately. An admin can still unpublish it via
+  // PATCH /admin/rooms/:id/publish if a listing turns out to be problematic.
   async create(hostId: string, data: any) {
     const {
       images = [],

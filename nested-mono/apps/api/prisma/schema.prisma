@@ -230,7 +230,7 @@ model Room {
   petsAllowed    Boolean @default(false)
   smokingAllowed Boolean @default(false)
   parking        Boolean @default(false)
-  published      Boolean @default(false)
+  published      Boolean @default(true)
 
   images       Image[]
   reservations Reservation[]
