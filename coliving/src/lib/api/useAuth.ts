@@ -16,17 +16,28 @@ export function useAuth() {
   const user = useSyncExternalStore<AuthUser | null>(
     authStore.subscribe,
     () => authStore.getUser(),
-    () => null // SSR snapshot — no tokens on the server
+    () => null, // SSR snapshot — no tokens on the server
   );
 
-  const login = useCallback((email: string, password: string) => loginApi(email, password), []);
+  const login = useCallback(
+    (email: string, password: string) => loginApi(email, password),
+    [],
+  );
   const register = useCallback(
-    (email: string, password: string, name: string, gender: "MALE" | "FEMALE" | "OTHER") =>
-      registerApi(email, password, name, gender),
-    []
+    (
+      email: string,
+      password: string,
+      name: string,
+      gender: "MALE" | "FEMALE" | "OTHER",
+      preferredLocale: "KO" | "EN",
+    ) => registerApi(email, password, name, gender, preferredLocale),
+    [],
   );
   const logout = useCallback(() => logoutApi(), []);
-  const oauth = useCallback((provider: OAuthProvider) => startOAuth(provider), []);
+  const oauth = useCallback(
+    (provider: OAuthProvider) => startOAuth(provider),
+    [],
+  );
 
   return {
     user,

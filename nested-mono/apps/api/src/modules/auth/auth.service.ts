@@ -1,6 +1,9 @@
 import {
-  Injectable, UnauthorizedException, ConflictException,
-  NotFoundException, BadRequestException,
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
@@ -21,7 +24,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
-    private readonly mail: MailService
+    private readonly mail: MailService,
   ) {}
 
   // Current user, read fresh from the DB so name/createdAt reflect reality
@@ -30,8 +33,19 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
-        id: true, email: true, name: true, nicknameCompleted: true, role: true, createdAt: true,
-        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true, gender: true,
+        id: true,
+        email: true,
+        name: true,
+        nicknameCompleted: true,
+        role: true,
+        createdAt: true,
+        bio: true,
+        avatarColor: true,
+        avatarUrl: true,
+        age: true,
+        job: true,
+        gender: true,
+        preferredLocale: true,
         // Lets the client hide "change password" for OAuth-only accounts,
         // which have no password to change.
         passwordHash: true,
@@ -59,6 +73,7 @@ export class AuthService {
       age: user.age,
       job: user.job,
       gender: user.gender,
+      preferredLocale: user.preferredLocale,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
       // 인증·활동 뱃지
@@ -87,17 +102,32 @@ export class AuthService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        ...(data.name !== undefined ? { name: data.name, nicknameCompleted: true } : {}),
+        ...(data.name !== undefined
+          ? { name: data.name, nicknameCompleted: true }
+          : {}),
         ...(data.bio !== undefined ? { bio: data.bio } : {}),
-        ...(data.avatarColor !== undefined ? { avatarColor: data.avatarColor } : {}),
+        ...(data.avatarColor !== undefined
+          ? { avatarColor: data.avatarColor }
+          : {}),
         ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
         ...(data.age !== undefined ? { age: data.age } : {}),
         ...(data.job !== undefined ? { job: data.job } : {}),
         ...(data.gender !== undefined ? { gender: data.gender } : {}),
       },
       select: {
-        id: true, email: true, name: true, nicknameCompleted: true, role: true, createdAt: true,
-        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true, gender: true,
+        id: true,
+        email: true,
+        name: true,
+        nicknameCompleted: true,
+        role: true,
+        createdAt: true,
+        bio: true,
+        avatarColor: true,
+        avatarUrl: true,
+        age: true,
+        job: true,
+        gender: true,
+        preferredLocale: true,
         passwordHash: true,
       },
     });
@@ -113,19 +143,42 @@ export class AuthService {
       age: user.age,
       job: user.job,
       gender: user.gender,
+      preferredLocale: user.preferredLocale,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
     };
   }
 
+  async updateLocale(userId: string, preferredLocale: "KO" | "EN") {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { preferredLocale },
+      select: {
+        id: true,
+        preferredLocale: true,
+      },
+    });
+
+    return {
+      id: user.id,
+      preferredLocale: user.preferredLocale,
+    };
+  }
   // ── Password change ──
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { passwordHash: true },
     });
     if (!user) {
-      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+      throw new NotFoundException({
+        code: "USER_NOT_FOUND",
+        message: "사용자를 찾을 수 없습니다.",
+      });
     }
     // Social-login accounts have no password. Offering a "change" here would be
     // meaningless — they'd need a "set password" flow instead.
@@ -143,7 +196,10 @@ export class AuthService {
       });
     }
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
 
     // Existing refresh tokens stay valid, which means a stolen session survives
     // a password change. Revoke them so "change password" actually locks others out.
@@ -152,7 +208,13 @@ export class AuthService {
   }
 
   // ── Email/password registration ──
-  async register(email: string, password: string, name: string, gender: "MALE" | "FEMALE" | "OTHER") {
+  async register(
+    email: string,
+    password: string,
+    name: string,
+    gender: "MALE" | "FEMALE" | "OTHER",
+    preferredLocale: "KO" | "EN",
+  ) {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new ConflictException("이미 가입된 이메일입니다.");
     const passwordHash = await bcrypt.hash(password, 10);
@@ -169,6 +231,7 @@ export class AuthService {
         passwordHash,
         name,
         gender,
+        preferredLocale,
         nicknameCompleted: true,
         emailVerified: autoVerify ? new Date() : null,
       },
@@ -176,7 +239,13 @@ export class AuthService {
 
     if (autoVerify) {
       // Straight to a session — same behaviour as before mail was required.
-      return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
+      return this.issueTokens(
+        user.id,
+        user.email,
+        user.role,
+        user.name,
+        user.createdAt,
+      );
     }
 
     // Real provider: send the verification link and DO NOT issue tokens.
@@ -185,16 +254,23 @@ export class AuthService {
     return {
       verificationRequired: true as const,
       email: user.email,
-      message: "가입 확인 메일을 보냈어요. 메일의 링크를 눌러 인증을 완료해주세요.",
+      message:
+        "가입 확인 메일을 보냈어요. 메일의 링크를 눌러 인증을 완료해주세요.",
     };
   }
 
   // ── Email/password login ──
   async login(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || !user.passwordHash) throw new UnauthorizedException("이메일 또는 비밀번호가 올바르지 않습니다.");
+    if (!user || !user.passwordHash)
+      throw new UnauthorizedException(
+        "이메일 또는 비밀번호가 올바르지 않습니다.",
+      );
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) throw new UnauthorizedException("이메일 또는 비밀번호가 올바르지 않습니다.");
+    if (!ok)
+      throw new UnauthorizedException(
+        "이메일 또는 비밀번호가 올바르지 않습니다.",
+      );
     if (user.deletedAt) throw new UnauthorizedException("탈퇴한 계정입니다.");
     if (user.suspended) throw new UnauthorizedException("정지된 계정입니다.");
     // Block login until the address is confirmed — but only when a mail
@@ -202,10 +278,17 @@ export class AuthService {
     if (this.mail.configured && !user.emailVerified) {
       throw new UnauthorizedException({
         code: "EMAIL_NOT_VERIFIED",
-        message: "이메일 인증이 필요해요. 가입 시 받은 메일의 링크를 눌러주세요.",
+        message:
+          "이메일 인증이 필요해요. 가입 시 받은 메일의 링크를 눌러주세요.",
       });
     }
-    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
+    return this.issueTokens(
+      user.id,
+      user.email,
+      user.role,
+      user.name,
+      user.createdAt,
+    );
   }
 
   // ── OAuth (Google) — find-or-create then issue tokens ──
@@ -219,7 +302,9 @@ export class AuthService {
       where: { provider: profile.provider, providerId: profile.providerId },
     });
     if (!user) {
-      user = await this.prisma.user.findUnique({ where: { email: profile.email } });
+      user = await this.prisma.user.findUnique({
+        where: { email: profile.email },
+      });
       if (user) {
         // link OAuth to existing email account
         user = await this.prisma.user.update({
@@ -238,7 +323,13 @@ export class AuthService {
         });
       }
     }
-    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
+    return this.issueTokens(
+      user.id,
+      user.email,
+      user.role,
+      user.name,
+      user.createdAt,
+    );
   }
 
   // ── Refresh-token rotation (DB-backed) ──
@@ -258,14 +349,23 @@ export class AuthService {
     const stored = await this.prisma.refreshToken.findFirst({
       where: { userId: payload.sub, tokenHash, expiresAt: { gt: new Date() } },
     });
-    if (!stored) throw new UnauthorizedException("만료되었거나 폐기된 토큰입니다.");
+    if (!stored)
+      throw new UnauthorizedException("만료되었거나 폐기된 토큰입니다.");
 
     // rotate: delete the used token, issue a fresh pair
     await this.prisma.refreshToken.delete({ where: { id: stored.id } });
 
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
     if (!user) throw new UnauthorizedException();
-    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
+    return this.issueTokens(
+      user.id,
+      user.email,
+      user.role,
+      user.name,
+      user.createdAt,
+    );
   }
 
   // Revoke all sessions for a user (logout everywhere).
@@ -287,7 +387,9 @@ export class AuthService {
     // saying so would leak that the account exists and how it signs in.
     if (user?.passwordHash) {
       // Invalidate outstanding links so only the newest one works.
-      await this.prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+      await this.prisma.passwordResetToken.deleteMany({
+        where: { userId: user.id },
+      });
 
       const token = randomBytes(32).toString("hex");
       await this.prisma.passwordResetToken.create({
@@ -299,7 +401,10 @@ export class AuthService {
       });
 
       const base = process.env.FRONTEND_URL ?? "http://localhost:3000";
-      await this.mail.sendPasswordReset(email, `${base}/auth/reset?token=${token}`);
+      await this.mail.sendPasswordReset(
+        email,
+        `${base}/auth/reset?token=${token}`,
+      );
     }
 
     return { ok: true };
@@ -324,7 +429,10 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
     await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: row.userId }, data: { passwordHash } }),
+      this.prisma.user.update({
+        where: { id: row.userId },
+        data: { passwordHash },
+      }),
       // Burn the token so the link can't be replayed.
       this.prisma.passwordResetToken.update({
         where: { id: row.id },
@@ -352,13 +460,27 @@ export class AuthService {
   async becomeHost(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, role: true, createdAt: true, deletedAt: true, suspended: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+        deletedAt: true,
+        suspended: true,
+      },
     });
     if (!user || user.deletedAt) {
-      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+      throw new NotFoundException({
+        code: "USER_NOT_FOUND",
+        message: "사용자를 찾을 수 없습니다.",
+      });
     }
     if (user.suspended) {
-      throw new BadRequestException({ code: "ACCOUNT_SUSPENDED", message: "정지된 계정입니다." });
+      throw new BadRequestException({
+        code: "ACCOUNT_SUSPENDED",
+        message: "정지된 계정입니다.",
+      });
     }
     // Admins already outrank hosts — silently downgrading them would be a bug.
     if (user.role === "ADMIN") {
@@ -368,17 +490,30 @@ export class AuthService {
       });
     }
     if (user.role === "HOST") {
-      throw new BadRequestException({ code: "ALREADY_HOST", message: "이미 호스트예요." });
+      throw new BadRequestException({
+        code: "ALREADY_HOST",
+        message: "이미 호스트예요.",
+      });
     }
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { role: "HOST" },
-      select: { id: true, email: true, name: true, role: true, createdAt: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
     });
 
     return this.issueTokens(
-      updated.id, updated.email, updated.role, updated.name, updated.createdAt,
+      updated.id,
+      updated.email,
+      updated.role,
+      updated.name,
+      updated.createdAt,
     );
   }
 
@@ -388,10 +523,16 @@ export class AuthService {
       select: { deletedAt: true },
     });
     if (!user) {
-      throw new NotFoundException({ code: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+      throw new NotFoundException({
+        code: "USER_NOT_FOUND",
+        message: "사용자를 찾을 수 없습니다.",
+      });
     }
     if (user.deletedAt) {
-      throw new BadRequestException({ code: "ALREADY_DELETED", message: "이미 탈퇴한 계정입니다." });
+      throw new BadRequestException({
+        code: "ALREADY_DELETED",
+        message: "이미 탈퇴한 계정입니다.",
+      });
     }
 
     // A live reservation ties two people together: the guest who booked and the
@@ -468,7 +609,10 @@ export class AuthService {
       },
     });
     const base = process.env.FRONTEND_URL ?? "http://localhost:3000";
-    await this.mail.sendEmailVerification(email, `${base}/auth/verify?token=${token}`);
+    await this.mail.sendEmailVerification(
+      email,
+      `${base}/auth/verify?token=${token}`,
+    );
   }
 
   // GET/POST target for the emailed link. Stamps emailVerified and burns the
@@ -482,7 +626,8 @@ export class AuthService {
     if (!row || row.usedAt || row.expiresAt < new Date()) {
       throw new BadRequestException({
         code: "INVALID_VERIFICATION_TOKEN",
-        message: "인증 링크가 만료되었거나 이미 사용되었어요. 다시 요청해주세요.",
+        message:
+          "인증 링크가 만료되었거나 이미 사용되었어요. 다시 요청해주세요.",
       });
     }
 
@@ -497,7 +642,13 @@ export class AuthService {
       }),
     ]);
 
-    return this.issueTokens(user.id, user.email, user.role, user.name, user.createdAt);
+    return this.issueTokens(
+      user.id,
+      user.email,
+      user.role,
+      user.name,
+      user.createdAt,
+    );
   }
 
   // Re-send the verification link. Silent no-op for unknown or already-verified
@@ -530,7 +681,7 @@ export class AuthService {
   ) {
     const profile = await this.prisma.user.findUnique({
       where: { id: sub },
-      select: { nicknameCompleted: true },
+      select: { nicknameCompleted: true, preferredLocale: true },
     });
     const payload: JwtPayload = { sub, email, role };
     const accessToken = await this.jwt.signAsync(payload, {
@@ -560,6 +711,7 @@ export class AuthService {
         role,
         name: name ?? null,
         nicknameCompleted: profile?.nicknameCompleted ?? true,
+        preferredLocale: profile?.preferredLocale ?? "KO",
         createdAt: createdAt ? createdAt.toISOString() : null,
       },
     };
