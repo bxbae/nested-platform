@@ -22,6 +22,7 @@ import type {
   SharedSpaceStyle,
   DrinkingHabit,
 } from "@prisma/client";
+import { ageGroup } from "../../common/age-group";
 
 const ORDER = {
   noise: ["QUIET", "MODERATE", "LIVELY"],
@@ -132,7 +133,8 @@ function idx(axis: Axis, value: string): number {
 export interface MatchCandidate {
   userId: string;
   name: string;
-  age: number | null;
+  // 정확한 나이 대신 연령대(20/30/40)만 노출한다.
+  ageGroup: number | null;
   job: string | null;
   avatarColor: string;
   avatarUrl: string | null;
@@ -180,7 +182,7 @@ export class MatchService {
           select: {
             id: true,
             name: true,
-            age: true,
+            birthDate: true,
             job: true,
             avatarColor: true,
             avatarUrl: true,
@@ -227,7 +229,7 @@ export class MatchService {
       candidates.push({
         userId: other.user.id,
         name: other.user.name,
-        age: other.user.age,
+        ageGroup: ageGroup(other.user.birthDate),
         job: other.user.job,
         avatarColor: other.user.avatarColor,
         avatarUrl: other.user.avatarUrl,
@@ -271,7 +273,7 @@ export class MatchService {
             select: {
               id: true,
               name: true,
-              age: true,
+              birthDate: true,
               job: true,
               bio: true,
               avatarColor: true,
@@ -329,7 +331,7 @@ export class MatchService {
     return {
       userId: target.user.id,
       name: target.user.name,
-      age: target.user.age,
+      ageGroup: ageGroup(target.user.birthDate),
       job: target.user.job,
       avatarColor: target.user.avatarColor,
       avatarUrl: target.user.avatarUrl,

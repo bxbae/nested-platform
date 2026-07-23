@@ -17,6 +17,8 @@ export default function Settings() {
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [gender, setGender] = useState<"MALE" | "FEMALE" | "OTHER">("OTHER");
+  // <input type="date">가 쓰는 YYYY-MM-DD 형식. 빈 문자열이면 미입력.
+  const [birthDate, setBirthDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +27,7 @@ export default function Settings() {
     if (user?.name) setName(user.name);
     setBio(user?.bio ?? "");
     if (user?.gender) setGender(user.gender);
+    setBirthDate(user?.birthDate ? user.birthDate.slice(0, 10) : "");
   }, [user]);
 
   async function save() {
@@ -37,7 +40,12 @@ export default function Settings() {
     setSaving(true);
     setError(null);
     try {
-      await updateProfile({ name: nickname, bio: bio.trim(), gender });
+      await updateProfile({
+        name: nickname,
+        bio: bio.trim(),
+        gender,
+        birthDate: birthDate ? birthDate : null,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
@@ -125,6 +133,18 @@ export default function Settings() {
                 </button>
               ))}
             </div>
+          </Field>
+
+          <Field label="생년월일">
+            <input
+              type="date"
+              value={birthDate}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setBirthDate(e.target.value)}
+            />
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>
+              다른 사람에게는 20대·30대처럼 연령대만 보여요. 생일에는 쿠폰을 받을 수 있어요.
+            </p>
           </Field>
         </div>
       </section>

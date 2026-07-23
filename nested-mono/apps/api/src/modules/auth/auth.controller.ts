@@ -40,7 +40,8 @@ const updateMeSchema = z.object({
   avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요.").optional(),
   // Profile card fields (스토리보드 1-1 / 08). All optional.
   avatarUrl: z.string().url("이미지 주소가 올바르지 않아요.").max(500).nullable().optional(),
-  age: z.number().int().min(0).max(120).nullable().optional(),
+  // ISO 날짜 문자열(YYYY-MM-DD 또는 전체 ISO). 서비스에서 Date로 변환한다.
+  birthDate: z.string().min(1).nullable().optional(),
   job: z.string().max(40).nullable().optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
 });

@@ -106,6 +106,7 @@ interface ApiMe {
   avatarColor?: string;
   avatarUrl?: string | null;
   gender?: "MALE" | "FEMALE" | "OTHER";
+  birthDate?: string | null;
   hasPassword?: boolean;
   createdAt?: string | null;
 }
@@ -121,6 +122,7 @@ function toAuthUser(me: ApiMe): AuthUser {
     avatarColor: me.avatarColor,
     avatarUrl: me.avatarUrl ?? null,
     gender: me.gender ?? "OTHER",
+    birthDate: me.birthDate ?? null,
     hasPassword: me.hasPassword,
     createdAt: me.createdAt ?? null,
   };
@@ -134,6 +136,8 @@ export async function updateProfile(data: {
   avatarColor?: string;
   avatarUrl?: string | null;
   gender?: "MALE" | "FEMALE" | "OTHER";
+  // YYYY-MM-DD 또는 ISO 문자열. null이면 생년월일을 지운다.
+  birthDate?: string | null;
 }): Promise<AuthUser> {
   const me = await api.patch<ApiMe>("/auth/me", data);
   const user = toAuthUser(me);

@@ -2,6 +2,7 @@
 import { Controller, Get, Param, NotFoundException, Injectable, Module } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { toBadges } from "../../common/activity-tier";
+import { ageGroup } from "../../common/age-group";
 
 // 공개 프로필 (커뮤니티·리뷰에서 이름을 눌렀을 때 뜨는 정보).
 //
@@ -22,6 +23,8 @@ export interface PublicProfile {
   avatarUrl: string | null;
   bio: string | null;
   gender: "MALE" | "FEMALE" | "OTHER";
+  // 생년월일 원본은 타인에게 노출하지 않고 연령대만 내보낸다.
+  ageGroup: number | null;
   joinedYear: number;
   verified: boolean;
   tier: string;
@@ -44,6 +47,7 @@ export class UsersService {
         avatarUrl: true,
         bio: true,
         gender: true,
+        birthDate: true,
         createdAt: true,
         deletedAt: true,
         suspended: true,
@@ -76,6 +80,7 @@ export class UsersService {
       avatarUrl: user.avatarUrl,
       bio: user.bio,
       gender: user.gender,
+      ageGroup: ageGroup(user.birthDate),
       joinedYear: user.createdAt.getFullYear(),
       ...badges,
       keywords: user.preference?.isCompleted ? user.preference.keywords : [],

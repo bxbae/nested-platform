@@ -31,7 +31,7 @@ export class AuthService {
       where: { id: userId },
       select: {
         id: true, email: true, name: true, nicknameCompleted: true, role: true, createdAt: true,
-        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true, gender: true,
+        bio: true, avatarColor: true, avatarUrl: true, birthDate: true, job: true, gender: true,
         // Lets the client hide "change password" for OAuth-only accounts,
         // which have no password to change.
         passwordHash: true,
@@ -56,7 +56,9 @@ export class AuthService {
       bio: user.bio,
       avatarColor: user.avatarColor,
       avatarUrl: user.avatarUrl,
-      age: user.age,
+      // 본인 조회에만 생년월일 원본을 실어 보낸다. 설정 화면 편집과
+      // 생일 쿠폰 판정에 필요하고, 타인 조회에는 연령대만 나간다.
+      birthDate: user.birthDate ? user.birthDate.toISOString() : null,
       job: user.job,
       gender: user.gender,
       hasPassword: user.passwordHash !== null,
@@ -79,7 +81,7 @@ export class AuthService {
       bio?: string;
       avatarColor?: string;
       avatarUrl?: string | null;
-      age?: number | null;
+      birthDate?: string | null;
       job?: string | null;
       gender?: "MALE" | "FEMALE" | "OTHER";
     },
@@ -91,13 +93,15 @@ export class AuthService {
         ...(data.bio !== undefined ? { bio: data.bio } : {}),
         ...(data.avatarColor !== undefined ? { avatarColor: data.avatarColor } : {}),
         ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
-        ...(data.age !== undefined ? { age: data.age } : {}),
+        ...(data.birthDate !== undefined
+          ? { birthDate: data.birthDate ? new Date(data.birthDate) : null }
+          : {}),
         ...(data.job !== undefined ? { job: data.job } : {}),
         ...(data.gender !== undefined ? { gender: data.gender } : {}),
       },
       select: {
         id: true, email: true, name: true, nicknameCompleted: true, role: true, createdAt: true,
-        bio: true, avatarColor: true, avatarUrl: true, age: true, job: true, gender: true,
+        bio: true, avatarColor: true, avatarUrl: true, birthDate: true, job: true, gender: true,
         passwordHash: true,
       },
     });
@@ -110,7 +114,7 @@ export class AuthService {
       bio: user.bio,
       avatarColor: user.avatarColor,
       avatarUrl: user.avatarUrl,
-      age: user.age,
+      birthDate: user.birthDate ? user.birthDate.toISOString() : null,
       job: user.job,
       gender: user.gender,
       hasPassword: user.passwordHash !== null,

@@ -8,7 +8,8 @@ import { api } from "./client";
 export interface MatchCandidate {
   userId: string;
   name: string;
-  age: number | null;
+  // 서버가 생년월일에서 계산한 연령대(20/30/40). 정확한 생일은 내려오지 않는다.
+  ageGroup: number | null;
   job: string | null;
   avatarColor: string;
   avatarUrl: string | null;

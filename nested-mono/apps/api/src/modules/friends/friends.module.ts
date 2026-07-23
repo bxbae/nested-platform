@@ -14,6 +14,7 @@ import {
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
 import { toBadges } from "../../common/activity-tier";
+import { ageGroup } from "../../common/age-group";
 
 function orderedPair(firstId: string, secondId: string): [string, string] {
   return firstId < secondId ? [firstId, secondId] : [secondId, firstId];
@@ -22,7 +23,7 @@ function orderedPair(firstId: string, secondId: string): [string, string] {
 const publicUserSelect = {
   id: true,
   name: true,
-  age: true,
+  birthDate: true,
   job: true,
   bio: true,
   avatarColor: true,
@@ -144,7 +145,7 @@ export class FriendsService {
           friendsSince: friendship.createdAt,
           userId: user.id,
           name: user.name,
-          age: user.age,
+          ageGroup: ageGroup(user.birthDate),
           job: user.job,
           bio: user.bio,
           intro: user.preference?.intro ?? null,
@@ -182,7 +183,7 @@ export class FriendsService {
     return {
       userId: user.id,
       name: user.name,
-      age: user.age,
+      ageGroup: ageGroup(user.birthDate),
       job: user.job,
       bio: user.bio,
       intro: user.preference?.intro ?? null,

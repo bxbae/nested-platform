@@ -157,7 +157,7 @@ function ProfileSection({ detail }: { detail: MatchDetail }) {
         </h2>
 
         <p style={metaTextStyle}>
-          {[detail.age ? `${detail.age}세` : null, detail.job]
+          {[detail.ageGroup ? `${detail.ageGroup}대` : null, detail.job]
             .filter(Boolean)
             .join(" · ") || "정보 없음"}
         </p>
