@@ -421,6 +421,7 @@ export class RoomsService {
         data: {
           ...rest,
           hostId,
+          published: true,
           region: neighborhood,
           city,
           district,
