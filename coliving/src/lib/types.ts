@@ -163,6 +163,7 @@ export interface SearchParams {
   q?: string;
   region?: string;
   district?: string;
+  legalDongCode?: string;
   verified?: boolean;
   roomTypes?: RoomType[];
   minRent?: number;

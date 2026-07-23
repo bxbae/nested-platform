@@ -13,9 +13,9 @@ import { RedisService } from "../../redis/redis.module";
 import { RoomsController } from "./rooms.controller";
 import { RoomsService } from "./rooms.service";
 import { GeocodingService } from "./geocoding.service";
+import { LegalRegionService } from "./legal-region.service";
 import { NotificationsModule } from "../notifications/notifications.module";
 
-// ── GraphQL types (code-first) ──
 @ObjectType()
 class RoomType {
   @Field(() => ID) id!: string;
@@ -26,9 +26,6 @@ class RoomType {
   @Field() published!: boolean;
 }
 
-// GraphQL is offered alongside REST (optional per the stack). This resolver
-// exposes read queries for rooms; mutations remain REST for the payment flow.
-// Single-room reads are cached in Redis (60s TTL) to cut DB load.
 @Resolver(() => RoomType)
 export class RoomsResolver {
   constructor(
@@ -63,6 +60,11 @@ export class RoomsResolver {
 @Module({
   imports: [NotificationsModule],
   controllers: [RoomsController],
-  providers: [RoomsResolver, RoomsService, GeocodingService],
+  providers: [
+    RoomsResolver,
+    RoomsService,
+    GeocodingService,
+    LegalRegionService,
+  ],
 })
 export class RoomsModule {}

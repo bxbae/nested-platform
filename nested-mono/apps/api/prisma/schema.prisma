@@ -174,49 +174,80 @@ model EmailVerificationToken {
 }
 
 model Room {
-  id             String          @id @default(cuid())
-  hostId         String
-  host           User            @relation("HostRooms", fields: [hostId], references: [id])
-  propertyId     String?
-  property       Property?       @relation(fields: [propertyId], references: [id])
-  name           String
-  region         String
-  // Street address the host attests to. Kept private (never returned by the
-  // public search) — only the approximate lat/lng is exposed to guests.
-  address        String?
-  lat            Float
-  lng            Float
-  // Host attested this is a real listing they're authorised to rent.
-  verifiedByHost Boolean         @default(false)
-  roomType       RoomType
-  // 함께 지낼 수 있는 최대 인원. 독채(WHOLE_HOUSE)는 통째로 빌리므로 정원
-  // 개념이 없어 null 로 둔다. 나머지 타입은 등록 시 필수.
-  capacity       Int?
-  // 침실 개수. capacity(함께 지낼 사람 수)와는 다르다 —
-  // "방 2개, 최대 3명" 같은 조합이 가능하다. 선택 항목이라 nullable.
-  bedrooms       Int?
-  genderPolicy   GenderPolicy    @default(ANY)
+  id         String    @id @default(cuid())
+  hostId     String
+  host       User      @relation("HostRooms", fields: [hostId], references: [id])
+  propertyId String?
+  property   Property? @relation(fields: [propertyId], references: [id])
+
+  name String
+
+  // 기존 region 값과 이전 데이터 호환을 위해 유지합니다.
+  // 신규 숙소는 카카오 주소검색에서 받은 법정동 한글명을 저장합니다.
+  region String
+
+  // 카카오 주소검색 및 VWorld 법정동 데이터와 연결되는 공식 지역 정보입니다.
+  city          String?
+  district      String?
+  neighborhood  String?
+  legalDongCode String?
+
+  // 정확한 주소는 호스트·관리자 용도로만 저장합니다.
+  // 공개 검색 및 숙소 상세 응답에서는 반환하지 않습니다.
+  roadAddress   String?
+  jibunAddress  String?
+  detailAddress String?
+  zipCode       String?
+
+  // 기존 주소 필드와 기존 숙소 데이터 호환을 위해 유지합니다.
+  address String?
+
+  // 주소를 기준으로 서버에서 확인한 좌표입니다.
+  lat Float
+  lng Float
+
+  // 호스트가 실제 매물 및 임대 권한을 확인했는지 나타냅니다.
+  verifiedByHost Boolean @default(false)
+
+  roomType RoomType
+
+  // 함께 지낼 수 있는 최대 인원입니다.
+  // 독채는 정원 개념이 없어 null로 저장합니다.
+  capacity Int?
+
+  // 침실 개수입니다.
+  bedrooms Int?
+
+  genderPolicy GenderPolicy @default(ANY)
+
   monthlyRent    Int
   deposit        Int
   cleaningFee    Int
   maintenanceFee Int
-  minStayMonths  Int             @default(3)
+  minStayMonths  Int      @default(3)
   availableFrom  DateTime
-  petsAllowed    Boolean         @default(false)
-  smokingAllowed Boolean         @default(false)
-  parking        Boolean         @default(false)
-  published      Boolean         @default(false)
-  images         Image[]
-  reservations   Reservation[]
-  reviews        Review[]
-  amenities      RoomAmenity[]
-  calendar       CalendarBlock[]
-  chatRooms      ChatRoom[]
-  favorites      Favorite[]
-  posts          Post[]
-  createdAt      DateTime        @default(now())
+
+  petsAllowed    Boolean @default(false)
+  smokingAllowed Boolean @default(false)
+  parking        Boolean @default(false)
+  published      Boolean @default(false)
+
+  images       Image[]
+  reservations Reservation[]
+  reviews      Review[]
+  amenities    RoomAmenity[]
+  calendar     CalendarBlock[]
+  chatRooms    ChatRoom[]
+  favorites    Favorite[]
+  posts        Post[]
+
+  createdAt DateTime @default(now())
 
   @@index([region])
+  @@index([district])
+  @@index([neighborhood])
+  @@index([legalDongCode])
+  @@index([district, legalDongCode])
   @@index([hostId])
   @@index([propertyId])
 }

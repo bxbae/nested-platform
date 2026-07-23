@@ -14,6 +14,7 @@ import { NotificationsGateway } from "../notifications/notifications.gateway";
 export interface RoomSearchQuery {
   region?: string;
   district?: string;
+  legalDongCode?: string;
   verifiedByHost?: boolean;
   q?: string;
   roomType?: string;
@@ -119,31 +120,17 @@ export class RoomsService {
   async search(query: RoomSearchQuery) {
     const take = Math.min(query.take ?? 20, 50);
     const where: any = { published: true };
-    const districtAliases: Record<string, string[]> = {
-      "강남구": ["Gangnam-gu", "Yeoksam-dong"],
-      "서초구": ["Seocho-gu"],
-      "송파구": ["Songpa-gu"],
-      "마포구": ["Mapo-gu", "Mangwon-dong", "Seogyo-dong", "Yeonnam-dong", "Hongdae"],
-      "성동구": ["Seongdong-gu", "Seongsu-dong"],
-      "용산구": ["Yongsan-gu", "Itaewon"],
-      "영등포구": ["Yeongdeungpo-gu", "Yeouido"],
-      "종로구": ["Jongno-gu", "Hyehwa-dong"],
-      "관악구": ["Gwanak-gu", "Sillim", "Bongcheon-dong"],
-      "구로구": ["Guro-gu", "Gasan-dong"],
-      "분당구": ["Bundang-gu", "Pangyo"],
-    };
-    const aliases = query.district
-      ? districtAliases[query.district]
-      : undefined;
-
-    if (aliases) {
-      where.OR = aliases.map((alias) => ({
-        region: { contains: alias, mode: "insensitive" },
-      }));
+    if (query.legalDongCode) {
+      where.legalDongCode = query.legalDongCode;
+    } else if (query.district && query.region) {
+      where.district = query.district;
+      where.region = query.region;
+    } else if (query.district) {
+      where.district = query.district;
     } else if (query.region) {
-      const term = query.region.split("-")[0] || query.region;
-      where.region = { contains: term, mode: "insensitive" };
+      where.region = query.region;
     }
+
     if (query.verifiedByHost) where.verifiedByHost = true;
 
     // roomType (single) or roomTypes (multi-select) → Prisma `in`
@@ -154,7 +141,20 @@ export class RoomsService {
         : [];
     if (types.length) where.roomType = { in: types };
 
-    if (query.q) where.name = { contains: query.q, mode: "insensitive" };
+    if (query.q) {
+      const term = query.q.trim();
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        {
+          OR: [
+            { name: { contains: term, mode: "insensitive" } },
+            { district: { contains: term, mode: "insensitive" } },
+            { neighborhood: { contains: term, mode: "insensitive" } },
+            { region: { contains: term, mode: "insensitive" } },
+          ],
+        },
+      ];
+    }
     if (query.petsAllowed !== undefined) where.petsAllowed = query.petsAllowed;
     if (query.smokingAllowed !== undefined)
       where.smokingAllowed = query.smokingAllowed;
@@ -356,7 +356,14 @@ export class RoomsService {
     // `address` is the exact street address the host attested to. It must not
     // leave the server for a public listing view — guests only ever see the
     // approximate lat/lng (rendered as a privacy circle on the map).
-    const { address: _address, ...publicRoom } = room;
+    const {
+      address: _address,
+      roadAddress: _roadAddress,
+      jibunAddress: _jibunAddress,
+      detailAddress: _detailAddress,
+      zipCode: _zipCode,
+      ...publicRoom
+    } = room;
     // 현재 거주 인원 · 입주 가능 여부를 얹는다. 캐시가 60초라 예약 직후
     // 잠깐은 이전 값이 보일 수 있지만, 그 정도 지연은 감수할 만하다.
     const result = {
@@ -388,18 +395,41 @@ export class RoomsService {
   // The room is created unpublished (schema default) and stays invisible to
   // search until an admin approves it via PATCH /admin/rooms/:id/publish.
   async create(hostId: string, data: any) {
-    const { images = [], address, ...rest } = data;
+    const {
+      images = [],
+      roadAddress,
+      jibunAddress = "",
+      detailAddress = "",
+      zipCode = "",
+      city,
+      district,
+      neighborhood,
+      legalDongCode,
+      ...rest
+    } = data;
 
-    // Coordinates come from geocoding the attested address, never from the
-    // client.
-    const { lat, lng } = await this.geocoding.geocode(address);
+    const fullAddress = [roadAddress, detailAddress]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    const { lat, lng } = await this.geocoding.geocode(roadAddress);
 
     const result = await this.prisma.$transaction(async (tx) => {
       const room = await tx.room.create({
         data: {
           ...rest,
           hostId,
-          address,
+          region: neighborhood,
+          city,
+          district,
+          neighborhood,
+          legalDongCode,
+          roadAddress,
+          jibunAddress,
+          detailAddress,
+          zipCode,
+          address: fullAddress,
           lat,
           lng,
           availableFrom: new Date(data.availableFrom),
@@ -411,11 +441,7 @@ export class RoomsService {
           },
         },
         include: {
-          images: {
-            orderBy: {
-              order: "asc",
-            },
-          },
+          images: { orderBy: { order: "asc" } },
         },
       });
 
@@ -425,9 +451,7 @@ export class RoomsService {
           suspended: false,
           deletedAt: null,
         },
-        select: {
-          id: true,
-        },
+        select: { id: true },
       });
 
       const notifications = await Promise.all(
@@ -444,10 +468,7 @@ export class RoomsService {
         ),
       );
 
-      return {
-        room,
-        notifications,
-      };
+      return { room, notifications };
     });
 
     for (const notification of result.notifications) {

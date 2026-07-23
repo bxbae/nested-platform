@@ -8,8 +8,8 @@ import { z } from "zod";
 import { won } from "@/lib/format";
 import { computePrice } from "@/lib/pricing";
 import { ROOM_TYPE_LABELS, GENDER_LABELS, type RoomType, type GenderPolicy } from "@/lib/types";
-import { createRoom, REGION_COORDS } from "@/lib/api/rooms";
-import { AddressSearch } from "@/components/AddressSearch";
+import { createRoom } from "@/lib/api/rooms";
+import { AddressSearch, type AddressValue } from "@/components/AddressSearch";
 import { becomeHost } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { uploadImage } from "@/lib/api/storage";
@@ -23,7 +23,14 @@ const AMENITIES = ["Rooftop", "Coworking room", "Laundry", "Fiber wifi", "Weekly
 // ── Zod schema (validation source of truth) ──
 const listingSchema = z.object({
   name: z.string().min(2, "숙소 이름을 2자 이상 입력하세요."),
-  region: z.string().min(2, "위치(동네)를 입력하세요."),
+  city: z.string().min(1, "주소를 검색하세요."),
+  district: z.string().min(1, "주소를 검색하세요."),
+  neighborhood: z.string().min(1, "주소를 검색하세요."),
+  legalDongCode: z.string().min(5, "주소를 다시 검색하세요."),
+  roadAddress: z.string().min(5, "도로명 주소를 검색하세요."),
+  jibunAddress: z.string(),
+  detailAddress: z.string(),
+  zipCode: z.string(),
   roomType: z.enum(["one_room", "share_room", "whole_house", "apartment"]),
   gender: z.enum(["any", "female_only", "male_only"]),
   monthlyRent: z.coerce.number().min(100000, "월세는 10만원 이상이어야 합니다."),
@@ -79,10 +86,9 @@ export default function NewListing() {
     resolver: zodResolver(listingSchema),
     mode: "onChange",
     defaultValues: {
-      name: "", region: "", roomType: "one_room", gender: "any",
+      name: "", city: "", district: "", neighborhood: "", legalDongCode: "", roadAddress: "", jibunAddress: "", detailAddress: "", zipCode: "", roomType: "one_room", gender: "any",
       monthlyRent: 700000, deposit: 3000000, cleaningFee: 70000, maintenanceFee: 50000, minStay: 3,
       availableFrom: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
-      address: "",
       verifiedByHost: false as unknown as true,
     },
   });
@@ -145,7 +151,7 @@ export default function NewListing() {
       if (USE_REAL_API) {
         await createRoom({
           name: form.name,
-          region: form.region,
+          region: form.neighborhood,
           roomType: form.roomType,
           monthlyRent: Number(form.monthlyRent),
           deposit: Number(form.deposit),
@@ -156,7 +162,16 @@ export default function NewListing() {
           capacity: form.roomType === "whole_house" ? null : Number(form.capacity),
           bedrooms: form.bedrooms ? Number(form.bedrooms) : null,
           availableFrom: form.availableFrom,
-          address: form.address,
+          address: {
+            city: form.city,
+            district: form.district,
+            neighborhood: form.neighborhood,
+            legalDongCode: form.legalDongCode,
+            roadAddress: form.roadAddress,
+            jibunAddress: form.jibunAddress,
+            detailAddress: form.detailAddress,
+            zipCode: form.zipCode,
+          },
           verifiedByHost: true,
           images: photos,
         });
@@ -321,26 +336,48 @@ export default function NewListing() {
           <Field label="숙소 이름" error={errors.name?.message}>
             <input {...register("name")} placeholder="예) 성수 루프탑 하우스" />
           </Field>
-          <Field label="위치 (동네)" error={errors.region?.message}>
-            <select {...register("region")}>
-              <option value="">동네를 선택하세요</option>
-              {Object.keys(REGION_COORDS).map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="도로명 주소">
-            {/* 카카오 우편번호 서비스 — 키 없이 무료. 선택한 주소는 서버가
-                지오코딩해 좌표로 바꾼다. */}
+          <Field
+            label="주소"
+            error={
+              errors.roadAddress?.message ??
+              errors.neighborhood?.message ??
+              errors.legalDongCode?.message
+            }
+          >
             <AddressSearch
-              value={v.address}
-              onChange={(addr) =>
-                setValue("address", addr, { shouldValidate: true, shouldDirty: true })
-              }
-              error={errors.address?.message}
+              value={{
+                city: v.city,
+                district: v.district,
+                neighborhood: v.neighborhood,
+                legalDongCode: v.legalDongCode,
+                roadAddress: v.roadAddress,
+                jibunAddress: v.jibunAddress,
+                detailAddress: v.detailAddress,
+                zipCode: v.zipCode,
+              }}
+              onChange={(address: AddressValue) => {
+                setValue("city", address.city, { shouldValidate: true });
+                setValue("district", address.district, { shouldValidate: true });
+                setValue("neighborhood", address.neighborhood, {
+                  shouldValidate: true,
+                });
+                setValue("legalDongCode", address.legalDongCode, {
+                  shouldValidate: true,
+                });
+                setValue("roadAddress", address.roadAddress, {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                });
+                setValue("jibunAddress", address.jibunAddress);
+                setValue("detailAddress", address.detailAddress, {
+                  shouldDirty: true,
+                });
+                setValue("zipCode", address.zipCode);
+              }}
             />
             <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>
-              게스트에게는 정확한 주소가 공개되지 않고, 지도에 대략적인 위치만 표시됩니다.
+              구와 법정동은 선택한 주소에서 자동으로 입력됩니다. 상세주소는
+              공개되지 않습니다.
             </p>
           </Field>
           <Field label="입주 가능일" error={errors.availableFrom?.message}>
