@@ -2,6 +2,7 @@ import { ProfileHeader } from "./ProfileHeader";
 import { PreferenceSummary } from "./PreferenceSummary";
 import { TierGuide } from "./TierGuide";
 import { MyBadges } from "@/components/MyBadges";
+import { BirthdayCouponCard } from "@/components/BirthdayCouponCard";
 
 export const metadata = { title: "프로필 · Nested" };
 
@@ -9,6 +10,9 @@ export default function Profile() {
   return (
     <div>
       <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>프로필</h1>
+
+      {/* 생일 당일에만 보이는 쿠폰 카드 */}
+      <BirthdayCouponCard />
 
       {/* profile card */}
       <ProfileHeader />

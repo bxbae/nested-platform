@@ -74,7 +74,8 @@ const updateMeSchema = z.object({
     .max(500)
     .nullable()
     .optional(),
-  age: z.number().int().min(0).max(120).nullable().optional(),
+  // ISO 날짜 문자열(YYYY-MM-DD 또는 전체 ISO). 서비스에서 Date로 변환한다.
+  birthDate: z.string().min(1).nullable().optional(),
   job: z.string().max(40).nullable().optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
 });

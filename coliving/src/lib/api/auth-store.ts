@@ -18,6 +18,8 @@ export interface AuthUser {
   avatarColor?: string;
   avatarUrl?: string | null;
   gender?: "MALE" | "FEMALE" | "OTHER";
+  // 생년월일(ISO). 본인 조회에만 내려온다 — 설정 화면 편집과 생일 쿠폰 판정용.
+  birthDate?: string | null;
   preferredLocale?: "KO" | "EN";
   // false for social-login accounts, which have no password to change.
   hasPassword?: boolean;

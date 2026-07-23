@@ -248,7 +248,7 @@ export default function Match() {
                         color: "var(--text-2)",
                       }}
                     >
-                      {[m.age ? `${m.age}세` : null, m.job]
+                      {[m.ageGroup ? `${m.ageGroup}대` : null, m.job]
                         .filter(Boolean)
                         .join(" · ") || "정보 없음"}
                     </div>
