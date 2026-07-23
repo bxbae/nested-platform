@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/api/useAuth";
 import { USE_REAL_API } from "@/lib/api/config";
 
@@ -12,7 +12,9 @@ import { USE_REAL_API } from "@/lib/api/config";
 export function MeGate({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [checked, setChecked] = useState(false);
+  const redirected = useRef(false);
 
   useEffect(() => {
     if (!USE_REAL_API) {
@@ -20,13 +22,26 @@ export function MeGate({ children }: { children: React.ReactNode }) {
       return;
     }
     if (!user) {
-      router.replace("/?auth=1");
-    } else if (user.nicknameCompleted === false && window.location.pathname !== "/me/settings") {
-      router.replace("/me/settings?nickname=required");
+      if (!redirected.current) {
+        redirected.current = true;
+        router.replace("/?auth=1");
+      }
+    } else if (
+      user.nicknameCompleted === false &&
+      !pathname.startsWith("/me/settings")
+    ) {
+      if (!redirected.current) {
+        redirected.current = true;
+        router.replace("/me/settings?nickname=required");
+      }
     } else {
       setChecked(true);
     }
-  }, [user, router]);
+    // pathname is a dependency: after the redirect above lands on
+    // /me/settings this effect must re-run and fall through to
+    // setChecked(true). Without it the gate stayed on the loading state
+    // forever for social logins (nicknameCompleted === false).
+  }, [user, router, pathname]);
 
   if (!checked) {
     return (

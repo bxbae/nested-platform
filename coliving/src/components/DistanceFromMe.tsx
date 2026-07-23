@@ -69,6 +69,7 @@ export function DistanceFromMe({ houseLat, houseLng }: DistanceFromMeProps) {
           key: t.mode,
           ...MODE_LABEL[t.mode],
           minutes: t.minutes,
+          // ODsay API 포기 후 예상치 계산으로 전환 — "예상"임을 명확히 표시
           note: t.transferCount ? `환승 ${t.transferCount}회` : undefined,
         })),
         { key: "car", ...MODE_LABEL.car, minutes: routes.car.minutes},

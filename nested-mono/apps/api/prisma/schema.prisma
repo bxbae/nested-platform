@@ -725,6 +725,7 @@ model Banner {
   color     String // 배경색 (hex, e.g. "#FF5A5F")
   position  String // 노출 위치 (예: "메인 상단")
   linkUrl   String? // 클릭 시 이동 (선택)
+  imageUrl  String? // Cloudinary 또는 CDN 배너 이미지 URL
   active    Boolean  @default(true) // 노출 여부 (홈 공개 조회가 이 값으로 필터)
   order     Int      @default(0) // 정렬 순서 (낮을수록 먼저)
   createdAt DateTime @default(now())
