@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import type { GenderPolicy, RoomType, SearchParams } from "@/lib/types";
 import { GENDER_LABELS, ROOM_TYPE_LABELS } from "@/lib/types";
 import { won } from "@/lib/format";
-import { DISTRICT_OPTIONS, NEIGHBORHOOD_OPTIONS } from "@/lib/seoul";
+import { DISTRICT_OPTIONS } from "@/lib/seoul";
+import { getLegalNeighborhoods, type LegalRegionOption } from "@/lib/api/regions";
 import { DEFAULT_FILTERS, RENT_MAX, RENT_MIN } from "../schema";
 
 const ROOM_TYPES: RoomType[] = [
@@ -35,12 +36,49 @@ export function FilterSheet({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<SearchParams>(initial);
+  const [neighborhoods, setNeighborhoods] = useState<LegalRegionOption[]>([]);
+  const [regionsLoading, setRegionsLoading] = useState(false);
+  const [regionsError, setRegionsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setDraft(initial);
     }
   }, [open, initial]);
+
+  useEffect(() => {
+    if (!draft.district) {
+      setNeighborhoods([]);
+      setRegionsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setRegionsLoading(true);
+    setRegionsError(null);
+
+    getLegalNeighborhoods(draft.district)
+      .then((items) => {
+        if (!cancelled) setNeighborhoods(items);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setNeighborhoods([]);
+          setRegionsError(
+            error instanceof Error
+              ? error.message
+              : "법정동 목록을 불러오지 못했습니다.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRegionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.district]);
 
   if (!open) {
     return null;
@@ -63,11 +101,6 @@ export function FilterSheet({
     });
   };
 
-  const neighborhoods = draft.district
-    ? (NEIGHBORHOOD_OPTIONS[
-        draft.district as keyof typeof NEIGHBORHOOD_OPTIONS
-      ] ?? [])
-    : [];
 
   return (
     <>
@@ -152,6 +185,7 @@ export function FilterSheet({
                   set({
                     district: "",
                     region: "",
+                    legalDongCode: "",
                   })
                 }
               >
@@ -171,6 +205,7 @@ export function FilterSheet({
                       set({
                         district: active ? "" : item.value,
                         region: "",
+                        legalDongCode: "",
                       })
                     }
                   >
@@ -207,6 +242,7 @@ export function FilterSheet({
                   onClick={() =>
                     set({
                       region: "",
+                    legalDongCode: "",
                     })
                   }
                 >
@@ -215,21 +251,35 @@ export function FilterSheet({
 
                 {neighborhoods.map((item) => (
                   <button
-                    key={item.value}
+                    key={item.code}
                     type="button"
                     className="chip"
-                    data-active={draft.region === item.value}
-                    onClick={() =>
+                    data-active={draft.legalDongCode === item.code}
+                    onClick={() => {
+                      const active = draft.legalDongCode === item.code;
                       set({
-                        region: draft.region === item.value ? "" : item.value,
-                      })
-                    }
+                        region: active ? "" : item.neighborhood,
+                        legalDongCode: active ? "" : item.code,
+                      });
+                    }}
                   >
-                    {item.label}
+                    {item.neighborhood}
                   </button>
                 ))}
 
-                {neighborhoods.length === 0 && (
+                {regionsLoading && (
+                  <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+                    법정동을 불러오는 중…
+                  </span>
+                )}
+
+                {!regionsLoading && regionsError && (
+                  <span style={{ fontSize: 13, color: "var(--primary)" }}>
+                    {regionsError}
+                  </span>
+                )}
+
+                {!regionsLoading && !regionsError && neighborhoods.length === 0 && (
                   <span
                     style={{
                       fontSize: 13,

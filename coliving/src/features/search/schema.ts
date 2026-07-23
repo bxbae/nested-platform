@@ -11,6 +11,7 @@ export const DEFAULT_FILTERS: SearchParams = {
   q: "",
   region: "",
   district: "",
+  legalDongCode: "",
   verified: false,
   roomTypes: [],
   minRent: 500000,
@@ -32,6 +33,7 @@ export function filtersToParams(f: SearchParams): URLSearchParams {
   if (f.q) p.set("q", f.q);
   if (f.region) p.set("region", f.region);
   if (f.district) p.set("district", f.district);
+  if (f.legalDongCode) p.set("legalDongCode", f.legalDongCode);
   if (f.verified) p.set("verified", "true");
   if (f.roomTypes && f.roomTypes.length) p.set("roomTypes", f.roomTypes.join(","));
   if (f.minRent != null && f.minRent > RENT_MIN) p.set("minRent", String(f.minRent));
@@ -55,6 +57,7 @@ export function paramsToFilters(sp: URLSearchParams): SearchParams {
     q: sp.get("q") ?? "",
     region: sp.get("region") ?? "",
     district: sp.get("district") ?? "",
+    legalDongCode: sp.get("legalDongCode") ?? "",
     verified: sp.get("verified") === "true",
     roomTypes: (sp.get("roomTypes")?.split(",").filter(Boolean) ?? []) as RoomType[],
     minRent: sp.get("minRent") ? Number(sp.get("minRent")) : RENT_MIN,
@@ -76,7 +79,7 @@ export function paramsToFilters(sp: URLSearchParams): SearchParams {
 // Count of active (non-default) filters, for the filter button badge
 export function activeFilterCount(f: SearchParams): number {
   let n = 0;
-  if (f.region || f.district) n++;
+  if (f.region || f.district || f.legalDongCode) n++;
   if (f.verified) n++;
   if (f.roomTypes && f.roomTypes.length) n++;
   if ((f.minRent ?? RENT_MIN) > RENT_MIN || (f.maxRent ?? RENT_MAX) < RENT_MAX) n++;

@@ -51,6 +51,7 @@ export function filtersToApiQuery(f: SearchParams): URLSearchParams {
   if (f.q) p.set("q", f.q);
   if (f.region) p.set("region", f.region);
   if (f.district) p.set("district", f.district);
+  if (f.legalDongCode) p.set("legalDongCode", f.legalDongCode);
   if (f.verified) p.set("verifiedByHost", "true");
   if (f.roomTypes?.length) p.set("roomTypes", f.roomTypes.map(toApiRoomType).join(","));
   if (f.minRent != null) p.set("minRent", String(f.minRent));
@@ -91,6 +92,8 @@ export interface ApiRoom {
   region: string;
   city?: string;
   neighborhood?: string;
+  district?: string;
+  legalDongCode?: string;
   lat: number;
   lng: number;
   roomType: string;

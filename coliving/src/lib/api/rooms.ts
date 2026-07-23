@@ -13,6 +13,7 @@ import {
   type ApiSearchResponse,
 } from "./adapters";
 import type { RoomType } from "@/lib/types";
+import type { AddressValue } from "@/components/AddressSearch";
 import { filtersToParams } from "@/features/search/schema";
 import type { SearchParams, PaginatedRooms, House } from "@/lib/types";
 
@@ -37,24 +38,10 @@ export async function searchRooms(
   return r.json();
 }
 
-// Rooms live at fixed neighborhoods; the API requires lat/lng but asking a host
-// to type coordinates is absurd. Map the region they pick to a known point.
-// (A real build would geocode the address instead.)
-export const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
-  "Seongsu-dong": { lat: 37.5446, lng: 127.0559 },
-  "Yeonnam-dong": { lat: 37.5636, lng: 126.9256 },
-  "Mangwon-dong": { lat: 37.5556, lng: 126.9018 },
-  "Seogyo-dong": { lat: 37.5561, lng: 126.9236 },
-  "Pangyo": { lat: 37.3948, lng: 127.1112 },
-  "Yeoksam-dong": { lat: 37.5006, lng: 127.0366 },
-  "Hyehwa-dong": { lat: 37.5822, lng: 127.0018 },
-  "Sinchon": { lat: 37.5551, lng: 126.9368 },
-};
-
 export interface CreateRoomInput {
   name: string;
   region: string;
-  address: string; // real street address — server geocodes it
+  address: AddressValue;
   verifiedByHost: true; // attestation; the API refuses anything else
   roomType: RoomType;
   monthlyRent: number;
@@ -76,7 +63,14 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
   return api.post<{ id: string }>("/rooms", {
     name: input.name,
     region: input.region,
-    address: input.address,
+    city: input.address.city,
+    district: input.address.district,
+    neighborhood: input.address.neighborhood,
+    legalDongCode: input.address.legalDongCode,
+    roadAddress: input.address.roadAddress,
+    jibunAddress: input.address.jibunAddress,
+    detailAddress: input.address.detailAddress,
+    zipCode: input.address.zipCode,
     verifiedByHost: input.verifiedByHost,
     roomType: input.roomType.toUpperCase(),
     monthlyRent: input.monthlyRent,
