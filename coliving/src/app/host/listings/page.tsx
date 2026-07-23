@@ -321,7 +321,7 @@ export default function HostListings() {
                       </button>
                       <button
                         className="btn btn-ghost press"
-                        style={{ fontSize: 13, padding: "8px 14px" }}
+                        style={{ fontSize: 13, padding: "8px 14px", justifyContent: "center" }}
                         onClick={() => setEditingId(null)}
                       >
                         취소

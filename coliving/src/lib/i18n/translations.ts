@@ -5,7 +5,7 @@ export const translations = {
       roommate: "룸메이트",
       community: "커뮤니티",
       host: "호스트",
-      my: "마이",
+      my: "내 정보",
       admin: "관리자",
 
       oneRoom: "원룸",
