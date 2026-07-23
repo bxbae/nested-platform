@@ -513,7 +513,16 @@ export default function NewListing() {
       {error && (
         <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 10 }}>{error}</p>
       )}
-      <button type="submit" className="btn btn-primary press" style={{ width: "100%", justifyContent: "center", opacity: isValid && !saving ? 1 : 0.6 }} disabled={!isValid || saving}>
+      <button
+        type="submit"
+        className="btn btn-primary press"
+        style={{
+          width: "100%",
+          justifyContent: "center",
+          opacity: saving ? 0.6 : 1,
+        }}
+        disabled={saving}
+      >
         {saving ? "등록 중…" : "숙소 등록하기"}
       </button>
       {!isValid && <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 8, textAlign: "center" }}>필수 항목을 올바르게 입력하면 등록할 수 있어요.</p>}
