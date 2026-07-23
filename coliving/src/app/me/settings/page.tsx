@@ -3,7 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/api/useAuth";
-import { updateProfile, changePassword, deleteAccount } from "@/lib/api/auth";
+import {
+  updateProfile,
+  updatePreferredLocale,
+  changePassword,
+  deleteAccount,
+} from "@/lib/api/auth";
+import { useLanguage, type Locale } from "@/contexts/LanguageContext";
 
 // 설정 — profile edit + password change, wired to the API.
 //
@@ -13,7 +19,10 @@ import { updateProfile, changePassword, deleteAccount } from "@/lib/api/auth";
 // out until the schema supports them.
 export default function Settings() {
   const { user, isAuthenticated } = useAuth();
-
+  const { locale, setLocale } = useLanguage();
+  const [languageSaving, setLanguageSaving] = useState(false);
+  const [languageSaved, setLanguageSaved] = useState(false);
+  const [languageError, setLanguageError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [gender, setGender] = useState<"MALE" | "FEMALE" | "OTHER">("OTHER");
@@ -47,10 +56,39 @@ export default function Settings() {
     }
   }
 
+  async function changeLanguage(nextLocale: Locale) {
+    if (languageSaving || nextLocale === locale) return;
+
+    const previousLocale = locale;
+
+    setLocale(nextLocale);
+    setLanguageSaving(true);
+    setLanguageSaved(false);
+    setLanguageError(null);
+
+    try {
+      await updatePreferredLocale(nextLocale === "ko" ? "KO" : "EN");
+
+      setLanguageSaved(true);
+      window.setTimeout(() => {
+        setLanguageSaved(false);
+      }, 2500);
+    } catch (e) {
+      setLocale(previousLocale);
+      setLanguageError(
+        e instanceof Error ? e.message : "언어 설정을 저장하지 못했어요.",
+      );
+    } finally {
+      setLanguageSaving(false);
+    }
+  }
+
   if (!isAuthenticated) {
     return (
       <div style={{ maxWidth: 620 }}>
-        <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>설정</h1>
+        <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>
+          설정
+        </h1>
         <p style={{ color: "var(--text-2)" }}>로그인이 필요해요.</p>
       </div>
     );
@@ -58,11 +96,15 @@ export default function Settings() {
 
   return (
     <div style={{ maxWidth: 620 }}>
-      <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>설정</h1>
+      <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>
+        설정
+      </h1>
 
       {/* profile */}
       <section className="card" style={{ padding: 22, marginBottom: 18 }}>
-        <strong style={{ fontSize: 16, display: "block", marginBottom: 16 }}>프로필 정보</strong>
+        <strong style={{ fontSize: 16, display: "block", marginBottom: 16 }}>
+          프로필 정보
+        </strong>
         <div style={{ display: "grid", gap: 14 }}>
           <Field label="닉네임 *">
             <input
@@ -73,16 +115,28 @@ export default function Settings() {
               placeholder="예: 조용한고양이"
               autoComplete="nickname"
             />
-            <p style={{ fontSize: 12, lineHeight: 1.55, color: "var(--text-2)", marginTop: 5 }}>
-              닉네임은 룸메이트 매칭, 프로필, 친구 목록 및 메시지에서 다른 사용자에게 공개됩니다.
-              개인정보 보호를 위해 실명, 이메일, 전화번호가 포함되지 않은 별명을 사용해주세요.
+            <p
+              style={{
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: "var(--text-2)",
+                marginTop: 5,
+              }}
+            >
+              닉네임은 룸메이트 매칭, 프로필, 친구 목록 및 메시지에서 다른
+              사용자에게 공개됩니다. 개인정보 보호를 위해 실명, 이메일,
+              전화번호가 포함되지 않은 별명을 사용해주세요.
             </p>
           </Field>
 
           {/* Email is read-only: changing it needs a verification flow we don't
               have, and the API rejects it outright. */}
           <Field label="이메일">
-            <input value={user?.email ?? ""} disabled style={{ opacity: 0.6, cursor: "not-allowed" }} />
+            <input
+              value={user?.email ?? ""}
+              disabled
+              style={{ opacity: 0.6, cursor: "not-allowed" }}
+            />
             <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>
               이메일은 변경할 수 없어요.
             </p>
@@ -96,9 +150,13 @@ export default function Settings() {
               maxLength={500}
               placeholder="어떤 사람인지 간단히 소개해주세요."
               style={{
-                width: "100%", padding: 11, border: "1px solid var(--border)",
-                borderRadius: "var(--r-sm)", resize: "vertical",
-                background: "var(--surface)", color: "var(--text)",
+                width: "100%",
+                padding: 11,
+                border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)",
+                resize: "vertical",
+                background: "var(--surface)",
+                color: "var(--text)",
               }}
             />
             <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>
@@ -108,17 +166,33 @@ export default function Settings() {
 
           <Field label="성별">
             <div style={{ display: "flex", gap: 8 }}>
-              {([["MALE", "남성"], ["FEMALE", "여성"], ["OTHER", "기타"]] as const).map(([val, label]) => (
+              {(
+                [
+                  ["MALE", "남성"],
+                  ["FEMALE", "여성"],
+                  ["OTHER", "기타"],
+                ] as const
+              ).map(([val, label]) => (
                 <button
                   key={val}
                   type="button"
                   onClick={() => setGender(val)}
                   style={{
-                    flex: 1, padding: "10px 0", borderRadius: "var(--r-sm)",
-                    border: gender === val ? "1.5px solid var(--primary)" : "1px solid var(--border)",
-                    background: gender === val ? "rgba(255,90,95,0.08)" : "var(--surface)",
+                    flex: 1,
+                    padding: "10px 0",
+                    borderRadius: "var(--r-sm)",
+                    border:
+                      gender === val
+                        ? "1.5px solid var(--primary)"
+                        : "1px solid var(--border)",
+                    background:
+                      gender === val
+                        ? "rgba(255,90,95,0.08)"
+                        : "var(--surface)",
                     color: gender === val ? "var(--primary)" : "var(--text)",
-                    fontWeight: gender === val ? 600 : 400, cursor: "pointer", fontSize: 14,
+                    fontWeight: gender === val ? 600 : 400,
+                    cursor: "pointer",
+                    fontSize: 14,
                   }}
                 >
                   {label}
@@ -128,12 +202,115 @@ export default function Settings() {
           </Field>
         </div>
       </section>
+      {/* language */}
+      <section className="card" style={{ padding: 22, marginBottom: 18 }}>
+        <strong
+          style={{
+            fontSize: 16,
+            display: "block",
+            marginBottom: 8,
+          }}
+        >
+          {locale === "ko" ? "언어 설정" : "Language"}
+        </strong>
 
+        <p
+          style={{
+            marginBottom: 14,
+            fontSize: 13,
+            lineHeight: 1.6,
+            color: "var(--text-2)",
+          }}
+        >
+          {locale === "ko"
+            ? "선택한 언어는 이 계정에 저장되며 다시 로그인해도 유지됩니다."
+            : "Your language preference is saved to your account and restored when you sign in again."}
+        </p>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          {(
+            [
+              ["ko", "한국어"],
+              ["en", "English"],
+            ] as const
+          ).map(([value, label]) => {
+            const active = locale === value;
+
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => void changeLanguage(value)}
+                disabled={languageSaving}
+                aria-pressed={active}
+                style={{
+                  flex: 1,
+                  padding: "11px 0",
+                  borderRadius: "var(--r-sm)",
+                  border: active
+                    ? "1.5px solid var(--primary)"
+                    : "1px solid var(--border)",
+                  background: active
+                    ? "rgba(255,90,95,0.08)"
+                    : "var(--surface)",
+                  color: active ? "var(--primary)" : "var(--text)",
+                  fontWeight: active ? 600 : 400,
+                  cursor: languageSaving ? "wait" : "pointer",
+                  opacity: languageSaving ? 0.7 : 1,
+                  fontSize: 14,
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {languageSaving && (
+          <p
+            style={{
+              marginTop: 10,
+              fontSize: 13,
+              color: "var(--text-2)",
+            }}
+          >
+            {locale === "ko" ? "저장 중..." : "Saving..."}
+          </p>
+        )}
+
+        {languageSaved && (
+          <p
+            style={{
+              marginTop: 10,
+              fontSize: 13,
+              color: "var(--primary)",
+            }}
+          >
+            {locale === "ko"
+              ? "언어 설정이 저장되었습니다."
+              : "Language preference saved."}
+          </p>
+        )}
+
+        {languageError && (
+          <p
+            style={{
+              marginTop: 10,
+              fontSize: 13,
+              color: "var(--primary)",
+            }}
+          >
+            {languageError}
+          </p>
+        )}
+      </section>
       {/* account */}
       <PasswordSection hasPassword={user?.hasPassword !== false} />
 
       {error && (
-        <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 10 }}>{error}</p>
+        <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 10 }}>
+          {error}
+        </p>
       )}
 
       <button
@@ -181,12 +358,26 @@ function DangerZone() {
       className="card"
       style={{ padding: 22, marginTop: 28, border: "1px solid var(--primary)" }}
     >
-      <strong style={{ fontSize: 16, display: "block", marginBottom: 8, color: "var(--primary)" }}>
+      <strong
+        style={{
+          fontSize: 16,
+          display: "block",
+          marginBottom: 8,
+          color: "var(--primary)",
+        }}
+      >
         회원 탈퇴
       </strong>
-      <p style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--text-2)", marginBottom: 16 }}>
-        탈퇴하면 계정 정보가 삭제되고 다시 로그인할 수 없습니다. 작성하신 리뷰와 예약 기록은
-        익명으로 남을 수 있습니다. 이 작업은 되돌릴 수 없어요.
+      <p
+        style={{
+          fontSize: 13.5,
+          lineHeight: 1.6,
+          color: "var(--text-2)",
+          marginBottom: 16,
+        }}
+      >
+        탈퇴하면 계정 정보가 삭제되고 다시 로그인할 수 없습니다. 작성하신 리뷰와
+        예약 기록은 익명으로 남을 수 있습니다. 이 작업은 되돌릴 수 없어요.
       </p>
 
       {!open ? (
@@ -200,28 +391,40 @@ function DangerZone() {
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           <label style={{ display: "block" }}>
-            <div style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 6 }}>
-              계속하려면 <strong style={{ color: "var(--text)" }}>{CONFIRM}</strong> 를 입력하세요.
+            <div
+              style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 6 }}
+            >
+              계속하려면{" "}
+              <strong style={{ color: "var(--text)" }}>{CONFIRM}</strong> 를
+              입력하세요.
             </div>
             <input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={CONFIRM}
               style={{
-                width: "100%", padding: "11px 14px", border: "1px solid var(--border)",
-                borderRadius: "var(--r-sm)", background: "var(--surface)", color: "var(--text)",
+                width: "100%",
+                padding: "11px 14px",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)",
+                background: "var(--surface)",
+                color: "var(--text)",
               }}
             />
           </label>
 
-          {error && <p style={{ fontSize: 13, color: "var(--primary)" }}>{error}</p>}
+          {error && (
+            <p style={{ fontSize: 13, color: "var(--primary)" }}>{error}</p>
+          )}
 
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="btn press"
               style={{
-                flex: 1, justifyContent: "center",
-                background: "var(--primary)", color: "#fff",
+                flex: 1,
+                justifyContent: "center",
+                background: "var(--primary)",
+                color: "#fff",
                 opacity: confirmText === CONFIRM && !busy ? 1 : 0.5,
               }}
               onClick={remove}
@@ -281,7 +484,9 @@ function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
         setOpen(false);
       }, 2500);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "비밀번호를 변경하지 못했어요.");
+      setError(
+        e instanceof Error ? e.message : "비밀번호를 변경하지 못했어요.",
+      );
     } finally {
       setBusy(false);
     }
@@ -289,7 +494,9 @@ function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
 
   return (
     <section className="card" style={{ padding: 22, marginBottom: 18 }}>
-      <strong style={{ fontSize: 16, display: "block", marginBottom: 12 }}>계정</strong>
+      <strong style={{ fontSize: 16, display: "block", marginBottom: 12 }}>
+        계정
+      </strong>
 
       {!hasPassword ? (
         <p style={{ fontSize: 13.5, color: "var(--text-2)" }}>
@@ -306,17 +513,33 @@ function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           <Field label="현재 비밀번호">
-            <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+            <input
+              type="password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+            />
           </Field>
           <Field label="새 비밀번호">
-            <input type="password" value={next} onChange={(e) => setNext(e.target.value)} />
-            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>8자 이상</p>
+            <input
+              type="password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+            />
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>
+              8자 이상
+            </p>
           </Field>
           <Field label="새 비밀번호 확인">
-            <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            <input
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
           </Field>
 
-          {error && <p style={{ fontSize: 13, color: "var(--primary)" }}>{error}</p>}
+          {error && (
+            <p style={{ fontSize: 13, color: "var(--primary)" }}>{error}</p>
+          )}
 
           <div style={{ display: "flex", gap: 8 }}>
             <button
@@ -347,10 +570,23 @@ function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label style={{ display: "block" }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: "var(--text-2)",
+          marginBottom: 6,
+        }}
+      >
         {label}
       </div>
       {children}

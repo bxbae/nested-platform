@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { authStore } from "@/lib/api/auth-store";
 
 export type Locale = "ko" | "en";
 
@@ -24,15 +25,36 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>("ko");
 
   useEffect(() => {
-    const savedLocale = window.localStorage.getItem(STORAGE_KEY);
+    function applyAccountLocale() {
+      const preferredLocale = authStore.getUser()?.preferredLocale;
 
-    if (savedLocale === "ko" || savedLocale === "en") {
-      setLocaleState(savedLocale);
-      document.documentElement.lang = savedLocale;
-      return;
+      if (!preferredLocale) return false;
+
+      const accountLocale: Locale = preferredLocale === "EN" ? "en" : "ko";
+
+      setLocaleState(accountLocale);
+      window.localStorage.setItem(STORAGE_KEY, accountLocale);
+      document.documentElement.lang = accountLocale;
+
+      return true;
     }
 
-    document.documentElement.lang = "ko";
+    // 로그인 정보가 이미 저장돼 있다면 계정 언어를 우선 적용한다.
+    if (!applyAccountLocale()) {
+      const savedLocale = window.localStorage.getItem(STORAGE_KEY);
+
+      if (savedLocale === "ko" || savedLocale === "en") {
+        setLocaleState(savedLocale);
+        document.documentElement.lang = savedLocale;
+      } else {
+        document.documentElement.lang = "ko";
+      }
+    }
+
+    // 로그인·로그아웃·사용자 정보 갱신을 감지한다.
+    return authStore.subscribe(() => {
+      applyAccountLocale();
+    });
   }, []);
 
   function setLocale(nextLocale: Locale) {

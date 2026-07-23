@@ -18,6 +18,7 @@ export interface AuthUser {
   avatarColor?: string;
   avatarUrl?: string | null;
   gender?: "MALE" | "FEMALE" | "OTHER";
+  preferredLocale?: "KO" | "EN";
   // false for social-login accounts, which have no password to change.
   hasPassword?: boolean;
   createdAt?: string | null;
@@ -57,7 +58,8 @@ function load(): AuthTokens | null {
 function persist() {
   if (typeof window === "undefined") return;
   try {
-    if (tokens) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
+    if (tokens)
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
     else window.localStorage.removeItem(STORAGE_KEY);
   } catch {
     /* private mode / quota — stay in-memory only */
