@@ -71,6 +71,10 @@ export interface House {
     avatarUrl?: string | null;
   };
   houseReviews?: {
+    // 실제 API에서 온 리뷰만 값이 있다 — enrichHouse()의 데모 폴백 리뷰는
+    // DB에 없는 가짜 데이터라 신고할 대상 자체가 없으므로 id가 없다.
+    id?: string;
+    authorId?: string;
     author: string;
     rating: number;
     date: string; // "2026.05"

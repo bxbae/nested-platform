@@ -173,10 +173,19 @@ export interface ReportChatRef {
   id: string;
 }
 
+export interface ReportedReview {
+  id: string;
+  body: string;
+  rating: number;
+  createdAt: string;
+  room: { id: string; name: string };
+}
+
 export interface ReportContext {
   reporter: ReportAccountRef;
   reported: ReportAccountRef | null;
   chat: ReportChatRef | null;
+  review: ReportedReview | null;
 }
 
 // GET /admin/reports/:id/context

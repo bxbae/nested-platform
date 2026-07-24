@@ -17,6 +17,7 @@ import {
   type ReportContext,
 } from "@/lib/api/admin";
 import ReportChatModal from "./ReportChatModal";
+import ReportReviewModal from "./ReportReviewModal";
 
 const STATUS_LABEL: Record<ReportStatus, string> = {
   RECEIVED: "접수",
@@ -59,6 +60,7 @@ export default function AdminReports() {
   const [contexts, setContexts] = useState<Record<string, ReportContext>>({});
   const [contextBusyId, setContextBusyId] = useState<string | null>(null);
   const [chatTarget, setChatTarget] = useState<ReportContext["chat"]>(null);
+  const [reviewTarget, setReviewTarget] = useState<ReportContext["review"]>(null);
   const [notifyBusyKey, setNotifyBusyKey] = useState<string | null>(null);
 
   const load = useCallback(async (status: ReportStatus | "ALL") => {
@@ -122,6 +124,14 @@ export default function AdminReports() {
   async function viewChat(r: AdminReport) {
     const ctx = await ensureContext(r);
     if (ctx?.chat) setChatTarget(ctx.chat);
+  }
+
+  // MESSAGE의 "채팅 보기"랑 같은 역할 — 리뷰 본문·평점·작성일·어느
+  // 숙소인지를 모달로 바로 보여준다.
+  async function viewReview(r: AdminReport) {
+    const ctx = await ensureContext(r);
+    if (ctx?.review) setReviewTarget(ctx.review);
+    else if (ctx) setError("리뷰를 찾을 수 없어요. (삭제되었을 수 있어요)");
   }
 
   async function viewAccount(r: AdminReport, which: "reporter" | "reported") {
@@ -237,6 +247,16 @@ export default function AdminReports() {
                     채팅 보기
                   </button>
                 )}
+                {r.targetType === "REVIEW" && (
+                  <button
+                    className="chip"
+                    style={{ fontSize: 12, cursor: "pointer" }}
+                    onClick={() => void viewReview(r)}
+                    disabled={contextBusyId === r.id}
+                  >
+                    리뷰 보기
+                  </button>
+                )}
                 {(r.targetType === "COMMUNITY_POST" || r.targetType === "COMMUNITY_COMMENT") && (
                   <button
                     className="chip"
@@ -285,6 +305,7 @@ export default function AdminReports() {
       </div>
 
       <ReportChatModal chat={chatTarget} onClose={() => setChatTarget(null)} />
+      <ReportReviewModal review={reviewTarget} onClose={() => setReviewTarget(null)} />
     </div>
   );
 }
