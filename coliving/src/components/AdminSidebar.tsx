@@ -19,6 +19,7 @@ const groups: { href: string; label: string; exact?: boolean }[][] = [
     { href: "/admin/approvals", label: "숙소 관리"},
     { href: "/admin/members", label: "회원 관리"},
     { href: "/admin/reservations", label: "예약 관리"},
+    { href: "/admin/trash", label: "휴지통"},
   ],
   [
     { href: "/admin/notices", label: "공지사항"},

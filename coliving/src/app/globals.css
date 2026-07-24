@@ -1066,3 +1066,37 @@ header button {
     gap: 24px;
   }
 }
+
+/* 홈 메인 배너 고정 비율 */
+.home-hero-section {
+  position: relative;
+  width: 100%;
+  height: clamp(560px, 41.7vw, 650px);
+  min-height: 560px;
+  overflow: hidden;
+  background: var(--bg-2);
+  z-index: 10;
+}
+
+.home-hero-inner {
+  position: relative;
+  height: 100%;
+  padding-top: 78px;
+  padding-bottom: 68px;
+  display: flex;
+  align-items: center;
+  z-index: 2;
+}
+
+@media (max-width: 768px) {
+  .home-hero-section {
+    height: auto;
+    min-height: 680px;
+  }
+
+  .home-hero-inner {
+    min-height: 680px;
+    padding-top: 54px;
+    padding-bottom: 48px;
+  }
+}

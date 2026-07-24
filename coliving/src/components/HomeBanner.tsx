@@ -5,6 +5,7 @@ import { listActiveBanners, type AdminBanner } from "@/lib/api/admin";
 
 const FALLBACK_IMAGE = "/hero-friends.png";
 const SLIDE_INTERVAL_MS = 5000;
+const MAX_REGISTERED_BANNERS = 5;
 
 export function HomeBanner() {
   const [banners, setBanners] = useState<AdminBanner[]>([]);
@@ -17,7 +18,8 @@ export function HomeBanner() {
         if (!alive) return;
         const heroRows = rows
           .filter((banner) => banner.position === "메인 상단")
-          .sort((a, b) => a.order - b.order);
+          .sort((a, b) => a.order - b.order)
+          .slice(0, MAX_REGISTERED_BANNERS);
         setBanners(heroRows);
         setActiveIndex(0);
       })
@@ -33,21 +35,20 @@ export function HomeBanner() {
   }, []);
 
   const slides = useMemo(() => {
-    if (banners.length > 0) return banners;
-    return [
-      {
-        id: "fallback",
-        title: "Nested 공유주거",
-        color: "#f7f2ec",
-        position: "메인 상단",
-        linkUrl: null,
-        imageUrl: FALLBACK_IMAGE,
-        active: true,
-        order: 0,
-        createdAt: "",
-        updatedAt: "",
-      } satisfies AdminBanner,
-    ];
+    const fallback = {
+      id: "fallback",
+      title: "Nested 공유주거",
+      color: "#f7f2ec",
+      position: "메인 상단",
+      linkUrl: null,
+      imageUrl: FALLBACK_IMAGE,
+      active: true,
+      order: -1,
+      createdAt: "",
+      updatedAt: "",
+    } satisfies AdminBanner;
+
+    return [fallback, ...banners];
   }, [banners]);
 
   useEffect(() => {

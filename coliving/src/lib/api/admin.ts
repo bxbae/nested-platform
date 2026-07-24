@@ -91,6 +91,48 @@ export async function getStats(): Promise<AdminStats> {
   return api.get<AdminStats>("/admin/stats");
 }
 
+// ── Trash (휴지통 · 소프트 삭제 복구) ──
+// 삭제는 deletedAt 을 찍기만 하므로, 여기서 목록을 보고 되돌릴 수 있다.
+export interface TrashedPost {
+  id: string;
+  title: string;
+  body: string;
+  authorName: string;
+  deletedAt: string;
+  createdAt: string;
+}
+
+export interface TrashedComment {
+  id: string;
+  body: string;
+  authorName: string;
+  postId: string | null;
+  postTitle: string;
+  deletedAt: string;
+  createdAt: string;
+}
+
+// GET /admin/trash
+export async function listTrash(): Promise<{
+  posts: TrashedPost[];
+  comments: TrashedComment[];
+}> {
+  return api.get<{ posts: TrashedPost[]; comments: TrashedComment[] }>(
+    "/admin/trash",
+  );
+}
+
+// PATCH /admin/trash/posts/:id/restore
+export async function restorePost(id: string): Promise<void> {
+  await api.patch(`/admin/trash/posts/${id}/restore`);
+}
+
+// PATCH /admin/trash/comments/:id/restore
+// 원글이 삭제된 상태였다면 서버가 원글도 함께 되살린다.
+export async function restoreComment(id: string): Promise<void> {
+  await api.patch(`/admin/trash/comments/${id}/restore`);
+}
+
 // ── Reports (신고 관리) ──
 
 export type ReportStatus = "RECEIVED" | "IN_REVIEW" | "RESOLVED";
