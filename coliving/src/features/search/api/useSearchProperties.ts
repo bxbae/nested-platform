@@ -1,14 +1,11 @@
 "use client";
 
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import type { SearchParams, PaginatedRooms } from "@/lib/types";
 import { filtersToParams } from "../schema";
 import { searchRooms } from "@/lib/api/rooms";
 
-// Real TanStack Query implementation. queryKey = serialized filters,
-// getNextPageParam = the cursor returned by the API. The actual fetch is
-// delegated to searchRooms(), which targets the NestJS API or the demo
-// Route Handler depending on NEXT_PUBLIC_USE_REAL_API.
 export function useSearchProperties(filters: SearchParams) {
   const key = filtersToParams(filters).toString();
 
@@ -20,7 +17,15 @@ export function useSearchProperties(filters: SearchParams) {
     getNextPageParam: (last) => last.nextCursor,
   });
 
-  const items = query.data?.pages.flatMap((p) => p.items) ?? [];
+  // 수정 — query.data가 실제로 안 바뀌었으면(예: hover 상태 변경으로 인한
+  // 리렌더) items도 같은 배열 참조를 그대로 유지하도록 useMemo로 감쌌다.
+  // 안 그러면 .flatMap()이 매 렌더마다 새 배열을 만들어서, 이 값을 쓰는
+  // 지도 컴포넌트의 useEffect가 불필요하게 재실행되는 문제가 있었다
+  // (지도 확대/축소 후 마우스 이동 시 원본 배율로 리셋되는 버그의 원인).
+  const items = useMemo(
+    () => query.data?.pages.flatMap((p) => p.items) ?? [],
+    [query.data],
+  );
   const total = query.data?.pages[0]?.total ?? 0;
 
   return {

@@ -27,10 +27,15 @@ function pill(house: House, active: boolean) {
 
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap();
+  // 배열 참조가 아니라 "실제 좌표 값"이 바뀌었을 때만 다시 맞추도록,
+  // 좌표들을 문자열로 직렬화해서 의존성으로 사용한다. 이러면 상위에서
+  // 배열이 새로 만들어져도(참조만 다르고 값은 같으면) 재실행되지 않는다.
+  const key = points.map((p) => p.join(",")).join("|");
   useEffect(() => {
     if (points.length === 0) return;
     map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 14 });
-  }, [map, points]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, key]);
   return null;
 }
 
