@@ -988,3 +988,12 @@ header button {
     display: none;
   }
 }
+
+/* 지도 가격 마커 — Leaflet 기본 .leaflet-div-icon 배경/테두리를 제거해
+   내부 알약(div)이 텍스트 길이에 맞춰 그대로 보이게 한다. */
+.price-pill-icon {
+  background: transparent;
+  border: none;
+  width: auto !important;
+  height: auto !important;
+}

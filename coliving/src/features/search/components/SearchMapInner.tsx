@@ -14,7 +14,9 @@ function pill(house: House, active: boolean) {
   const bg = active ? "#111" : "#fff";
   const fg = active ? "#fff" : "#111";
   return L.divIcon({
-    className: "",
+    // Leaflet 기본 .leaflet-div-icon 배경/테두리가 알약 모양을 덮지 않도록
+    // 전용 클래스를 준다 (globals.css 에서 배경 제거).
+    className: "price-pill-icon",
     html: `<div style="
       background:${bg};color:${fg};font-weight:700;font-size:12px;
       padding:4px 9px;border-radius:999px;white-space:nowrap;
