@@ -41,8 +41,28 @@ export class ReviewsService {
     }));
   }
 
-  create(authorId: string, data: { roomId: string; rating: number; body: string }) {
-    return this.prisma.review.create({ data: { ...data, authorId } });
+  // 리뷰 작성 — 트랜잭션으로 리뷰 생성 + 그 방의 평점 캐시(avgRating/
+  // reviewCount) 재계산을 같이 처리한다. 둘이 따로 놀면(리뷰는 생겼는데
+  // 캐시가 안 갱신되는 등) 검색 카드가 실제 리뷰 수와 어긋나게 된다.
+  async create(authorId: string, data: { roomId: string; rating: number; body: string }) {
+    return this.prisma.$transaction(async (tx) => {
+      const review = await tx.review.create({ data: { ...data, authorId } });
+
+      const agg = await tx.review.aggregate({
+        where: { roomId: data.roomId },
+        _avg: { rating: true },
+        _count: { rating: true },
+      });
+      await tx.room.update({
+        where: { id: data.roomId },
+        data: {
+          avgRating: agg._avg.rating ?? 0,
+          reviewCount: agg._count.rating,
+        },
+      });
+
+      return review;
+    });
   }
 
   // Reviews I wrote — the guest-side "내 리뷰" list. Includes the room so the
