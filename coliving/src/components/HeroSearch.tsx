@@ -2,16 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { RoomType } from "@/lib/types";
+import type { RentalUnit } from "@/lib/types";
 import { WORKPLACE_PRESETS } from "@/lib/seoul";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-const HOUSING_OPTIONS: { label: string; value: "" | RoomType }[] = [
+const HOUSING_OPTIONS: { label: string; value: "" | RentalUnit }[] = [
   { label: "전체", value: "" },
-  { label: "개인실·원룸", value: "one_room" },
-  { label: "쉐어룸", value: "share_room" },
-  { label: "독채", value: "whole_house" },
-  { label: "아파트", value: "apartment" },
+  { label: "전체 숙소", value: "whole" },
+  { label: "개인실", value: "private_room" },
+  { label: "다인실·침대", value: "bed" },
 ];
 
 function startOfDay(d: Date): Date {
@@ -38,7 +37,7 @@ export function HeroSearch() {
   const router = useRouter();
   const today = useMemo(() => startOfDay(new Date()), []);
   const [q, setQ] = useState("");
-  const [roomType, setRoomType] = useState<"" | RoomType>("");
+  const [rentalUnit, setRentalUnit] = useState<"" | RentalUnit>("");
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
   const [viewMonth, setViewMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [checkIn, setCheckIn] = useState<Date | null>(null);
@@ -78,7 +77,7 @@ export function HeroSearch() {
       params.set("region", workplace.region);
     }
 
-    if (roomType) params.set("roomTypes", roomType);
+    if (rentalUnit) params.set("rentalUnits", rentalUnit);
     if (checkIn) params.set("checkIn", isoDate(checkIn));
     if (checkOut) params.set("checkOut", isoDate(checkOut));
     router.push(params.toString() ? `/search?${params.toString()}` : "/search");
@@ -119,8 +118,8 @@ export function HeroSearch() {
         <label style={{ borderLeft: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, padding: "8px 16px" }}>
           <span aria-hidden="true" style={{ fontSize: 19 }}></span>
           <span style={{ minWidth: 0, flex: 1 }}>
-            <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>주거 형태</span>
-            <select value={roomType} onChange={(e) => setRoomType(e.target.value as "" | RoomType)} aria-label="주거 형태" style={{ width: "100%", border: 0, outline: 0, background: "transparent", padding: "4px 0 0", fontSize: 14, cursor: "pointer" }}>
+            <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>예약 공간</span>
+            <select value={rentalUnit} onChange={(e) => setRentalUnit(e.target.value as "" | RentalUnit)} aria-label="예약 공간" style={{ width: "100%", border: 0, outline: 0, background: "transparent", padding: "4px 0 0", fontSize: 14, cursor: "pointer" }}>
               {HOUSING_OPTIONS.map((option) => <option key={option.value || "all"} value={option.value}>{option.label}</option>)}
             </select>
           </span>

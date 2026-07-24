@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { wonShort } from "@/lib/format";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
+import { getAccommodationLabel } from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
 import { HeroSearch } from "@/components/HeroSearch";
 import { NoticeBar } from "@/components/NoticeBar";
@@ -353,7 +353,7 @@ export default async function Home() {
                         fontWeight: 600,
                       }}
                     >
-                      {ROOM_TYPE_LABELS[house.roomType]}
+                      {getAccommodationLabel(house)}
                     </span>
 
                     <span

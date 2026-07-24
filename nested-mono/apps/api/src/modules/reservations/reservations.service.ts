@@ -16,6 +16,8 @@ import type {
   ReservationRecord,
   ReservationStatus,
   CouponRecord,
+  RoomRecord,
+  BookingMode,
 } from "./ports";
 import type {
   QuoteDto,
@@ -46,7 +48,16 @@ export class ReservationsService {
   ) {}
 
   // ── QUOTE ── price preview. No writes, no side effects.
-  async quote(dto: QuoteDto): Promise<PriceBreakdown & { checkOut: Date }> {
+  async quote(
+    dto: QuoteDto,
+  ): Promise<
+    PriceBreakdown & {
+      checkOut: Date;
+      bookingMode: BookingMode;
+      reservedSpots: number;
+      remainingSpots: number | null;
+    }
+  > {
     const room = await this.repo.findRoom(dto.roomId);
     if (!room)
       throw new NotFoundException({
@@ -54,51 +65,38 @@ export class ReservationsService {
         message: "숙소를 찾을 수 없습니다.",
       });
 
-    if (dto.months < room.minStayMonths) {
-      throw new UnprocessableEntityException({
-        code: "MIN_STAY",
-        message: `최소 ${room.minStayMonths}개월 이상 예약해야 합니다.`,
-      });
-    }
-    if (dto.checkIn < stripTime(room.availableFrom)) {
-      throw new UnprocessableEntityException({
-        code: "NOT_AVAILABLE_YET",
-        message: "선택한 날짜에는 아직 입주할 수 없습니다.",
-      });
-    }
+    this.assertStayRules(room, dto.months, dto.checkIn);
 
-    // Same overlap check as create(). Without it a quote could report the dates
-    // as bookable and then the reservation would fail with 409 — the user saw
-    // "예약 가능한 날짜입니다" followed by "이미 예약되었습니다".
+    const booking = this.normalizeBooking(room, dto.bookingMode, dto.reservedSpots);
     const checkOut = addMonths(dto.checkIn, dto.months);
     const overlaps = await this.repo.findOverlapping(
       dto.roomId,
       dto.checkIn,
       checkOut,
     );
-    if (overlaps.length > 0) {
-      throw new ConflictException({
-        code: "DATES_UNAVAILABLE",
-        message: "선택한 기간은 이미 예약되었습니다.",
-      });
-    }
+    const remainingSpots = this.assertInventoryAvailable(room, overlaps, booking);
 
+    const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
+    const pricingInput = this.scaledPricing(room, units);
     const discount = await this.resolveDiscount(
       dto.couponCode,
-      room.monthlyRent,
+      pricingInput.monthlyRent,
     );
     const breakdown = computePrice({
-      monthlyRent: room.monthlyRent,
-      deposit: room.deposit,
-      cleaningFee: room.cleaningFee,
-      maintenanceFee: room.maintenanceFee,
+      ...pricingInput,
       months: dto.months,
       discount,
     });
-    return { ...breakdown, checkOut };
+    return {
+      ...breakdown,
+      checkOut,
+      bookingMode: booking.bookingMode,
+      reservedSpots: booking.reservedSpots,
+      remainingSpots,
+    };
   }
 
-  // ── CREATE ── holds inventory as PENDING_PAYMENT. Rejects overlaps (409).
+  // ── CREATE ── holds inventory as PENDING_PAYMENT.
   async create(
     dto: CreateReservationDto,
     guestId: string,
@@ -110,13 +108,12 @@ export class ReservationsService {
         message: "숙소를 찾을 수 없습니다.",
       });
 
-    // 호스트 본인이 등록한 숙소는 예약(결제)할 수 없다.
     if (room.hostId === guestId) {
       throw new BadRequestException({
         code: "SELF_BOOKING_NOT_ALLOWED",
         message: "본인이 등록한 숙소는 예약할 수 없습니다.",
-     });
-    }  
+      });
+    }
 
     if (dto.companionId === guestId) {
       throw new BadRequestException({
@@ -125,40 +122,44 @@ export class ReservationsService {
       });
     }
 
-    const checkOut = addMonths(dto.checkIn, dto.months);
+    this.assertStayRules(room, dto.months, dto.checkIn);
+    const booking = this.normalizeBooking(
+      room,
+      dto.bookingMode,
+      dto.reservedSpots,
+    );
 
-    // Pre-check overlap (the repo re-checks under a serializable lock on insert).
+    if (room.rentalUnit === "BED" && dto.companionId && booking.reservedSpots < 2) {
+      throw new BadRequestException({
+        code: "COMPANION_REQUIRES_TWO_SPOTS",
+        message: "친구와 함께 예약하려면 두 자리 이상을 선택해야 합니다.",
+      });
+    }
+
+    const checkOut = addMonths(dto.checkIn, dto.months);
     const overlaps = await this.repo.findOverlapping(
       dto.roomId,
       dto.checkIn,
       checkOut,
     );
-    if (overlaps.length > 0) {
-      throw new ConflictException({
-        code: "DATES_UNAVAILABLE",
-        message: "선택한 기간은 이미 예약되었습니다.",
-      });
-    }
+    this.assertInventoryAvailable(room, overlaps, booking);
 
+    const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
+    const pricingInput = this.scaledPricing(room, units);
     const discount = await this.resolveDiscount(
       dto.couponCode,
-      room.monthlyRent,
+      pricingInput.monthlyRent,
     );
     const price = computePrice({
-      monthlyRent: room.monthlyRent,
-      deposit: room.deposit,
-      cleaningFee: room.cleaningFee,
-      maintenanceFee: room.maintenanceFee,
+      ...pricingInput,
       months: dto.months,
       discount,
     });
 
-    // Price is computed server-side only; client never supplies the total.
     try {
       return await this.repo.createHold({
         roomId: room.id,
         guestId,
-        // 공동 예약: 상대를 지정하면 초대 대기 상태로 시작한다.
         companionId: dto.companionId ?? null,
         companionStatus: dto.companionId ? "PENDING" : null,
         companionRespondedAt: null,
@@ -166,6 +167,8 @@ export class ReservationsService {
         checkOut,
         months: dto.months,
         status: "PENDING_PAYMENT",
+        bookingMode: booking.bookingMode,
+        reservedSpots: booking.reservedSpots,
         monthlyRent: price.monthlyRent,
         deposit: price.deposit,
         cleaningFee: price.cleaningFee,
@@ -175,9 +178,6 @@ export class ReservationsService {
         totalDueNow: price.dueNow,
       });
     } catch (e) {
-      // P2003 = foreign key violation: the guest id in the token no longer
-      // maps to a User row (e.g. account removed). Ask them to sign in again
-      // rather than surfacing a raw 500.
       if (
         e &&
         typeof e === "object" &&
@@ -703,6 +703,105 @@ export class ReservationsService {
     return updated;
   }
 
+  private assertStayRules(
+    room: RoomRecord,
+    months: number,
+    checkIn: Date,
+  ): void {
+    if (months < room.minStayMonths) {
+      throw new UnprocessableEntityException({
+        code: "MIN_STAY",
+        message: `최소 ${room.minStayMonths}개월 이상 예약해야 합니다.`,
+      });
+    }
+    if (checkIn < stripTime(room.availableFrom)) {
+      throw new UnprocessableEntityException({
+        code: "NOT_AVAILABLE_YET",
+        message: "선택한 날짜에는 아직 입주할 수 없습니다.",
+      });
+    }
+  }
+
+  private normalizeBooking(
+    room: RoomRecord,
+    requestedMode?: BookingMode,
+    requestedSpots?: number,
+  ): { bookingMode: BookingMode; reservedSpots: number } {
+    if (room.rentalUnit !== "BED") {
+      if (requestedMode && requestedMode !== "UNIT") {
+        throw new BadRequestException({
+          code: "INVALID_BOOKING_MODE",
+          message: "전체 숙소와 개인실은 숙소 단위로 예약해야 합니다.",
+        });
+      }
+      if (requestedSpots != null && requestedSpots !== 1) {
+        throw new BadRequestException({
+          code: "INVALID_RESERVED_SPOTS",
+          message: "이 숙소는 한 개의 예약 단위로만 예약할 수 있습니다.",
+        });
+      }
+      return { bookingMode: "UNIT", reservedSpots: 1 };
+    }
+
+    const capacity = Math.max(1, room.capacity ?? 1);
+    const bookingMode: BookingMode =
+      requestedMode === "WHOLE_ROOM" ? "WHOLE_ROOM" : "BED";
+    const reservedSpots =
+      bookingMode === "WHOLE_ROOM" ? capacity : requestedSpots ?? 1;
+
+    if (reservedSpots < 1 || reservedSpots > capacity) {
+      throw new BadRequestException({
+        code: "INVALID_RESERVED_SPOTS",
+        message: `예약 인원은 1명부터 최대 ${capacity}명까지 선택할 수 있습니다.`,
+      });
+    }
+
+    return { bookingMode, reservedSpots };
+  }
+
+  private assertInventoryAvailable(
+    room: RoomRecord,
+    overlaps: ReservationRecord[],
+    booking: { bookingMode: BookingMode; reservedSpots: number },
+  ): number | null {
+    if (room.rentalUnit !== "BED") {
+      if (overlaps.length > 0) throwDatesUnavailable();
+      return null;
+    }
+
+    const capacity = Math.max(1, room.capacity ?? 1);
+    if (booking.bookingMode === "WHOLE_ROOM") {
+      if (overlaps.length > 0) throwDatesUnavailable();
+      return 0;
+    }
+
+    const occupied = overlaps.reduce((sum, reservation) => {
+      // 기존 UNIT 예약은 과거의 방 전체 예약일 수 있으므로 안전하게 전체
+      // 점유로 처리한다. 신규 자리 예약은 항상 BED로 저장된다.
+      if (reservation.bookingMode !== "BED") return capacity;
+      return sum + Math.max(1, reservation.reservedSpots);
+    }, 0);
+    const remaining = Math.max(0, capacity - occupied);
+
+    if (booking.reservedSpots > remaining) {
+      throw new ConflictException({
+        code: "NOT_ENOUGH_SPOTS",
+        message: `선택한 기간에 남은 자리가 ${remaining}개뿐입니다.`,
+      });
+    }
+
+    return remaining - booking.reservedSpots;
+  }
+
+  private scaledPricing(room: RoomRecord, units: number) {
+    return {
+      monthlyRent: room.monthlyRent * units,
+      deposit: room.deposit * units,
+      cleaningFee: room.cleaningFee * units,
+      maintenanceFee: room.maintenanceFee * units,
+    };
+  }
+
   private async resolveDiscount(
     code: string | undefined,
     spend: number,
@@ -717,6 +816,13 @@ export class ReservationsService {
     assertCouponUsable(coupon);
     return couponDiscount(coupon, spend);
   }
+}
+
+function throwDatesUnavailable(): never {
+  throw new ConflictException({
+    code: "DATES_UNAVAILABLE",
+    message: "선택한 기간은 이미 예약되었습니다.",
+  });
 }
 
 function assertCouponUsable(c: CouponRecord) {

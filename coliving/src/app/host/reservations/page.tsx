@@ -209,6 +209,7 @@ export default function HostReservations() {
                   </div>
                   <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
                     {b.guestName} · 입주 {b.moveIn} · {b.months}개월
+                    {b.reservedSpots && b.reservedSpots > 1 ? ` · ${b.reservedSpots}자리` : ""}
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
