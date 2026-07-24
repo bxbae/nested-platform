@@ -587,7 +587,7 @@ export class RoomsService {
         published: true,
         region: target.region,
       },
-      include: { amenities: true, images: true },
+      include: { amenities: true, images: true, ...occupancyInclude() },
       take: 30,
     });
 
@@ -638,7 +638,7 @@ export class RoomsService {
     return scored
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map((s) => ({ ...s.room, reasons: s.reasons }));
+      .map((s) => ({ ...withOccupancy(s.room), reasons: s.reasons }));
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -669,7 +669,7 @@ export class RoomsService {
 
     const candidates = await this.prisma.room.findMany({
       where: { published: true, id: { notIn: [...favoriteIds] } },
-      include: { images: true },
+      include: { images: true, ...occupancyInclude() },
       take: 50,
     });
 
@@ -702,7 +702,10 @@ export class RoomsService {
     // 겹치는 게 하나도 없는 예외적인 경우(순수 랜덤 노출)를 대비한 기본 문구도 준비.
     return {
       rooms: top.map(({ room, reasons }) => ({
-        ...room,
+        // 검색/유사숙소 추천이랑 같은 변환을 거쳐야 avgRating→rating 매핑,
+        // occupied/residents 계산이 여기서도 똑같이 적용된다. 이걸 빼먹어서
+        // 메인화면 추천 카드에만 별점이 안 뜨는 문제가 있었다.
+        ...withOccupancy(room),
         personalizedReason:
           reasons.length > 0
             ? `${reasons.join(", ")}라 추천드려요!`
