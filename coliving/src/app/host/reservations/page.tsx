@@ -53,6 +53,20 @@ export default function HostReservations() {
     if (q === "PENDING_PAYMENT" || q === "CONFIRMED" || q === "done") setFilter(q);
   }, []);
 
+  // 노쇼는 되돌릴 수 없고 정산에도 영향을 주므로, 한 번 더 확인받는다.
+  // 다른 화면(숙소 삭제·승인 취소)과 같은 "두 번 눌러야 실행" 패턴.
+  const [confirmNoShowId, setConfirmNoShowId] = useState<string | null>(null);
+
+  function requestNoShow(id: string) {
+    if (busyId) return;
+    if (confirmNoShowId !== id) {
+      setConfirmNoShowId(id);
+      return;
+    }
+    setConfirmNoShowId(null);
+    void act(id, "NO_SHOW");
+  }
+
   async function act(
     id: string,
     status: "CONFIRMED" | "CANCELLED_BY_HOST" | "COMPLETED" | "NO_SHOW"
@@ -221,8 +235,19 @@ export default function HostReservations() {
                   <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "COMPLETED")}>
                     이용 완료 처리
                   </button>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "NO_SHOW")}>
-                    노쇼 처리
+                  <button
+                    className="btn btn-ghost press"
+                    style={{
+                      fontSize: 13,
+                      padding: "8px 16px",
+                      color: confirmNoShowId === b.id ? "#fff" : undefined,
+                      background: confirmNoShowId === b.id ? "var(--primary)" : undefined,
+                      borderColor: confirmNoShowId === b.id ? "var(--primary)" : undefined,
+                    }}
+                    disabled={busyId === b.id}
+                    onClick={() => requestNoShow(b.id)}
+                  >
+                    {confirmNoShowId === b.id ? "정말 노쇼 처리할까요?" : "노쇼 처리"}
                   </button>
                   <button
                     className="btn btn-ghost press"
