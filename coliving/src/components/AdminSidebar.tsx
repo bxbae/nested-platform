@@ -28,6 +28,13 @@ const groups: { href: string; label: string; exact?: boolean }[][] = [
 
 export function AdminSidebar() {
   const path = usePathname();
+
+  // 하위 경로에서 상위 메뉴까지 같이 켜지지 않도록, startsWith 를 통과한
+  // 항목 중 가장 구체적인(= 가장 긴) 하나만 활성으로 본다.
+  const activeHref = groups
+    .flat()
+    .filter((it) => (it.exact ? path === it.href : path.startsWith(it.href)))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
   return (
     <aside className="host-sidebar">
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 8px 14px" }}>
@@ -55,7 +62,7 @@ export function AdminSidebar() {
             }}
           >
             {group.map((it) => {
-          const active = it.exact ? path === it.href : path.startsWith(it.href);
+          const active = it.href === activeHref;
           return (
             <Link
               key={it.href}

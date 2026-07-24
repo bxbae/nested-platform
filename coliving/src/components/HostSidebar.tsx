@@ -17,6 +17,12 @@ const items = [
 export function HostSidebar() {
   const path = usePathname();
 
+  // /host/listings/new 처럼 하위 경로에서는 "숙소 관리"와 "숙소 등록"이 모두
+  // startsWith 를 통과한다. 가장 구체적인(= 가장 긴) 항목 하나만 활성으로 본다.
+  const activeHref = items
+    .filter((item) => (item.exact ? path === item.href : path.startsWith(item.href)))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+
   return (
     <aside className="host-sidebar">
       <div
@@ -31,9 +37,7 @@ export function HostSidebar() {
       </div>
       <nav style={{ display: "grid", gap: 2 }}>
         {items.map((item) => {
-          const active = item.exact
-            ? path === item.href
-            : path.startsWith(item.href);
+          const active = item.href === activeHref;
 
           return (
             <Link
