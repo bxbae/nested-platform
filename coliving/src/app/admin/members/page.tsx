@@ -150,7 +150,7 @@ export default function AdminMembers() {
 
       <div className="card" style={{ overflow: "hidden" }}>
         <div className="admin-table-head" style={{ gridTemplateColumns: "1.5fr auto auto auto 1fr" }}>
-          <span>회원</span><span>역할</span><span>가입일</span><span>상태</span><span></span>
+          <span>회원</span><span style={{ padding: "0px 22px"}}>역할</span><span style={{ padding: "0px 12.5px"}}>가입일</span><span style={{ padding: "0px 12px"}}>상태</span><span></span>
         </div>
 
         {!loading && members.length === 0 && (
