@@ -12,6 +12,7 @@ import {
   confirmBooking as confirmBookingApi,
 } from "@/lib/api/reservations";
 import { getMatches, type MatchCandidate } from "@/lib/api/match";
+import { useAuth } from "@/lib/api/useAuth"; // 로그인한 사용자 정보 가져오기
 
 type Step = "config" | "pay" | "done";
 
@@ -28,6 +29,10 @@ interface Availability {
 
 export function BookingWidget({ house }: { house: House }) {
   const router = useRouter();
+  const { user } = useAuth(); // 로그인한 사용자 정보
+
+  // 로그인한 사용자가 이 숙소의 호스트 본인인지 확인
+  const isOwnListing = !!user && !!house.host?.id && user.id === house.host.id;
 
   const todayISO = toISODate(new Date());
   const initialCheckIn =
@@ -196,6 +201,17 @@ export function BookingWidget({ house }: { house: House }) {
   }
 
   const canRequest = avail.available === true && !avail.loading;
+
+  // 본인이 등록한 숙소면 예약 위젯 대신 안내 문구만 표시
+  if (isOwnListing) {
+    return (
+      <div className="card map-sticky" style={{ padding: 22, textAlign: "center" }}>
+        <p style={{ fontSize: 15, color: "var(--text-2)" }}>
+          본인이 등록한 숙소는 예약할 수 없어요.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="card map-sticky" style={{ padding: 22 }}>

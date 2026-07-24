@@ -15,6 +15,7 @@ export interface RoomSearchQuery {
   region?: string;
   district?: string;
   legalDongCode?: string;
+  currentUserId?: string;
   verifiedByHost?: boolean;
   q?: string;
   roomType?: string;
@@ -220,7 +221,7 @@ export class RoomsService {
     // path (see searchByRating) that reuses this same `where` filter. Every
     // other sort maps to a plain column and keeps id-based cursor pagination.
     if (query.sort === "rating") {
-      return this.searchByRating(where, take, query.cursor);
+      return this.searchByRating(where, take, query.cursor, query.currentUserId);
     }
 
     // recommended is default (createdAt desc as proxy)
@@ -252,8 +253,13 @@ export class RoomsService {
 
     const hasMore = items.length > take;
     const page = hasMore ? items.slice(0, take) : items;
+    // 로그인한 사용자 기준으로 "내가 등록한 숙소"인지 표시
+    const withOwnership = page.map((room) => ({
+      ...room,
+      isMine: query.currentUserId ? room.hostId === query.currentUserId : false,
+    }));
     return {
-      items: page,
+      items: withOwnership,
       nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
       ...(total !== undefined ? { total } : {}),
     };
@@ -263,7 +269,7 @@ export class RoomsService {
   // Rating is a relation aggregate, so id-cursor pagination doesn't apply here.
   // The cursor is instead an offset ("cursor:<n>"), keeping the public response
   // shape identical to the column-sorted path. Rooms with no reviews sort last.
-  private async searchByRating(where: any, take: number, cursor?: string) {
+  private async searchByRating(where: any, take: number, cursor?: string, currentUserId?: string) {
     // 1) Resolve the filtered set with the SAME Prisma `where` — no filter drift.
     const filtered = await this.prisma.room.findMany({
       where,
@@ -307,9 +313,13 @@ export class RoomsService {
     });
     const byId = new Map(rows.map((row) => [row.id, withOccupancy(row)]));
     const items = pageIds.map((id) => byId.get(id)).filter(Boolean);
+    const withOwnership = items.map((room: any) => ({
+      ...room,
+      isMine: currentUserId ? room.hostId === currentUserId : false,
+    }));
 
     return {
-      items,
+      items: withOwnership,
       nextCursor: hasMore ? String(offset + take) : null,
       ...(total !== undefined ? { total } : {}),
     };

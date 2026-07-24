@@ -24,9 +24,12 @@ export async function searchRooms(
   if (USE_REAL_API) {
     const params = filtersToApiQuery(filters);
     if (cursor) params.set("cursor", cursor);
-    const res = await api.get<ApiSearchResponse>(`/rooms?${params.toString()}`, {
-      auth: false, // room reads are public
-    });
+    // 수정 — auth: false를 빼서, 로그인했으면 토큰이 자동으로 실려가게 함
+    // (검색 자체는 비로그인도 가능해야 하므로 auth를 강제 true로 만들
+    // 필요는 없음 — 기본값 자체가 "있으면 보내고 없으면 안 보낸다"이므로
+    // 옵션을 아예 안 주는 게 정확히 원하는 동작이다. "내가 등록한 숙소"
+    // 표시(isMine) 기능에 로그인 토큰이 필요해서 이렇게 바꿨다.)
+    const res = await api.get<ApiSearchResponse>(`/rooms?${params.toString()}`);
     return apiSearchToPaginated(res);
   }
 
