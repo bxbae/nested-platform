@@ -1,28 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { GenderPolicy, RoomType, SearchParams } from "@/lib/types";
-import { GENDER_LABELS, ROOM_TYPE_LABELS } from "@/lib/types";
+import type {
+  BuildingType,
+  GenderPolicy,
+  RentalUnit,
+  SearchParams,
+  SharedFacility,
+} from "@/lib/types";
+import {
+  BUILDING_TYPE_LABELS,
+  GENDER_LABELS,
+  RENTAL_UNIT_LABELS,
+  SHARED_FACILITY_LABELS,
+} from "@/lib/types";
 import { won } from "@/lib/format";
 import { DISTRICT_OPTIONS } from "@/lib/seoul";
 import { getLegalNeighborhoods, type LegalRegionOption } from "@/lib/api/regions";
 import { DEFAULT_FILTERS, RENT_MAX, RENT_MIN } from "../schema";
 
-const ROOM_TYPES: RoomType[] = [
-  "one_room",
-  "share_room",
-  "whole_house",
-  "apartment",
-];
-
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
-
-const ROOM_TYPE_DESCRIPTIONS: Record<RoomType, string> = {
-  one_room: "개인 공간 중심",
-  share_room: "침실 또는 공간 공유",
-  whole_house: "집 전체 단독 사용",
-  apartment: "아파트형 주거",
-};
+const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
+const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "house"];
+const SHARED_FACILITIES: SharedFacility[] = [
+  "bathroom",
+  "kitchen",
+  "living_room",
+  "laundry_room",
+  "entrance",
+];
 
 export function FilterSheet({
   open,
@@ -89,16 +95,6 @@ export function FilterSheet({
       ...current,
       ...patch,
     }));
-  };
-
-  const toggleRoomType = (roomType: RoomType) => {
-    const current = draft.roomTypes ?? [];
-
-    set({
-      roomTypes: current.includes(roomType)
-        ? current.filter((item) => item !== roomType)
-        : [...current, roomType],
-    });
   };
 
 
@@ -242,7 +238,7 @@ export function FilterSheet({
                   onClick={() =>
                     set({
                       region: "",
-                    legalDongCode: "",
+                      legalDongCode: "",
                     })
                   }
                 >
@@ -305,58 +301,35 @@ export function FilterSheet({
             />
           </Section>
 
-          <Section title="주거 형태">
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 10,
-              }}
-            >
-              {ROOM_TYPES.map((roomType) => {
-                const active = (draft.roomTypes ?? []).includes(roomType);
-
-                return (
-                  <button
-                    key={roomType}
-                    type="button"
-                    onClick={() => toggleRoomType(roomType)}
-                    className="press"
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: "var(--r-sm)",
-                      border: active
-                        ? "1.5px solid var(--text)"
-                        : "1px solid var(--border)",
-                        background: active ? "var(--text)" : "var(--surface)",
-                      color: active ? "var(--bg)" : "var(--text)",
-                      fontWeight: 600,
-                      fontSize: 14,
-                      textAlign: "left",
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: "block",
-                      }}
-                    >
-                      {ROOM_TYPE_LABELS[roomType]}
-                    </span>
-
-                    <span
-                      style={{
-                        display: "block",
-                        marginTop: 3,
-                        fontSize: 11.5,
-                        fontWeight: 450,
-                        opacity: 0.72,
-                      }}
-                    >
-                      {ROOM_TYPE_DESCRIPTIONS[roomType]}
-                    </span>
-                  </button>
-                );
-              })}
+          <Section title="숙소 유형">
+            <p style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 12 }}>
+              예약 공간, 건물 유형, 공유 시설을 각각 선택할 수 있습니다.
+            </p>
+            <div style={{ display: "grid", gap: 10 }}>
+              <MultiSelectDropdown
+                label="예약 공간"
+                placeholder="전체 숙소 유형"
+                values={draft.rentalUnits ?? []}
+                options={RENTAL_UNITS}
+                labels={RENTAL_UNIT_LABELS}
+                onChange={(rentalUnits) => set({ rentalUnits })}
+              />
+              <MultiSelectDropdown
+                label="건물 유형"
+                placeholder="전체 건물"
+                values={draft.buildingTypes ?? []}
+                options={BUILDING_TYPES}
+                labels={BUILDING_TYPE_LABELS}
+                onChange={(buildingTypes) => set({ buildingTypes })}
+              />
+              <MultiSelectDropdown
+                label="공유 시설"
+                placeholder="공유 시설 전체"
+                values={draft.sharedFacilities ?? []}
+                options={SHARED_FACILITIES}
+                labels={SHARED_FACILITY_LABELS}
+                onChange={(sharedFacilities) => set({ sharedFacilities })}
+              />
             </div>
           </Section>
 
@@ -629,6 +602,95 @@ export function FilterSheet({
   );
 }
 
+
+function MultiSelectDropdown<T extends string>({
+  label,
+  placeholder,
+  values,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  values: T[];
+  options: T[];
+  labels: Record<T, string>;
+  onChange: (values: T[]) => void;
+}) {
+  const summary = values.length
+    ? values.map((value) => labels[value]).join(", ")
+    : placeholder;
+
+  return (
+    <details
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: "var(--r-sm)",
+        background: "var(--surface)",
+      }}
+    >
+      <summary
+        style={{
+          cursor: "pointer",
+          listStyle: "none",
+          padding: "12px 14px",
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <span style={{ fontWeight: 700, fontSize: 13 }}>{label}</span>
+        <span
+          style={{
+            minWidth: 0,
+            color: values.length ? "var(--text)" : "var(--text-2)",
+            fontSize: 13,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {summary}
+        </span>
+      </summary>
+      <div
+        style={{
+          padding: "0 14px 12px",
+          display: "grid",
+          gap: 8,
+          borderTop: "1px solid var(--border)",
+        }}
+      >
+        <label style={{ display: "flex", gap: 8, alignItems: "center", paddingTop: 10, fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={values.length === 0}
+            onChange={() => onChange([])}
+          />
+          전체
+        </label>
+        {options.map((option) => (
+          <label key={option} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={values.includes(option)}
+              onChange={() =>
+                onChange(
+                  values.includes(option)
+                    ? values.filter((value) => value !== option)
+                    : [...values, option],
+                )
+              }
+            />
+            {labels[option]}
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function Section({
   title,
   children,
@@ -697,7 +759,7 @@ function ToggleRow({
             width: 22,
             height: 22,
             borderRadius: 99,
-            background: "#fff",
+            background: "var(--surface)",
             transition: "left .18s cubic-bezier(.2,.8,.3,1)",
             boxShadow: "var(--shadow-sm)",
           }}

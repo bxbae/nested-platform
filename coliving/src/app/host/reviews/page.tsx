@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { listHostReviews, replyToReview, type HostReview } from "@/lib/api/reviews";
+import { ReviewReportButton } from "@/components/ReviewReportButton";
 
 export default function HostReviews() {
   const [reviews, setReviews] = useState<HostReview[]>([]);
@@ -84,8 +85,11 @@ export default function HostReviews() {
                     </div>
                   </div>
                 </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                 <div style={{ fontSize: 13, color: "var(--warning)" }}>
                   {"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}
+                </div>
+                  {r.id && <ReviewReportButton reviewId={r.id} authorId={r.authorId} />}
                 </div>
               </div>
 

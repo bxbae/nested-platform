@@ -15,6 +15,7 @@
 import { USE_REAL_API } from "./config";
 import { api, ApiError } from "./client";
 import { toISODate, addMonths } from "@/lib/pricing";
+import type { BookingMode } from "@/lib/types";
 
 export interface AvailabilityResult {
   available: boolean;
@@ -37,6 +38,9 @@ export interface QuotedPrice {
   discount: number;
   dueNow: number;
   contractTotal: number;
+  bookingMode?: "UNIT" | "BED" | "WHOLE_ROOM";
+  reservedSpots?: number;
+  remainingSpots?: number | null;
 }
 
 export interface CreatedBooking {
@@ -51,12 +55,16 @@ export async function checkAvailability(input: {
   checkIn: string;
   months: number;
   couponCode?: string;
+  bookingMode?: BookingMode;
+  reservedSpots?: number;
 }): Promise<AvailabilityResult> {
   if (!USE_REAL_API) {
     const params = new URLSearchParams({
       houseId: input.houseId,
       checkIn: input.checkIn,
       months: String(input.months),
+      ...(input.bookingMode ? { bookingMode: input.bookingMode } : {}),
+      ...(input.reservedSpots ? { reservedSpots: String(input.reservedSpots) } : {}),
     });
     const res = await fetch(`/api/availability?${params}`);
     return res.json();
@@ -69,6 +77,8 @@ export async function checkAvailability(input: {
         roomId: input.houseId,
         checkIn: input.checkIn,
         months: input.months,
+        ...(input.bookingMode ? { bookingMode: input.bookingMode.toUpperCase() } : {}),
+        ...(input.reservedSpots ? { reservedSpots: input.reservedSpots } : {}),
         ...(input.couponCode ? { couponCode: input.couponCode } : {}),
       }
     );
@@ -85,7 +95,7 @@ export async function checkAvailability(input: {
         : undefined;
     const couponError =
       code === "COUPON_INVALID" || code === "COUPON_EXPIRED" || code === "COUPON_EXHAUSTED";
-    return { available: couponError, reason, couponError };
+    return { available: false, reason, couponError };
   }
 }
 
@@ -98,6 +108,8 @@ export async function requestBooking(input: {
   couponCode?: string;
   /** 함께 살 룸메이트. 지정하면 상대에게 수락 대기 초대가 걸린다. */
   companionId?: string;
+  bookingMode?: BookingMode;
+  reservedSpots?: number;
 }): Promise<CreatedBooking> {
   if (!USE_REAL_API) {
     const res = await fetch("/api/bookings", {
@@ -109,6 +121,8 @@ export async function requestBooking(input: {
         guestName: input.guestName,
         moveIn: input.moveIn,
         months: input.months,
+        bookingMode: input.bookingMode,
+        reservedSpots: input.reservedSpots,
       }),
     });
     if (!res.ok) {
@@ -125,6 +139,8 @@ export async function requestBooking(input: {
       roomId: input.houseId,
       checkIn: input.moveIn,
       months: input.months,
+      ...(input.bookingMode ? { bookingMode: input.bookingMode.toUpperCase() } : {}),
+      ...(input.reservedSpots ? { reservedSpots: input.reservedSpots } : {}),
       ...(input.couponCode ? { couponCode: input.couponCode } : {}),
       ...(input.companionId ? { companionId: input.companionId } : {}),
     }
@@ -225,6 +241,8 @@ interface ApiReservation {
   serviceFee: number;
   totalDueNow: number;
   status: string;
+  bookingMode?: "UNIT" | "BED" | "WHOLE_ROOM";
+  reservedSpots?: number;
   createdAt: string;
   room: { id: string; name: string; region: string; image: string | null };
   payment: { id: string; provider: string; amount: number; status: string; createdAt: string } | null;
@@ -314,6 +332,8 @@ export interface HostReservation {
   monthlyRent: number;
   totalDueNow: number;
   status: HostReservationStatus;
+  bookingMode?: BookingMode;
+  reservedSpots?: number;
   createdAt: string;
 }
 
@@ -365,6 +385,8 @@ export async function listHostReservations(): Promise<HostReservation[]> {
       monthlyRent: r.monthlyRent,
       totalDueNow: r.totalDueNow,
       status: r.status as HostReservationStatus,
+      bookingMode: r.bookingMode?.toLowerCase() as BookingMode | undefined,
+      reservedSpots: r.reservedSpots ?? 1,
       createdAt: r.createdAt,
     }));
   } catch {
@@ -392,7 +414,8 @@ export async function listMyBookings(): Promise<Booking[]> {
   if (!USE_REAL_API) {
     const res = await fetch("/api/bookings");
     if (!res.ok) return [];
-    return res.json();
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.bookings ?? []);
   }
   try {
     const rows = await api.get<ApiReservation[]>("/reservations");
@@ -412,6 +435,8 @@ export async function listMyBookings(): Promise<Booking[]> {
       serviceFeeRate: 0.05,
       status: mapStatus(r.status),
       rawStatus: r.status,
+      bookingMode: r.bookingMode?.toLowerCase() as BookingMode | undefined,
+      reservedSpots: r.reservedSpots ?? 1,
       checkOut: r.checkOut?.slice(0, 10),
       extensionMonths: (r as { extensionMonths?: number | null }).extensionMonths ?? null,
       createdAt: r.createdAt,

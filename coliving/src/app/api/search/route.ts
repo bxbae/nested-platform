@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { houses } from "@/lib/data";
-import type { House, RoomType, GenderPolicy, SortKey, PaginatedRooms } from "@/lib/types";
+import type {
+  BuildingType,
+  GenderPolicy,
+  House,
+  PaginatedRooms,
+  RentalUnit,
+  RoomType,
+  SharedFacility,
+  SortKey,
+} from "@/lib/types";
 import { districtForRegion } from "@/lib/seoul";
 
 // GET /api/search — cursor-paginated, filtered room search.
@@ -14,6 +23,15 @@ export async function GET(req: NextRequest) {
   const roomTypes = (p.get("roomTypes") ?? "")
     .split(",")
     .filter(Boolean) as RoomType[];
+  const rentalUnits = (p.get("rentalUnits") ?? "")
+    .split(",")
+    .filter(Boolean) as RentalUnit[];
+  const buildingTypes = (p.get("buildingTypes") ?? "")
+    .split(",")
+    .filter(Boolean) as BuildingType[];
+  const sharedFacilities = (p.get("sharedFacilities") ?? "")
+    .split(",")
+    .filter(Boolean) as SharedFacility[];
   const minRent = p.get("minRent") ? Number(p.get("minRent")) : null;
   const maxRent = p.get("maxRent") ? Number(p.get("maxRent")) : null;
   const availableFrom = p.get("availableFrom"); // ISO date
@@ -32,6 +50,27 @@ export async function GET(req: NextRequest) {
     if (region && h.region !== region) return false;
     if (district && districtForRegion(h.region) !== district) return false;
     if (roomTypes.length && !roomTypes.includes(h.roomType)) return false;
+    if (rentalUnits.length) {
+      const safeLegacyWhole = !h.rentalUnit && h.roomType === "whole_house";
+      if (!h.rentalUnit && !(safeLegacyWhole && rentalUnits.includes("whole"))) return false;
+      if (h.rentalUnit && !rentalUnits.includes(h.rentalUnit)) return false;
+    }
+    if (buildingTypes.length) {
+      const legacyBuilding =
+        h.roomType === "one_room"
+          ? "studio"
+          : h.roomType === "apartment"
+            ? "apartment"
+            : h.roomType === "whole_house"
+              ? "house"
+              : null;
+      const building = h.buildingType ?? legacyBuilding;
+      if (!building || !buildingTypes.includes(building)) return false;
+    }
+    if (
+      sharedFacilities.length &&
+      !sharedFacilities.every((facility) => h.sharedFacilities?.includes(facility))
+    ) return false;
     if (minRent != null && h.monthlyRent < minRent) return false;
     if (maxRent != null && h.monthlyRent > maxRent) return false;
     if (availableFrom && h.availableFrom > availableFrom) return false;

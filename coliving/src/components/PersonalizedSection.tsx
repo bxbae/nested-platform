@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getPersonalizedRooms } from "@/lib/api/rooms";
 import { Thumbnail } from "@/components/Thumbnail";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
+import { getAccommodationLabel, getPriceUnitLabel } from "@/lib/types";
 import { wonShort } from "@/lib/format";
 import type { House } from "@/lib/types";
 
@@ -82,7 +82,7 @@ export function PersonalizedSection() {
               <Thumbnail src={h.photo} color={h.color} height={170}>
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: 12, height: "100%" }}>
                   <span className="chip glass" style={{ border: "none", color: "var(--text)", fontWeight: 600 }}>
-                    {ROOM_TYPE_LABELS[h.roomType]}
+                    {getAccommodationLabel(h)}
                   </span>
                   <span className="chip glass" style={{ border: "none", color: "var(--text)", fontSize: 12 }}>
                     ★ {h.rating}
@@ -96,7 +96,7 @@ export function PersonalizedSection() {
                 </div>
                 <div style={{ marginTop: 10, fontSize: 15 }}>
                   <strong>{wonShort(h.monthlyRent)}</strong>
-                  <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월</span>
+                  <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월 · {getPriceUnitLabel(h.rentalUnit)}</span>
                 </div>
                 {h.personalizedReason && (
                   <div style={{ fontSize: 12.5, color: "var(--primary)", marginTop: 6 }}>

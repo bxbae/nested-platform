@@ -136,6 +136,7 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
                   </div>
                   <div style={{ fontSize: 14, color: "var(--text-2)", marginTop: 4 }}>
                     입주 {b.moveIn} · {b.months}개월 · {b.guestName}
+                    {b.reservedSpots && b.reservedSpots > 1 ? ` · ${b.reservedSpots}자리` : ""}
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>

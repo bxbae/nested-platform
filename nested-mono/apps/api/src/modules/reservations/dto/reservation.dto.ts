@@ -7,6 +7,10 @@ export const quoteSchema = z.object({
     message: "입주일은 오늘 이후여야 합니다.",
   }),
   months: z.number().int().min(1).max(24),
+  // 신규 다인실 예약 단위. 기존 클라이언트는 생략할 수 있으며 서버가
+  // 숙소 유형에 맞춰 UNIT 또는 BED 1자리로 안전하게 해석한다.
+  bookingMode: z.enum(["UNIT", "BED", "WHOLE_ROOM"]).optional(),
+  reservedSpots: z.coerce.number().int().min(1).max(20).optional(),
   couponCode: z.string().trim().min(1).optional(),
 });
 export type QuoteDto = z.infer<typeof quoteSchema>;

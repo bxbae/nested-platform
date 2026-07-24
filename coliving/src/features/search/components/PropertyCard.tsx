@@ -4,7 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Star, MapPin, Heart } from "lucide-react";
 import type { House } from "@/lib/types";
-import { ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
+import { GENDER_LABELS, getAccommodationLabel, getPriceUnitLabel } from "@/lib/types";
 import { won } from "@/lib/format";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useFavorite } from "@/lib/api/useFavorites";
@@ -61,7 +61,7 @@ export function PropertyCard({
               className="chip glass"
               style={{ border: "none", color: "var(--text)", fontWeight: 600 }}
             >
-              {ROOM_TYPE_LABELS[house.roomType]}
+              {getAccommodationLabel(house)}
             </span>
             {house.isMine && (
               <span
@@ -138,7 +138,7 @@ export function PropertyCard({
         <div style={{ marginTop: 12, fontSize: 15, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span>
             <strong>{won(house.monthlyRent)}</strong>
-            <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월</span>
+            <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월 · {getPriceUnitLabel(house.rentalUnit)}</span>
           </span>
           {/* 오늘 기준 누가 살고 있는 방 — 목록에서 빼지 않고 표시만 한다.
               나중 날짜로는 입주할 수 있기 때문이다. */}

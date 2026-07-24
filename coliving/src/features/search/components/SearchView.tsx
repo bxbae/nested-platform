@@ -4,7 +4,12 @@ import { useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { SearchParams, SortKey } from "@/lib/types";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
+import {
+  BUILDING_TYPE_LABELS,
+  RENTAL_UNIT_LABELS,
+  ROOM_TYPE_LABELS,
+  SHARED_FACILITY_LABELS,
+} from "@/lib/types";
 import { regionLabel } from "@/lib/seoul";
 
 import { useSearchProperties } from "../api/useSearchProperties";
@@ -108,6 +113,9 @@ export function SearchView() {
     Boolean(filters.region) ||
     Boolean(filters.verified) ||
     (filters.roomTypes?.length ?? 0) > 0 ||
+    (filters.rentalUnits?.length ?? 0) > 0 ||
+    (filters.buildingTypes?.length ?? 0) > 0 ||
+    (filters.sharedFacilities?.length ?? 0) > 0 ||
     Boolean(filters.checkIn && filters.checkOut);
 
   return (
@@ -304,6 +312,54 @@ export function SearchView() {
                 }
               >
                 {ROOM_TYPE_LABELS[roomType]} ×
+              </button>
+            ))}
+
+            {filters.rentalUnits?.map((rentalUnit) => (
+              <button
+                key={rentalUnit}
+                type="button"
+                className="chip press"
+                onClick={() =>
+                  commit({
+                    ...filters,
+                    rentalUnits: filters.rentalUnits?.filter((item) => item !== rentalUnit),
+                  })
+                }
+              >
+                {RENTAL_UNIT_LABELS[rentalUnit]} ×
+              </button>
+            ))}
+
+            {filters.buildingTypes?.map((buildingType) => (
+              <button
+                key={buildingType}
+                type="button"
+                className="chip press"
+                onClick={() =>
+                  commit({
+                    ...filters,
+                    buildingTypes: filters.buildingTypes?.filter((item) => item !== buildingType),
+                  })
+                }
+              >
+                {BUILDING_TYPE_LABELS[buildingType]} ×
+              </button>
+            ))}
+
+            {filters.sharedFacilities?.map((facility) => (
+              <button
+                key={facility}
+                type="button"
+                className="chip press"
+                onClick={() =>
+                  commit({
+                    ...filters,
+                    sharedFacilities: filters.sharedFacilities?.filter((item) => item !== facility),
+                  })
+                }
+              >
+                {SHARED_FACILITY_LABELS[facility]} 공유 ×
               </button>
             ))}
 

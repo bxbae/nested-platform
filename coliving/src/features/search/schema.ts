@@ -1,5 +1,8 @@
 import type {
   RoomType,
+  RentalUnit,
+  BuildingType,
+  SharedFacility,
   GenderPolicy,
   SortKey,
   SearchParams,
@@ -14,6 +17,9 @@ export const DEFAULT_FILTERS: SearchParams = {
   legalDongCode: "",
   verified: false,
   roomTypes: [],
+  rentalUnits: [],
+  buildingTypes: [],
+  sharedFacilities: [],
   minRent: 500000,
   maxRent: 1100000,
   availableFrom: "",
@@ -27,6 +33,44 @@ export const DEFAULT_FILTERS: SearchParams = {
 export const RENT_MIN = 500000;
 export const RENT_MAX = 1100000;
 
+const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
+const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
+const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "house"];
+const SHARED_FACILITIES: SharedFacility[] = [
+  "bathroom",
+  "kitchen",
+  "living_room",
+  "laundry_room",
+  "entrance",
+];
+const GENDERS: GenderPolicy[] = ["any", "male_only", "female_only"];
+const SORTS: SortKey[] = ["recommended", "price_asc", "price_desc", "rating", "newest"];
+
+function parseList<T extends string>(value: string | null, allowed: readonly T[]): T[] {
+  if (!value) return [];
+  const allowedSet = new Set<string>(allowed);
+  return [...new Set(
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item): item is T => allowedSet.has(item)),
+  )];
+}
+
+function parseEnum<T extends string>(
+  value: string | null,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  return value && allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function parseNumber(value: string | null, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // Serialize filters → URLSearchParams (skips defaults/empties for clean URLs)
 export function filtersToParams(f: SearchParams): URLSearchParams {
   const p = new URLSearchParams();
@@ -36,6 +80,9 @@ export function filtersToParams(f: SearchParams): URLSearchParams {
   if (f.legalDongCode) p.set("legalDongCode", f.legalDongCode);
   if (f.verified) p.set("verified", "true");
   if (f.roomTypes && f.roomTypes.length) p.set("roomTypes", f.roomTypes.join(","));
+  if (f.rentalUnits?.length) p.set("rentalUnits", f.rentalUnits.join(","));
+  if (f.buildingTypes?.length) p.set("buildingTypes", f.buildingTypes.join(","));
+  if (f.sharedFacilities?.length) p.set("sharedFacilities", f.sharedFacilities.join(","));
   if (f.minRent != null && f.minRent > RENT_MIN) p.set("minRent", String(f.minRent));
   if (f.maxRent != null && f.maxRent < RENT_MAX) p.set("maxRent", String(f.maxRent));
   if (f.availableFrom) p.set("availableFrom", f.availableFrom);
@@ -59,20 +106,23 @@ export function paramsToFilters(sp: URLSearchParams): SearchParams {
     district: sp.get("district") ?? "",
     legalDongCode: sp.get("legalDongCode") ?? "",
     verified: sp.get("verified") === "true",
-    roomTypes: (sp.get("roomTypes")?.split(",").filter(Boolean) ?? []) as RoomType[],
-    minRent: sp.get("minRent") ? Number(sp.get("minRent")) : RENT_MIN,
-    maxRent: sp.get("maxRent") ? Number(sp.get("maxRent")) : RENT_MAX,
+    roomTypes: parseList(sp.get("roomTypes"), ROOM_TYPES),
+    rentalUnits: parseList(sp.get("rentalUnits"), RENTAL_UNITS),
+    buildingTypes: parseList(sp.get("buildingTypes"), BUILDING_TYPES),
+    sharedFacilities: parseList(sp.get("sharedFacilities"), SHARED_FACILITIES),
+    minRent: parseNumber(sp.get("minRent"), RENT_MIN),
+    maxRent: parseNumber(sp.get("maxRent"), RENT_MAX),
     availableFrom: sp.get("availableFrom") ?? "",
     minCapacity: Number(sp.get("minCapacity")) || undefined,
     minBedrooms: Number(sp.get("minBedrooms")) || undefined,
     // Stay window from the hero search (홈 검색바에서 고른 기간)
     checkIn: sp.get("checkIn") ?? "",
     checkOut: sp.get("checkOut") ?? "",
-    gender: (sp.get("gender") as GenderPolicy) ?? "any",
+    gender: parseEnum(sp.get("gender"), GENDERS, "any"),
     pets: sp.get("pets") === "true",
     smoking: sp.get("smoking") === "true",
     parking: sp.get("parking") === "true",
-    sort: (sp.get("sort") as SortKey) ?? "recommended",
+    sort: parseEnum(sp.get("sort"), SORTS, "recommended"),
   };
 }
 
@@ -82,6 +132,9 @@ export function activeFilterCount(f: SearchParams): number {
   if (f.region || f.district || f.legalDongCode) n++;
   if (f.verified) n++;
   if (f.roomTypes && f.roomTypes.length) n++;
+  if (f.rentalUnits?.length) n++;
+  if (f.buildingTypes?.length) n++;
+  if (f.sharedFacilities?.length) n++;
   if ((f.minRent ?? RENT_MIN) > RENT_MIN || (f.maxRent ?? RENT_MAX) < RENT_MAX) n++;
   if (f.availableFrom) n++;
   if (f.minCapacity) n++;

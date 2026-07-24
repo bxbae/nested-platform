@@ -19,7 +19,10 @@ export interface RoomSearchQuery {
   verifiedByHost?: boolean;
   q?: string;
   roomType?: string;
-  roomTypes?: string[]; // multi-select (frontend sends CSV → array)
+  roomTypes?: string[]; // legacy multi-select
+  rentalUnits?: string[];
+  buildingTypes?: string[];
+  sharedFacilities?: string[];
   minRent?: number;
   maxRent?: number;
   availableFrom?: string; // ISO date; room must be available on/before this
@@ -45,7 +48,28 @@ export interface RoomSearchQuery {
 // 오늘 날짜가 어떤 예약의 checkIn~checkOut 사이에 있으면 지금 누군가 살고 있는
 // 방이다. 목록에서 "입주 중"으로 표시해 헛걸음을 줄인다. 방을 목록에서 빼지는
 // 않는다 — 나중 날짜로는 들어갈 수 있기 때문이다.
-const OCCUPYING_STATUSES = ["PENDING_PAYMENT", "CONFIRMED"] as const;
+const OCCUPYING_STATUSES = [
+  "PENDING_PAYMENT",
+  "CONFIRMED",
+  "EARLY_CHECKOUT_REQUESTED",
+  "EARLY_CHECKOUT_APPROVED",
+  "EXTENSION_REQUESTED",
+] as const;
+
+function appendAnd(where: Record<string, any>, clause: Record<string, any>) {
+  where.AND = [...(Array.isArray(where.AND) ? where.AND : []), clause];
+}
+
+function deriveLegacyRoomType(
+  rentalUnit?: string | null,
+  buildingType?: string | null,
+): "ONE_ROOM" | "SHARE_ROOM" | "WHOLE_HOUSE" | "APARTMENT" | undefined {
+  if (!rentalUnit || !buildingType) return undefined;
+  if (rentalUnit !== "WHOLE") return "SHARE_ROOM";
+  if (buildingType === "STUDIO") return "ONE_ROOM";
+  if (buildingType === "APARTMENT") return "APARTMENT";
+  return "WHOLE_HOUSE";
+}
 
 /** 오늘 진행 중인 예약만 얇게 붙여 오는 include 절. */
 function occupancyInclude() {
@@ -59,7 +83,13 @@ function occupancyInclude() {
       },
       // 거주 인원을 세려면 전부 필요하다 — 한 방에 여러 예약이 있을 수 있고,
       // 공동 예약은 동반자까지 포함해야 한다.
-      select: { checkOut: true, companionId: true, companionStatus: true },
+      select: {
+        checkOut: true,
+        companionId: true,
+        companionStatus: true,
+        bookingMode: true,
+        reservedSpots: true,
+      },
     },
   };
 }
@@ -69,6 +99,8 @@ type OccupancyReservation = {
   checkOut: Date;
   companionId: string | null;
   companionStatus: string | null;
+  bookingMode: string;
+  reservedSpots: number;
 };
 
 /**
@@ -85,9 +117,10 @@ function withOccupancy<T extends { reservations?: OccupancyReservation[] }>(
   const current = reservations ?? [];
 
   const residents = current.reduce((sum, r) => {
-    return (
-      sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0)
-    );
+    if (r.bookingMode === "BED" || r.bookingMode === "WHOLE_ROOM") {
+      return sum + Math.max(1, r.reservedSpots);
+    }
+    return sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0);
   }, 0);
 
   // 가장 늦게 끝나는 예약이 곧 다시 입주 가능한 시점이다.
@@ -122,7 +155,7 @@ export class RoomsService {
 
   // ── Search / list (검색 API) — cursor pagination + filters ──
   async search(query: RoomSearchQuery) {
-    const take = Math.min(query.take ?? 20, 50);
+    const take = Math.min(Math.max(Math.trunc(query.take ?? 20), 1), 50);
     const where: any = { published: true };
     if (query.legalDongCode) {
       where.legalDongCode = query.legalDongCode;
@@ -145,19 +178,50 @@ export class RoomsService {
         : [];
     if (types.length) where.roomType = { in: types };
 
+    if (query.rentalUnits?.length) {
+      const fallbackRoomTypes = query.rentalUnits.includes("WHOLE")
+        ? ["WHOLE_HOUSE"]
+        : [];
+      appendAnd(where, {
+        OR: [
+          { rentalUnit: { in: query.rentalUnits } },
+          ...(fallbackRoomTypes.length
+            ? [{ rentalUnit: null, roomType: { in: fallbackRoomTypes } }]
+            : []),
+        ],
+      });
+    }
+
+    if (query.buildingTypes?.length) {
+      const fallbackRoomTypes = [
+        ...(query.buildingTypes.includes("STUDIO") ? ["ONE_ROOM"] : []),
+        ...(query.buildingTypes.includes("APARTMENT") ? ["APARTMENT"] : []),
+        ...(query.buildingTypes.includes("HOUSE") ? ["WHOLE_HOUSE"] : []),
+      ];
+      appendAnd(where, {
+        OR: [
+          { buildingType: { in: query.buildingTypes } },
+          ...(fallbackRoomTypes.length
+            ? [{ buildingType: null, roomType: { in: fallbackRoomTypes } }]
+            : []),
+        ],
+      });
+    }
+
+    if (query.sharedFacilities?.length) {
+      where.sharedFacilities = { hasEvery: query.sharedFacilities };
+    }
+
     if (query.q) {
       const term = query.q.trim();
-      where.AND = [
-        ...(Array.isArray(where.AND) ? where.AND : []),
-        {
-          OR: [
-            { name: { contains: term, mode: "insensitive" } },
-            { district: { contains: term, mode: "insensitive" } },
-            { neighborhood: { contains: term, mode: "insensitive" } },
-            { region: { contains: term, mode: "insensitive" } },
-          ],
-        },
-      ];
+      appendAnd(where, {
+        OR: [
+          { name: { contains: term, mode: "insensitive" } },
+          { district: { contains: term, mode: "insensitive" } },
+          { neighborhood: { contains: term, mode: "insensitive" } },
+          { region: { contains: term, mode: "insensitive" } },
+        ],
+      });
     }
     if (query.petsAllowed !== undefined) where.petsAllowed = query.petsAllowed;
     if (query.smokingAllowed !== undefined)
@@ -166,8 +230,8 @@ export class RoomsService {
     if (query.availableFrom)
       where.availableFrom = { lte: new Date(query.availableFrom) };
 
-    // 인원수 필터. 독채는 capacity 가 null 이라 이 조건에서 자연히 빠진다 —
-    // 정원 개념이 없는 매물을 "N명 가능"으로 셀 수는 없기 때문이다.
+    // 인원수 필터. 신규 숙소는 전체 숙소까지 capacity를 저장한다.
+    // 기존 데이터 중 capacity가 null인 숙소는 조건에서 안전하게 제외된다.
     const minCapacity = Number(query.minCapacity);
     if (Number.isFinite(minCapacity) && minCapacity > 0) {
       where.capacity = { gte: minCapacity };
@@ -196,13 +260,38 @@ export class RoomsService {
       ) {
         // The room must also be move-in ready by the requested start date.
         where.availableFrom = { lte: from };
-        where.reservations = {
-          none: {
-            status: { in: ["PENDING_PAYMENT", "CONFIRMED"] },
-            checkIn: { lt: to },
-            checkOut: { gt: from },
-          },
+
+        const overlap = {
+          status: { in: [...OCCUPYING_STATUSES] },
+          checkIn: { lt: to },
+          checkOut: { gt: from },
         };
+
+        // 전체 숙소·개인실·기존 미분류 숙소는 기간이 겹치면 예약할 수 없다.
+        // 다인실은 BED 예약이 일부 존재해도 남은 자리를 판매해야 하므로,
+        // 방 전체를 막는 UNIT/WHOLE_ROOM 예약만 검색 단계에서 제외한다.
+        // 정확한 잔여 자리 합계는 예약 견적 API가 다시 검증한다.
+        appendAnd(where, {
+          OR: [
+            {
+              rentalUnit: "BED",
+              reservations: {
+                none: {
+                  ...overlap,
+                  bookingMode: { in: ["UNIT", "WHOLE_ROOM"] },
+                },
+              },
+            },
+            {
+              rentalUnit: { in: ["WHOLE", "PRIVATE_ROOM"] },
+              reservations: { none: overlap },
+            },
+            {
+              rentalUnit: null,
+              reservations: { none: overlap },
+            },
+          ],
+        });
       }
     }
     // gender: an ANY room satisfies any request; otherwise must match
@@ -342,6 +431,7 @@ export class RoomsService {
           include: {
             author: {
               select: {
+                id: true,
                 name: true,
                 avatarColor: true,
                 avatarUrl: true,
@@ -432,11 +522,22 @@ export class RoomsService {
       .trim();
 
     const { lat, lng } = await this.geocoding.geocode(roadAddress);
+    // 신규 3축이 들어오면 legacy roomType도 서버가 같은 의미로 강제 계산한다.
+    // 클라이언트가 서로 모순되는 두 분류를 보내도 DB에는 일관된 값만 저장한다.
+    const legacyRoomType =
+      rest.rentalUnit || rest.buildingType
+        ? deriveLegacyRoomType(rest.rentalUnit, rest.buildingType)
+        : rest.roomType;
+    if (!legacyRoomType) {
+      throw new BadRequestException("숙소 분류를 확인해주세요.");
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const room = await tx.room.create({
         data: {
           ...rest,
+          roomType: legacyRoomType,
+          classificationReviewRequired: false,
           hostId,
           published: true,
           region: neighborhood,
@@ -506,6 +607,33 @@ export class RoomsService {
     await this.redis.cacheSet(`room:${id}`, null, 1); // invalidate
 
     const { images, ...rest } = data;
+    const nextRentalUnit = rest.rentalUnit ?? room.rentalUnit;
+    const nextBuildingType = rest.buildingType ?? room.buildingType;
+    const nextSharedFacilities = rest.sharedFacilities ?? room.sharedFacilities;
+    const nextCapacity = rest.capacity !== undefined ? rest.capacity : room.capacity;
+
+    if (nextRentalUnit || nextBuildingType) {
+      if (!nextRentalUnit || !nextBuildingType) {
+        throw new BadRequestException("예약 공간과 건물 유형을 모두 선택해주세요.");
+      }
+      if (nextCapacity == null || nextCapacity < 1) {
+        throw new BadRequestException("최대 수용 인원을 입력해주세요.");
+      }
+      if (nextRentalUnit === "WHOLE" && nextSharedFacilities.length > 0) {
+        throw new BadRequestException("전체 숙소는 공유 시설을 선택하지 않습니다.");
+      }
+      if (nextRentalUnit !== "WHOLE" && nextSharedFacilities.length === 0) {
+        throw new BadRequestException("공유 시설을 하나 이상 선택해주세요.");
+      }
+      rest.roomType = deriveLegacyRoomType(nextRentalUnit, nextBuildingType);
+      // 분류 세 축이 유효하게 저장된 경우에만 검토 필요 상태를 해제한다.
+      rest.classificationReviewRequired = false;
+    } else if (rest.classificationReviewRequired === false) {
+      throw new BadRequestException(
+        "예약 공간과 건물 유형을 먼저 선택한 뒤 분류 확인을 완료해주세요.",
+      );
+    }
+
     return this.prisma.room.update({
       where: { id },
       data: {

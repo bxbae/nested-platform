@@ -173,10 +173,19 @@ export interface ReportChatRef {
   id: string;
 }
 
+export interface ReportedReview {
+  id: string;
+  body: string;
+  rating: number;
+  createdAt: string;
+  room: { id: string; name: string };
+}
+
 export interface ReportContext {
   reporter: ReportAccountRef;
   reported: ReportAccountRef | null;
   chat: ReportChatRef | null;
+  review: ReportedReview | null;
 }
 
 // GET /admin/reports/:id/context
@@ -232,14 +241,18 @@ export interface AdminMember {
   role: string;
   suspended: boolean;
   createdAt: string;
-  /** Identity checked by an admin. */
   verified: boolean;
   verifiedAt: string | null;
-  /** Derived from completed stays + reviews written (server-computed). */
   tier: ActivityTier;
   tierLabel: string;
   completedStays: number;
   reviewsWritten: number;
+  /** 입주자로 받은 평가 평균 별점. 받은 평가가 없으면 null. */
+  avgRating: number | null;
+  /** 입주자로 받은 평가 개수. */
+  reviewCount: number;
+  /** 이 회원이 신고당한 횟수 (targetType=USER 기준). */
+  reportCount: number;
 }
 
 export type MemberRole = "GUEST" | "HOST" | "ADMIN";
