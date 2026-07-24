@@ -31,8 +31,7 @@ import { MatchModule } from "./modules/match/match.module";
 import { UsersModule } from "./modules/users/users.module";
 import { FriendsModule } from "./modules/friends/friends.module";
 import { ReportsModule } from "./modules/reports/reports.module";
-import { TransitModule } from "./modules/transit/transit.module";
-import { TranslationsModule } from "./modules/translations/translations.module";
+import { TransitModule } from './modules/transit/transit.module';
 
 @Module({
   imports: [
@@ -80,7 +79,6 @@ import { TranslationsModule } from "./modules/translations/translations.module";
     FriendsModule,
     ReportsModule,
     TransitModule,
-    TranslationsModule,
   ],
 })
 export class AppModule {}
