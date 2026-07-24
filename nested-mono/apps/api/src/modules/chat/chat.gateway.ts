@@ -49,7 +49,10 @@ export class ChatGateway implements OnGatewayConnection {
 
       const chatRoom = await this.prisma.chatRoom.findUnique({
         where: { id: roomId },
-        select: { guestId: true, hostId: true },
+        select: {
+          guestId: true,
+          hostId: true,
+        },
       });
 
       const isParticipant =
@@ -70,7 +73,11 @@ export class ChatGateway implements OnGatewayConnection {
   @SubscribeMessage("message:send")
   async onSend(
     @MessageBody()
-    data: { roomId: string; body?: string; imageUrl?: string },
+    data: {
+      roomId: string;
+      body?: string;
+      imageUrl?: string;
+    },
     @ConnectedSocket() client: Socket,
   ) {
     const senderId = client.data.userId as string | undefined;
@@ -80,8 +87,13 @@ export class ChatGateway implements OnGatewayConnection {
     }
 
     const chatRoom = await this.prisma.chatRoom.findUnique({
-      where: { id: data.roomId },
-      select: { guestId: true, hostId: true },
+      where: {
+        id: data.roomId,
+      },
+      select: {
+        guestId: true,
+        hostId: true,
+      },
     });
 
     if (!chatRoom) {
@@ -91,20 +103,35 @@ export class ChatGateway implements OnGatewayConnection {
     const isGuest = chatRoom.guestId === senderId;
     const isHost = chatRoom.hostId === senderId;
 
-    const recipientId = isGuest ? chatRoom.hostId : chatRoom.guestId;
-
     if (!isGuest && !isHost) {
       throw new WsException("대화방 참여자만 메시지를 보낼 수 있습니다.");
     }
 
-    const message = await this.prisma.message.create({
-      data: {
-        chatRoomId: data.roomId,
-        senderId,
-        body: data.body,
-        imageUrl: data.imageUrl,
-        readBy: [senderId],
-      },
+    const recipientId = isGuest ? chatRoom.hostId : chatRoom.guestId;
+
+    const message = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.message.create({
+        data: {
+          chatRoomId: data.roomId,
+          senderId,
+          body: data.body,
+          imageUrl: data.imageUrl,
+          readBy: [senderId],
+        },
+      });
+
+      await tx.chatRoom.update({
+        where: {
+          id: data.roomId,
+        },
+        data: {
+          hiddenBy: {
+            set: [],
+          },
+        },
+      });
+
+      return created;
     });
 
     this.server.to(data.roomId).emit("message:new", message);
@@ -117,7 +144,10 @@ export class ChatGateway implements OnGatewayConnection {
 
   @SubscribeMessage("message:read")
   async onRead(
-    @MessageBody() data: { roomId: string },
+    @MessageBody()
+    data: {
+      roomId: string;
+    },
     @ConnectedSocket() client: Socket,
   ) {
     const userId = client.data.userId as string | undefined;
@@ -133,10 +163,20 @@ export class ChatGateway implements OnGatewayConnection {
     const result = await this.prisma.message.updateMany({
       where: {
         chatRoomId: data.roomId,
-        senderId: { not: userId },
-        NOT: { readBy: { has: userId } },
+        senderId: {
+          not: userId,
+        },
+        NOT: {
+          readBy: {
+            has: userId,
+          },
+        },
       },
-      data: { readBy: { push: userId } },
+      data: {
+        readBy: {
+          push: userId,
+        },
+      },
     });
 
     if (result.count > 0) {
@@ -149,12 +189,17 @@ export class ChatGateway implements OnGatewayConnection {
 
     this.messageEvents.emitChanged(userId);
 
-    return { updatedCount: result.count };
+    return {
+      updatedCount: result.count,
+    };
   }
 
   @SubscribeMessage("typing")
   onTyping(
-    @MessageBody() data: { roomId: string },
+    @MessageBody()
+    data: {
+      roomId: string;
+    },
     @ConnectedSocket() client: Socket,
   ) {
     const userId = client.data.userId as string | undefined;
@@ -167,6 +212,8 @@ export class ChatGateway implements OnGatewayConnection {
       throw new WsException("대화방 참여자만 입력 상태를 전송할 수 있습니다.");
     }
 
-    client.to(data.roomId).emit("typing", { userId });
+    client.to(data.roomId).emit("typing", {
+      userId,
+    });
   }
 }
