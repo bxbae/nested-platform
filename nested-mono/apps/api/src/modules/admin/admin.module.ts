@@ -33,6 +33,8 @@ const noticeUpdateSchema = z.object({
   body: z.string().min(1).max(5000).optional(),
   pinned: z.boolean().optional(),
 });
+const MAX_HOME_BANNERS = 5;
+
 const bannerCreateSchema = z.object({
   title: z.string().min(1, "제목을 입력해주세요.").max(200),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요."),
@@ -940,7 +942,7 @@ export class AdminService {
     });
   }
 
-  createBanner(data: {
+  async createBanner(data: {
     title: string;
     color: string;
     position: string;
@@ -949,6 +951,16 @@ export class AdminService {
     active?: boolean;
     order?: number;
   }) {
+    const bannerCount = await this.prisma.banner.count({
+      where: { position: "메인 상단" },
+    });
+
+    if (bannerCount >= MAX_HOME_BANNERS) {
+      throw new BadRequestException(
+        "메인 배너는 최대 5장까지 등록할 수 있습니다.",
+      );
+    }
+
     return this.prisma.banner.create({
       data: {
         title: data.title,
