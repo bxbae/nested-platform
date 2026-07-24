@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { JwtModule } from "@nestjs/jwt";
 import {
   Resolver,
   Query,
@@ -58,7 +59,7 @@ export class RoomsResolver {
 }
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, JwtModule.register({})],
   controllers: [RoomsController],
   providers: [
     RoomsResolver,

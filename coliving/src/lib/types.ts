@@ -54,6 +54,8 @@ export interface House {
   occupied?: boolean;
   /** 현재 예약이 끝나 다시 들어갈 수 있는 날 (occupied 일 때만) */
   availableAgainFrom?: string | null;
+  /** 로그인한 사용자 본인이 등록한 숙소인지 (비로그인/타인 숙소면 false) */
+  isMine?: boolean;
   color: string; // accent used in the card ring
   photo?: string; // primary thumbnail image url
   gallery?: string[]; // additional gallery images

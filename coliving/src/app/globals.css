@@ -605,7 +605,7 @@ input[type="range"] {
 }
 @media (min-width: 900px) {
   .host-layout {
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: 220px minmax(0, 1fr);
   }
   .host-sidebar {
     position: sticky;
@@ -996,4 +996,73 @@ header button {
   border: none;
   width: auto !important;
   height: auto !important;
+}
+
+
+/* My page messages */
+.messages-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.messages-split > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.host-layout > * {
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .messages-split {
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  }
+}
+
+/* Messages layout hard fix */
+.messages-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.messages-room-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.messages-room-list > button {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.messages-chat-panel {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.host-layout > * {
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .messages-split {
+    grid-template-columns: 340px minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+  }
 }

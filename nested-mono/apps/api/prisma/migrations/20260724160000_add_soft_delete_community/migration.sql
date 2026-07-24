@@ -1,0 +1,3 @@
+-- 커뮤니티 소프트 삭제 컬럼
+ALTER TABLE "Post" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
+ALTER TABLE "Comment" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);

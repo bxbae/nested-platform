@@ -17,6 +17,8 @@ import type {
   SearchParams,
   PaginatedRooms,
 } from "@/lib/types";
+// 월세 슬라이더의 경계값. 이 값과 같으면 "필터를 걸지 않은 것"으로 본다.
+import { RENT_MIN, RENT_MAX } from "@/features/search/schema";
 
 // ── enum maps ──
 const ROOM_TYPE_TO_API: Record<RoomType, string> = {
@@ -54,8 +56,11 @@ export function filtersToApiQuery(f: SearchParams): URLSearchParams {
   if (f.legalDongCode) p.set("legalDongCode", f.legalDongCode);
   if (f.verified) p.set("verifiedByHost", "true");
   if (f.roomTypes?.length) p.set("roomTypes", f.roomTypes.map(toApiRoomType).join(","));
-  if (f.minRent != null) p.set("minRent", String(f.minRent));
-  if (f.maxRent != null) p.set("maxRent", String(f.maxRent));
+  // 슬라이더를 건드리지 않았으면 minRent/maxRent 가 경계값(RENT_MIN/RENT_MAX)
+  // 그대로 들어온다. 그걸 그대로 보내면 범위 밖 매물이 조용히 빠지므로
+  // (URL 파라미터를 만드는 filtersToParams 와 동일하게) 경계값은 생략한다.
+  if (f.minRent != null && f.minRent > RENT_MIN) p.set("minRent", String(f.minRent));
+  if (f.maxRent != null && f.maxRent < RENT_MAX) p.set("maxRent", String(f.maxRent));
   if (f.availableFrom) p.set("availableFrom", f.availableFrom);
   // Date-range availability — the API excludes rooms booked in this window.
   if (f.minCapacity) p.set("minCapacity", String(f.minCapacity));
@@ -140,6 +145,7 @@ export function apiRoomToHouse(r: ApiRoom): House {
     name: r.name,
     // 오늘 기준 입주 중인지 — 서버가 계산해 내려준다.
     occupied: (r as { occupied?: boolean }).occupied ?? false,
+    isMine: (r as { isMine?: boolean }).isMine ?? false,
     availableAgainFrom:
       (r as { availableAgainFrom?: string | null }).availableAgainFrom ?? null,
     city: r.city ?? "",

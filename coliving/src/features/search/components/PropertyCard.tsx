@@ -56,12 +56,28 @@ export function PropertyCard({
             height: "100%",
           }}
         >
-          <span
-            className="chip glass"
-            style={{ border: "none", color: "var(--text)", fontWeight: 600 }}
-          >
-            {ROOM_TYPE_LABELS[house.roomType]}
-          </span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <span
+              className="chip glass"
+              style={{ border: "none", color: "var(--text)", fontWeight: 600 }}
+            >
+              {ROOM_TYPE_LABELS[house.roomType]}
+            </span>
+            {house.isMine && (
+              <span
+                className="chip"
+                style={{
+                  border: "none",
+                  fontWeight: 700,
+                  fontSize: 12,
+                  background: "var(--primary)",
+                  color: "#fff",
+                }}
+              >
+                내 숙소
+              </span>
+            )}
+          </div>
           <button
             type="button"
             aria-label={saved ? "찜 해제" : "찜하기"}

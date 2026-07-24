@@ -34,7 +34,7 @@ export default function Community() {
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [draft, setDraft] = useState({ title: "", body: "", category: "chat" });
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [preference, setPreference] = useState<PreferenceView | null>(null);
   const [sharedLifestyleFields, setSharedLifestyleFields] = useState<string[]>([]);
   // Posts hang off a room's board. The UI has no house picker yet, so we post
@@ -114,7 +114,9 @@ export default function Community() {
           <div className="field">
             <label>카테고리 *</label>
             <div style={{ display: "flex", gap: 7 }}>
-              {categories.slice(1).map((c) => (
+              {/* "공지" is admin-only — anyone can still filter by it in the
+                  feed above, they just can't post one. */}
+              {categories.slice(1).filter((c) => c.id !== "notice" || user?.role === "ADMIN").map((c) => (
                 <button
                   key={c.id}
                   className="chip"

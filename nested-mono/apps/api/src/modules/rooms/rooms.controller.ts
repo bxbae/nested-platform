@@ -10,6 +10,7 @@ import {
   UseGuards,
   Req,
 } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import { z } from "zod";
 import { RoomsService } from "./rooms.service";
 import { LegalRegionService } from "./legal-region.service";
@@ -90,6 +91,7 @@ export class RoomsController {
   constructor(
     private readonly rooms: RoomsService,
     private readonly legalRegions: LegalRegionService,
+    private readonly jwt: JwtService,
   ) {}
 
   @Get("regions")
@@ -103,9 +105,27 @@ export class RoomsController {
   }
 
   @Get()
-  search(@Query() q: any) {
+  async search(@Query() q: any, @Req() req: any) {
+    // 검색은 비로그인도 가능한 공개 API지만, 로그인 상태면 토큰을 조용히
+    // 검증해서 "내가 등록한 숙소" 뱃지 표시에 활용한다. 토큰이 없거나
+    // 유효하지 않아도 에러 내지 않고 그냥 비로그인으로 취급한다.
+    let currentUserId: string | undefined;
+    const authHeader = req.headers?.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.slice(7);
+        const payload = await this.jwt.verifyAsync(token, {
+          secret: process.env.JWT_ACCESS_SECRET ?? "dev-access-secret",
+        });
+        currentUserId = payload.sub;
+      } catch {
+        // 토큰 만료/위조 등 — 조용히 비로그인 취급
+      }
+    }
+
     return this.rooms.search({
       region: q.region,
+      currentUserId,
       district: q.district,
       legalDongCode: q.legalDongCode,
       verifiedByHost: q.verifiedByHost === "true" ? true : undefined,
