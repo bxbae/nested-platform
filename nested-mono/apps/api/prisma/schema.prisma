@@ -148,6 +148,7 @@ model User {
   posts                 Post[]
   comments              Comment[]
   preference            RoommatePreference?
+  inquiries             Inquiry[]                @relation("InquiryAuthor")
   tenantReviewsWritten  TenantReview[]           @relation("TenantReviewAuthor")
   tenantReviewsReceived TenantReview[]           @relation("TenantReviewTenant")
 
@@ -483,6 +484,7 @@ enum NotificationType {
   ROOM_APPROVED
   ROOM_REJECTED
   ROOM_UNPUBLISHED
+  INQUIRY_ANSWERED
 
   RESERVATION_REQUESTED
   RESERVATION_CONFIRMED
@@ -557,6 +559,37 @@ enum ReportStatus {
   RECEIVED
   IN_REVIEW
   RESOLVED
+}
+
+// ── Inquiry (고객센터 문의) ──────────────────────────────────────────
+// 로그인한 사용자만 남길 수 있다. 신고(Report)와 달리 대상이 없고,
+// 운영팀이 답변을 달면 작성자에게 알림이 간다.
+model Inquiry {
+  id String @id @default(cuid())
+
+  authorId String
+  author   User   @relation("InquiryAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  title String
+  body  String
+
+  status InquiryStatus @default(RECEIVED)
+
+  // 운영팀 답변. 답변을 남기는 시점에 작성자에게 알림을 보낸다.
+  answer     String?
+  answeredAt DateTime?
+  answeredBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([authorId, createdAt])
+}
+
+enum InquiryStatus {
+  RECEIVED    // 대기 중
+  IN_PROGRESS // 처리 중
+  RESOLVED    // 완료
 }
 
 model Report {

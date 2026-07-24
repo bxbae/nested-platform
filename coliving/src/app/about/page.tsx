@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import styles from "./about.module.css";
 import AboutFaq from "./AboutFaq";
 
@@ -274,9 +275,9 @@ export default function AboutPage() {
           <div className={styles.cta}>
             <h2 className="display">궁금한 점이 더 있다면, 직접 물어보세요.</h2>
             <p>운영팀이 매물 검수부터 계약까지 직접 확인해드려요.</p>
-            <button className="btn btn-primary" style={{ padding: "14px 30px", fontSize: 15.5 , fontWeight: 800}}>
+            <Link href="/support" className="btn btn-primary" style={{ padding: "14px 30px", fontSize: 15.5 , fontWeight: 800}}>
               문의하기
-            </button>
+            </Link>
           </div>
         </div>
       </section>
