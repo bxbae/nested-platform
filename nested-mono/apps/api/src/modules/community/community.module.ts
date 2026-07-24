@@ -76,26 +76,28 @@ export class CommunityService {
         }
       : {};
     return this.prisma.post.findMany({
-      where: { ...categoryWhere, ...statusWhere, ...keywordWhere },
+      // 소프트 삭제된 글은 목록에서 뺀다 (데이터는 남아 복구 가능).
+      where: { deletedAt: null, ...categoryWhere, ...statusWhere, ...keywordWhere },
       orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
       include: {
         author: {
           select: { id: true, name: true, avatarColor: true, avatarUrl: true },
         },
-        _count: { select: { comments: true } },
+        _count: { select: { comments: { where: { deletedAt: null } } } },
       },
     });
   }
 
   async getById(id: string) {
-    const post = await this.prisma.post.findUnique({
-      where: { id },
+    const post = await this.prisma.post.findFirst({
+      // findUnique 는 deletedAt 조건을 못 받으므로 findFirst 로 바꾼다.
+      where: { id, deletedAt: null },
       include: {
         author: {
           select: { id: true, name: true, avatarColor: true, avatarUrl: true },
         },
         comments: {
-          where: { parentId: null },
+          where: { parentId: null, deletedAt: null },
           orderBy: { createdAt: "asc" },
           include: {
             author: {
@@ -107,6 +109,7 @@ export class CommunityService {
               },
             },
             replies: {
+              where: { deletedAt: null },
               orderBy: { createdAt: "asc" },
               include: {
                 author: {
@@ -121,7 +124,7 @@ export class CommunityService {
             },
           },
         },
-        _count: { select: { comments: true } },
+        _count: { select: { comments: { where: { deletedAt: null } } } },
       },
     });
     if (!post)
@@ -181,7 +184,7 @@ export class CommunityService {
         author: {
           select: { id: true, name: true, avatarColor: true, avatarUrl: true },
         },
-        _count: { select: { comments: true } },
+        _count: { select: { comments: { where: { deletedAt: null } } } },
       },
     });
   }
@@ -226,7 +229,7 @@ export class CommunityService {
             avatarUrl: true,
           },
         },
-        _count: { select: { comments: true } },
+        _count: { select: { comments: { where: { deletedAt: null } } } },
       },
     });
   }
@@ -246,7 +249,11 @@ export class CommunityService {
         code: "NOT_AUTHOR",
         message: "본인이 쓴 글만 삭제할 수 있습니다.",
       });
-    await this.prisma.post.delete({ where: { id } });
+    // 물리 삭제 대신 표시만 남긴다 — 신고 이력 추적과 복구를 위해서.
+    await this.prisma.post.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
     return { ok: true };
   }
 
@@ -287,7 +294,7 @@ export class CommunityService {
         });
       const rootParentId = parent.parentId ?? parent.id;
       const replyCount = await this.prisma.comment.count({
-        where: { parentId: rootParentId },
+        where: { parentId: rootParentId, deletedAt: null },
       });
       if (replyCount >= 50)
         throw new ForbiddenException({
@@ -381,7 +388,10 @@ export class CommunityService {
         code: "NOT_AUTHOR",
         message: "본인이 쓴 댓글만 삭제할 수 있습니다.",
       });
-    await this.prisma.comment.delete({ where: { id: commentId } });
+    await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { deletedAt: new Date() },
+    });
     return { ok: true };
   }
 }
