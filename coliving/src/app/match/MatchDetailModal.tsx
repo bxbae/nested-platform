@@ -226,8 +226,22 @@ function MatchAnalysisSection({
       </div>
       {detail.adjustmentPoints.length > 0 && <div style={warningBoxStyle}><h3 style={{ ...sectionTitleStyle, marginBottom: 9 ,color: "var(--primary)"}}>조율이 필요한 부분</h3><div style={{ display: "grid", gap: 8 }}>{detail.adjustmentPoints.map((point) => <div key={point} style={warningRowStyle}><span aria-hidden="true">⚠</span><span>{point}</span></div>)}</div></div>}
       <div style={actionRowStyle}>
-        {isFriend ? <button type="button" style={secondaryButtonStyle} onClick={onViewProfile}>✓ 친구 · 프로필 보기</button> : <button type="button" style={secondaryButtonStyle} disabled={friendBusy} onClick={() => void onAddFriend()}>{friendBusy ? "추가 중…" : "+ 친구 추가"}</button>}
-        <button type="button" style={primaryButtonStyle} onClick={() => void onMessage()}>메시지 보내기</button>
+        <button type="button" style={secondaryButtonStyle} onClick={onViewProfile}>
+          공개 프로필 보기
+        </button>
+        {!isFriend && (
+          <button
+            type="button"
+            style={secondaryButtonStyle}
+            disabled={friendBusy}
+            onClick={() => void onAddFriend()}
+          >
+            {friendBusy ? "추가 중…" : "+ 친구 추가"}
+          </button>
+        )}
+        <button type="button" style={primaryButtonStyle} onClick={() => void onMessage()}>
+          메시지 보내기
+        </button>
       </div>
     </section>
   );
@@ -480,8 +494,8 @@ const warningRowStyle: CSSProperties = {
 };
 
 const actionRowStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1.45fr",
+  display: "flex",
+  flexWrap: "wrap",
   gap: 11,
 };
 
@@ -494,6 +508,7 @@ const secondaryButtonStyle: CSSProperties = {
   fontSize: 14,
   fontWeight: 600,
   cursor: "pointer",
+  flex: "1 1 150px",
 };
 
 const primaryButtonStyle: CSSProperties = {
@@ -505,6 +520,7 @@ const primaryButtonStyle: CSSProperties = {
   fontSize: 14,
   fontWeight: 700,
   cursor: "pointer",
+  flex: "1 1 180px",
 };
 
 const stateMessageStyle: CSSProperties = {

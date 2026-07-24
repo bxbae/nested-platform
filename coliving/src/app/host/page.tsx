@@ -40,9 +40,6 @@ export default function HostDashboardPage() {
   // const max = trend.length ? Math.max(...trend.map((t) => t.value), 1) : 1;
   const roomRevenue = data?.roomRevenue ?? [];
   const settlement = data?.settlement;
-  const recentInquiries = data?.recentInquiries ?? [];
-
-
   return (
     <div>
       {/* ── header ── */}
@@ -73,9 +70,11 @@ export default function HostDashboardPage() {
         </div>
       </div>
 
-      {/* ── 4 KPI cards ── */}
-      {/* 등록 숙소, 총 예약, 입주율, 새 문의 -> 새 예약/취소, 점유율, 새 문의 */}
-      <div className="stat-row">
+      {/* ── 핵심 KPI cards ── */}
+      <div
+        className="stat-row"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+      >
         <ClickableStat
           href="/host/reservations?filter=PENDING_PAYMENT"
           label="새 예약 / 취소"
@@ -97,13 +96,6 @@ export default function HostDashboardPage() {
           label="점유율"
           value={loading ? "…" : `${data?.occupancy ?? 0}%`}
           hint="최근 30일"
-        />
-        <ClickableStat
-          href="/host/inquiries"
-          label="새 문의"
-          value={loading ? "…" : `${data?.newInquiries ?? 0}`}
-          hint="최근 7일"
-          accent={!!data && data.newInquiries > 0}
         />
       </div>
 
@@ -168,99 +160,42 @@ export default function HostDashboardPage() {
         )}
       </div>
 
-      {/* ──  정산 현황 + 🧾 최근 문의 내역 (side by side on wide screens) ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginTop: 20 }} className="dashboard-bottom-grid">
-        <div className="card" style={{ padding: 22 }}>
-          <strong style={{ fontSize: 15 }}> 정산 현황</strong>
-          <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
-            <SettlementRow
-              label="정산 완료"
-              amount={settlement?.paid.amount ?? 0}
-              detail={settlement?.paid.lastPaidDate ? `${settlement.paid.lastPaidDate} 지급` : "지급 내역 없음"}
-              loading={loading}
-              tone="done"
-            />
-            <SettlementRow
-              label="정산 예정"
-              amount={settlement?.scheduled.amount ?? 0}
-              detail={settlement?.scheduled.nextDate ? `${settlement.scheduled.nextDate} 예정` : "예정 없음"}
-              loading={loading}
-              tone="scheduled"
-            />
-            <SettlementRow
-              label="미정산"
-              amount={settlement?.unsettled.amount ?? 0}
-              detail={
-                (settlement?.unsettled.count ?? 0) > 0
-                  ? `${settlement?.unsettled.count}건 · 이용 완료 처리 필요`
-                  : "없음"
-              }
-              loading={loading}
-              tone="unsettled"
-            />
-          </div>
-          <Link
-            href="/host/settlements"
-            style={{ display: "block", textAlign: "center", marginTop: 16, fontSize: 13, color: "var(--secondary)", fontWeight: 600 }}
-          >
-            정산 내역 자세히 보기 →
-          </Link>
+      {/* ── 정산 현황 ── */}
+      <div className="card" style={{ padding: 22, marginTop: 20 }}>
+        <strong style={{ fontSize: 15 }}> 정산 현황</strong>
+        <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+          <SettlementRow
+            label="정산 완료"
+            amount={settlement?.paid.amount ?? 0}
+            detail={settlement?.paid.lastPaidDate ? `${settlement.paid.lastPaidDate} 지급` : "지급 내역 없음"}
+            loading={loading}
+            tone="done"
+          />
+          <SettlementRow
+            label="정산 예정"
+            amount={settlement?.scheduled.amount ?? 0}
+            detail={settlement?.scheduled.nextDate ? `${settlement.scheduled.nextDate} 예정` : "예정 없음"}
+            loading={loading}
+            tone="scheduled"
+          />
+          <SettlementRow
+            label="미정산"
+            amount={settlement?.unsettled.amount ?? 0}
+            detail={
+              (settlement?.unsettled.count ?? 0) > 0
+                ? `${settlement?.unsettled.count}건 · 이용 완료 처리 필요`
+                : "없음"
+            }
+            loading={loading}
+            tone="unsettled"
+          />
         </div>
-
-
-        {/* 최근 문의 내역 */}
-        <div className="card" style={{ padding: 22 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <strong style={{ fontSize: 15 }}>🧾 최근 문의 내역</strong>
-              {!!data && data.newInquiries > 0 && (
-                <span
-                  className="chip"
-                  style={{ fontSize: 11, background: "var(--primary)", color: "#fff", border: "none" }}
-                >
-                  새 문의 {data.newInquiries}
-                </span>
-              )}
-            </div>
-            <Link href="/host/inquiries" style={{ color: "var(--secondary)", fontSize: 13.5, fontWeight: 600 }}>
-              전체 보기 →
-            </Link>
-          </div>
-          {loading ? (
-            <p style={{ color: "var(--text-2)", fontSize: 13 }}>불러오는 중…</p>
-          ) : recentInquiries.length === 0 ? (
-            <p style={{ color: "var(--text-2)", fontSize: 13.5, padding: "12px 0" }}>미처리 문의가 없습니다.</p>
-          ) : (
-            <div style={{ display: "grid", gap: 4 }}>
-              {recentInquiries.map((i) => (
-                <Link
-                  key={i.chatRoomId}
-                  href="/host/inquiries"
-                  style={{
-                    display: "flex", justifyContent: "space-between", gap: 12,
-                    padding: "10px 8px", borderRadius: "var(--r-sm)",
-                  }}
-                  className="press"
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-                      {i.guestName} <span style={{ fontWeight: 400, color: "var(--text-2)" }}>· {i.roomName}</span>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12.5, color: "var(--text-2)", marginTop: 2,
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320,
-                      }}
-                    >
-                      {i.isImage ? "📷 사진" : i.lastMessage}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--text-2)", flexShrink: 0, paddingTop: 2 }}>{i.createdAt}</div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+        <Link
+          href="/host/settlements"
+          style={{ display: "block", textAlign: "center", marginTop: 16, fontSize: 13, color: "var(--secondary)", fontWeight: 600 }}
+        >
+          정산 내역 자세히 보기 →
+        </Link>
       </div>
     </div>
   );

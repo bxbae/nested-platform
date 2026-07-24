@@ -11,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
+import type { RoommatePreference } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
 import { toBadges } from "../../common/activity-tier";
@@ -20,9 +21,41 @@ function orderedPair(firstId: string, secondId: string): [string, string] {
   return firstId < secondId ? [firstId, secondId] : [secondId, firstId];
 }
 
+type PublicLifestyle = Pick<
+  RoommatePreference,
+  | "noise"
+  | "cleanliness"
+  | "smoking"
+  | "pets"
+  | "visitors"
+  | "sleep"
+  | "sociability"
+  | "sharedSpace"
+  | "drinking"
+>;
+
+function toPublicLifestyle(
+  preference: (PublicLifestyle & { isCompleted: boolean }) | null,
+): PublicLifestyle | null {
+  if (!preference?.isCompleted) return null;
+
+  return {
+    noise: preference.noise,
+    cleanliness: preference.cleanliness,
+    smoking: preference.smoking,
+    pets: preference.pets,
+    visitors: preference.visitors,
+    sleep: preference.sleep,
+    sociability: preference.sociability,
+    sharedSpace: preference.sharedSpace,
+    drinking: preference.drinking,
+  };
+}
+
 const publicUserSelect = {
   id: true,
   name: true,
+  role: true,
   birthDate: true,
   job: true,
   bio: true,
@@ -34,6 +67,15 @@ const publicUserSelect = {
   verifiedAt: true,
   preference: {
     select: {
+      noise: true,
+      cleanliness: true,
+      smoking: true,
+      pets: true,
+      visitors: true,
+      sleep: true,
+      sociability: true,
+      sharedSpace: true,
+      drinking: true,
       intro: true,
       keywords: true,
       isCompleted: true,
@@ -145,6 +187,7 @@ export class FriendsService {
           friendsSince: friendship.createdAt,
           userId: user.id,
           name: user.name,
+          role: user.role,
           ageGroup: ageGroup(user.birthDate),
           job: user.job,
           bio: user.bio,
@@ -153,6 +196,7 @@ export class FriendsService {
             user.preference?.isCompleted === true
               ? user.preference.keywords
               : [],
+          lifestyle: toPublicLifestyle(user.preference),
           avatarColor: user.avatarColor,
           avatarUrl: user.avatarUrl,
           joinedYear: user.createdAt.getFullYear(),
@@ -183,12 +227,14 @@ export class FriendsService {
     return {
       userId: user.id,
       name: user.name,
+      role: user.role,
       ageGroup: ageGroup(user.birthDate),
       job: user.job,
       bio: user.bio,
       intro: user.preference?.intro ?? null,
       keywords:
         user.preference?.isCompleted === true ? user.preference.keywords : [],
+      lifestyle: toPublicLifestyle(user.preference),
       avatarColor: user.avatarColor,
       avatarUrl: user.avatarUrl,
       joinedYear: user.createdAt.getFullYear(),
