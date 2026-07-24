@@ -216,7 +216,7 @@ export function SearchView() {
               padding: "11px 14px",
               border: "1px solid var(--border)",
               borderRadius: "var(--r-pill)",
-              background: "#fff",
+              background: "var(--surface)",
               fontSize: 14,
               cursor: "pointer",
             }}

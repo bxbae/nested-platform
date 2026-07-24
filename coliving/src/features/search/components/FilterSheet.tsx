@@ -328,7 +328,7 @@ export function FilterSheet({
                       border: active
                         ? "1.5px solid var(--text)"
                         : "1px solid var(--border)",
-                      background: active ? "var(--text)" : "#fff",
+                        background: active ? "var(--text)" : "var(--surface)",
                       color: active ? "var(--bg)" : "var(--text)",
                       fontWeight: 600,
                       fontSize: 14,

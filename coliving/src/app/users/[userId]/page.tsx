@@ -307,12 +307,12 @@ export default function UserProfilePage() {
 
               {match.adjustmentPoints.length > 0 && (
                 <div style={warningStyle}>
-                  <strong style={{ display: "block", marginBottom: 8 }}>
+                  <strong style={{ display: "block", marginBottom: 8, color: "var(--primary)" }}>
                     조율이 필요한 부분
                   </strong>
                   <div style={{ display: "grid", gap: 8 }}>
                     {match.adjustmentPoints.map((point) => (
-                      <div key={point} style={{ display: "flex", gap: 8, fontSize: 13.5, lineHeight: 1.5 }}>
+                      <div key={point} style={{ display: "flex", gap: 8, fontSize: 13.5, lineHeight: 1.5, color: "var(--primary)" }}>
                         <span aria-hidden="true">⚠</span>
                         <span>{point}</span>
                       </div>
@@ -462,6 +462,6 @@ const warningStyle: CSSProperties = {
   marginTop: 22,
   padding: 16,
   borderRadius: 14,
-  border: "1px solid #efdba9",
-  background: "#fffaf0",
+  border: "1px solid rgba(255, 90, 95, 0.3)",
+  background: "rgba(255, 90, 95, 0.08)",
 };
