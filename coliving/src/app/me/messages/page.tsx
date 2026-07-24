@@ -403,7 +403,7 @@ export default function MessagesPage() {
         </div>
       ) : (
         <div className="messages-split">
-          <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
+          <div className="messages-room-list">
             {conversations.map((conversation) => {
               const meta = getConversationMeta(conversation, user?.id);
               return (
@@ -457,7 +457,7 @@ export default function MessagesPage() {
 
           {active && (
             <div
-              className="card"
+              className="card messages-chat-panel"
               style={{
                 padding: 0,
                 display: "flex",
