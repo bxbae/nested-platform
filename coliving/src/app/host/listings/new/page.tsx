@@ -385,7 +385,7 @@ export default function NewListing() {
           <Field label="방 종류">
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {ROOM_TYPES.map((rt) => (
-                <button key={rt} type="button" className="chip" data-active={v.roomType === rt} onClick={() => setValue("roomType", rt)}>
+                <button key={rt} type="button" className="chip" data-active={v.roomType === rt} onClick={() => setValue("roomType", rt, { shouldValidate: true })}>
                   {ROOM_TYPE_LABELS[rt]}
                 </button>
               ))}
