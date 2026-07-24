@@ -4,6 +4,7 @@
 // 도보/지하철은 예전엔 직접 계산했지만, 이제 ODsay API 기반 실시간
 // 대중교통 정보(버스/지하철/지하철+버스)까지 한 번에 받아오는 방식으로 교체.
 // 지도에서 직접 위치 지정하는 기능은 그대로 유지.
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { getTransitRoutes, type TransitResult } from "@/lib/api/transit";
 import { MyLocationPicker } from "@/components/MyLocationPicker";
@@ -16,17 +17,35 @@ interface DistanceFromMeProps {
 interface TabItem {
   key: string;
   label: string;
-  icon: string;
+  iconPaths: string[];
   minutes: number;
   note?: string;
 }
 
-const MODE_LABEL: Record<string, { label: string; icon: string }> = {
-  walk: { label: "도보", icon: "🚶" },
-  subway: { label: "지하철", icon: "🚇" },
-  bus: { label: "버스", icon: "🚌" },
-  subway_bus: { label: "지하철+버스", icon: "🚇🚌" },
-  car: { label: "자동차", icon: "🚗" },
+const MODE_LABEL: Record<string, { label: string; iconPaths: string[] }> = {
+  walk: {
+    label: "도보",
+    iconPaths: ["/icons/transport/person-walking-solid.png"],
+  },
+  subway: {
+    label: "지하철",
+    iconPaths: ["/icons/transport/train-subway-solid.png"],
+  },
+  bus: {
+    label: "버스",
+    iconPaths: ["/icons/transport/bus-solid.png"],
+  },
+  subway_bus: {
+    label: "지하철+버스",
+    iconPaths: [
+      "/icons/transport/train-subway-solid.png",
+      "/icons/transport/bus-solid.png",
+    ],
+  },
+  car: {
+    label: "자동차",
+    iconPaths: ["/icons/transport/car-solid.png"],
+  },
 };
 
 export function DistanceFromMe({ houseLat, houseLng }: DistanceFromMeProps) {
@@ -101,16 +120,44 @@ export function DistanceFromMe({ houseLat, houseLng }: DistanceFromMeProps) {
                   color: t.key === selectedTab ? "#fff" : "var(--text)",
                   fontSize: 13,
                   cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  whiteSpace: "nowrap",
                 }}
               >
-                {t.icon} {t.label}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+                  {t.iconPaths.map((iconPath, index) => (
+                    <Image
+                      key={`${t.key}-${index}`}
+                      src={iconPath}
+                      alt=""
+                      width={18}
+                      height={18}
+                      style={{ display: "block", objectFit: "contain", flexShrink: 0 }}
+                    />
+                  ))}
+                </span>
+                <span>{t.label}</span>
               </button>
             ))}
           </div>
 
           {active && (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 22 }}>{active.icon}</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                {active.iconPaths.map((iconPath, index) => (
+                  <Image
+                    key={`${active.key}-active-${index}`}
+                    src={iconPath}
+                    alt=""
+                    width={28}
+                    height={28}
+                    style={{ objectFit: "contain" }}
+                  />
+                ))}
+              </span>
               <div>
                 <strong style={{ fontSize: 16 }}>
                   {active.label} {active.minutes}분
