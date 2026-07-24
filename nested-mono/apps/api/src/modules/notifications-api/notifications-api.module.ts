@@ -1,4 +1,14 @@
-import { Controller, Get, Patch, Param, UseGuards, Req, Injectable, Module } from "@nestjs/common";
+import {
+  Controller,
+  Delete,
+  Get,
+  Patch,
+  Param,
+  UseGuards,
+  Req,
+  Injectable,
+  Module,
+} from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
 
@@ -25,11 +35,26 @@ export class NotificationsApiService {
   }
 
   markRead(userId: string, id: string) {
-    return this.prisma.notification.updateMany({ where: { id, userId }, data: { read: true } });
+    return this.prisma.notification.updateMany({
+      where: { id, userId },
+      data: { read: true },
+    });
   }
 
   markAllRead(userId: string) {
-    return this.prisma.notification.updateMany({ where: { userId, read: false }, data: { read: true } });
+    return this.prisma.notification.updateMany({
+      where: { userId, read: false },
+      data: { read: true },
+    });
+  }
+
+  delete(userId: string, id: string) {
+    return this.prisma.notification.deleteMany({
+      where: {
+        id,
+        userId,
+      },
+    });
   }
 }
 
@@ -61,6 +86,11 @@ export class NotificationsApiController {
   @Patch("read-all")
   readAll(@Req() req: any) {
     return this.svc.markAllRead(req.user.id);
+  }
+
+  @Delete(":id")
+  remove(@Req() req: any, @Param("id") id: string) {
+    return this.svc.delete(req.user.id, id);
   }
 }
 

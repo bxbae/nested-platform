@@ -363,11 +363,79 @@ export class AdminService {
       reporterName: r.reporter?.name ?? "알 수 없음",
     }));
   }
-  setReportStatus(id: string, status: string) {
-    return this.prisma.report.update({
-      where: { id },
-      data: { status: status as any },
+  async setReportStatus(id: string, status: string) {
+    // 검토 중으로 변경할 때는 상태만 변경
+    if (status !== "RESOLVED") {
+      return this.prisma.report.update({
+        where: { id },
+        data: { status: status as any },
+      });
+    }
+
+    // 처리 완료 알림을 받을 신고자·피신고자 확인
+    const context = await this.reportContext(id);
+
+    const recipientIds = Array.from(
+      new Set(
+        [context.reporter.id, context.reported?.id].filter(
+          (userId): userId is string => Boolean(userId),
+        ),
+      ),
+    );
+
+    const now = new Date();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 동일 신고의 처리 완료 알림 중복 전송 방지
+      const updated = await tx.report.updateMany({
+        where: {
+          id,
+          resolvedNotifiedAt: null,
+        },
+        data: {
+          status: "RESOLVED",
+          resolvedAt: now,
+          resolvedNotifiedAt: now,
+        },
+      });
+
+      if (updated.count === 0) {
+        throw new BadRequestException({
+          code: "REPORT_ALREADY_RESOLVED",
+          message: "이미 처리 완료된 신고입니다.",
+        });
+      }
+
+      const notifications = await Promise.all(
+        recipientIds.map((userId) =>
+          tx.notification.create({
+            data: {
+              userId,
+              type: "REPORT",
+              title: "신고 처리가 완료되었습니다",
+              body: "관련 신고에 대한 관리자 검토 및 처리가 완료되었습니다.",
+              targetUrl: "/me/notifications",
+            },
+          }),
+        ),
+      );
+
+      const report = await tx.report.findUnique({
+        where: { id },
+      });
+
+      return {
+        report,
+        notifications,
+      };
     });
+
+    // 접속 중인 사용자에게 실시간 전송
+    for (const notification of result.notifications) {
+      this.notificationsGateway.emitToUser(notification.userId, notification);
+    }
+
+    return result.report;
   }
 
   // 신고 상세 컨텍스트 — 신고자/피신고자 계정과, MESSAGE 신고라면 연결된
@@ -515,37 +583,74 @@ export class AdminService {
     message?: string,
   ) {
     const context = await this.reportContext(reportId);
+
     const recipient =
       target === "REPORTER" ? context.reporter : context.reported;
+
     if (!recipient) {
       throw new NotFoundException({
         code: "RECIPIENT_NOT_FOUND",
         message:
           target === "REPORTER"
-            ? "신고자 계정을 찾을 수 없어요."
-            : "피신고자 계정을 찾을 수 없어요.",
+            ? "신고자 계정을 찾을 수 없습니다."
+            : "피신고자 계정을 찾을 수 없습니다.",
       });
     }
 
     const title =
       target === "REPORTER" ? "신고 처리 안내" : "신고 접수 및 처리 안내";
+
     const defaultBody =
       target === "REPORTER"
-        ? "신고해 주신 내용이 검토·처리되었습니다."
-        : "회원님과 관련된 신고가 접수되어 검토 후 조치되었습니다.";
+        ? "접수하신 신고를 관리자가 확인하여 처리 중입니다."
+        : "회원님과 관련된 신고가 접수되어 관리자가 검토 중입니다.";
 
-    const notification = await this.prisma.notification.create({
-      data: {
-        userId: recipient.id,
-        type: "SYSTEM",
-        title,
-        body: message?.trim()
-          ? `${defaultBody}\n${message.trim()}`
-          : defaultBody,
-      },
+    const notification = await this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+
+      const updated =
+        target === "REPORTER"
+          ? await tx.report.updateMany({
+              where: {
+                id: reportId,
+                reporterNotifiedAt: null,
+              },
+              data: {
+                reporterNotifiedAt: now,
+              },
+            })
+          : await tx.report.updateMany({
+              where: {
+                id: reportId,
+                reportedNotifiedAt: null,
+              },
+              data: {
+                reportedNotifiedAt: now,
+              },
+            });
+
+      if (updated.count === 0) {
+        throw new BadRequestException({
+          code: "REPORT_NOTIFICATION_ALREADY_SENT",
+          message: "이미 해당 계정에 처리 알림을 전송했습니다.",
+        });
+      }
+
+      return tx.notification.create({
+        data: {
+          userId: recipient.id,
+          type: "REPORT",
+          title,
+          body: message?.trim()
+            ? `${defaultBody}\n${message.trim()}`
+            : defaultBody,
+          targetUrl: "/me/notifications",
+        },
+      });
     });
 
     this.notificationsGateway.emitToUser(recipient.id, notification);
+
     return notification;
   }
 

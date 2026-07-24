@@ -22,7 +22,8 @@ export type NotificationType =
   | "REVIEW"
   | "SYSTEM"
   | "MESSAGE"
-  | "RESERVATION";
+  | "RESERVATION"
+  | "REPORT";
 
 export interface ApiNotification {
   id: string;
@@ -50,6 +51,7 @@ export const TYPE_LABEL: Record<NotificationType, string> = {
   SYSTEM: "안내",
   MESSAGE: "메시지",
   RESERVATION: "예약",
+  REPORT: "신고",
 };
 
 export const TYPE_COLOR: Record<NotificationType, string> = {
@@ -68,6 +70,7 @@ export const TYPE_COLOR: Record<NotificationType, string> = {
   SYSTEM: "#7C6FE0",
   MESSAGE: "#FF5A5F",
   RESERVATION: "#00A699",
+  REPORT: "#FF5A5F",
 };
 
 // "3분 전" / "2시간 전" / "5일 전"
@@ -151,4 +154,12 @@ export async function unreadMessageNotificationCount(): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+export async function deleteNotification(id: string): Promise<void> {
+  if (!USE_REAL_API) {
+    return;
+  }
+
+  await api.delete(`/notifications/${encodeURIComponent(id)}`);
 }

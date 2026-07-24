@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { io } from "socket.io-client";
 
 import {
+  deleteNotification,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -21,8 +22,7 @@ import {
 import { authStore } from "@/lib/api/auth-store";
 import { SOCKET_URL } from "@/lib/api/config";
 
-type BellTab = "ALL" | "RESERVATION" | "ROOM" | "OTHER";
-
+type BellTab = "ALL" | "RESERVATION" | "ROOM" | "REPORT" | "OTHER";
 const BELL_TABS: {
   key: BellTab;
   label: string;
@@ -30,12 +30,17 @@ const BELL_TABS: {
   { key: "ALL", label: "전체" },
   { key: "RESERVATION", label: "예약" },
   { key: "ROOM", label: "숙소" },
+  { key: "REPORT", label: "신고" },
   { key: "OTHER", label: "기타" },
 ];
 
 function matchesBellTab(notification: ApiNotification, tab: BellTab): boolean {
   if (tab === "ALL") {
     return true;
+  }
+
+  if (tab === "REPORT") {
+    return notification.type === "REPORT";
   }
 
   const category = getNotificationCategory(notification);
@@ -48,7 +53,10 @@ function matchesBellTab(notification: ApiNotification, tab: BellTab): boolean {
     return category === "ROOM";
   }
 
-  return category === "PAYMENT_REVIEW" || category === "OTHER";
+  return (
+    notification.type !== "REPORT" &&
+    (category === "PAYMENT_REVIEW" || category === "OTHER")
+  );
 }
 
 export function NotificationBell() {
@@ -58,6 +66,7 @@ export function NotificationBell() {
   const [items, setItems] = useState<ApiNotification[]>([]);
   const [activeTab, setActiveTab] = useState<BellTab>("ALL");
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -156,6 +165,26 @@ export function NotificationBell() {
       await markAllNotificationsRead();
     } catch {
       await loadNotifications();
+    }
+  }
+
+  async function removeNotification(id: string) {
+    if (deletingId === id) {
+      return;
+    }
+
+    setDeletingId(id);
+
+    // 화면에서는 먼저 제거
+    setItems((prev) => prev.filter((item) => item.id !== id));
+
+    try {
+      await deleteNotification(id);
+    } catch {
+      // 삭제 실패 시 서버 목록을 다시 불러와 복구
+      await loadNotifications();
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -378,95 +407,130 @@ export function NotificationBell() {
                 const color = TYPE_COLOR[item.type];
 
                 return (
-                  <button
-                    type="button"
+                  <div
                     key={item.id}
-                    onClick={() => handleNotificationClick(item)}
                     style={{
-                      width: "100%",
-                      padding: "13px 16px",
-                      border: "none",
+                      display: "flex",
+                      alignItems: "stretch",
                       borderBottom: "1px solid var(--border)",
                       background: item.read ? "transparent" : "var(--bg-2)",
-                      textAlign: "left",
-                      cursor: "pointer",
-                      display: "flex",
-                      gap: 10,
                     }}
                   >
-                    <span
-                      aria-hidden="true"
+                    <button
+                      type="button"
+                      onClick={() => handleNotificationClick(item)}
                       style={{
-                        width: 8,
-                        height: 8,
-                        marginTop: 7,
-                        flexShrink: 0,
-                        borderRadius: 999,
-                        background: item.read
-                          ? "transparent"
-                          : "var(--primary)",
+                        minWidth: 0,
+                        flex: 1,
+                        padding: "13px 10px 13px 16px",
+                        border: "none",
+                        background: "transparent",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        display: "flex",
+                        gap: 10,
                       }}
-                    />
-
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div
+                    >
+                      <span
+                        aria-hidden="true"
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 7,
-                          marginBottom: 4,
+                          width: 8,
+                          height: 8,
+                          marginTop: 7,
+                          flexShrink: 0,
+                          borderRadius: 999,
+                          background: item.read
+                            ? "transparent"
+                            : "var(--primary)",
                         }}
-                      >
-                        <span
+                      />
+
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
                           style={{
-                            flexShrink: 0,
-                            borderRadius: 999,
-                            padding: "2px 6px",
-                            background: `${color}18`,
-                            color,
-                            fontSize: 10.5,
-                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 7,
+                            marginBottom: 3,
+                            minWidth: 0,
                           }}
                         >
-                          {TYPE_LABEL[item.type]}
-                        </span>
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              borderRadius: 999,
+                              padding: "2px 6px",
+                              background: `${color}18`,
+                              color,
+                              fontSize: 10.5,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {TYPE_LABEL[item.type]}
+                          </span>
 
-                        <span
+                          <span
+                            style={{
+                              minWidth: 0,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              fontSize: 13.5,
+                              fontWeight: item.read ? 500 : 700,
+                            }}
+                          >
+                            {item.title}
+                          </span>
+                        </div>
+
+                        <div
                           style={{
+                            fontSize: 12.5,
+                            color: "var(--text-2)",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
-                            fontSize: 13.5,
-                            fontWeight: item.read ? 500 : 700,
                           }}
                         >
-                          {item.title}
-                        </span>
-                      </div>
+                          {item.body}
+                        </div>
 
-                      <div
-                        style={{
-                          fontSize: 12.5,
-                          color: "var(--text-2)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {item.body}
+                        <div
+                          style={{
+                            marginTop: 5,
+                            fontSize: 11.5,
+                            color: "var(--text-2)",
+                          }}
+                        >
+                          {relativeTime(item.createdAt)}
+                        </div>
                       </div>
+                    </button>
 
-                      <div
-                        style={{
-                          marginTop: 5,
-                          fontSize: 11.5,
-                          color: "var(--text-2)",
-                        }}
-                      >
-                        {relativeTime(item.createdAt)}
-                      </div>
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      aria-label={`${item.title} 알림 삭제`}
+                      title="알림 삭제"
+                      disabled={deletingId === item.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void removeNotification(item.id);
+                      }}
+                      style={{
+                        width: 42,
+                        flexShrink: 0,
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--text-2)",
+                        cursor: deletingId === item.id ? "default" : "pointer",
+                        fontSize: 20,
+                        lineHeight: 1,
+                        opacity: deletingId === item.id ? 0.45 : 1,
+                      }}
+                    >
+                      {deletingId === item.id ? "…" : "×"}
+                    </button>
+                  </div>
                 );
               })
             )}
