@@ -2,7 +2,13 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { houses } from "@/lib/data";
 import { won } from "@/lib/format";
-import { VIBE_LABELS, ROOM_TYPE_LABELS, GENDER_LABELS } from "@/lib/types";
+import {
+  GENDER_LABELS,
+  SHARED_FACILITY_LABELS,
+  VIBE_LABELS,
+  getAccommodationLabel,
+  getPriceUnitLabel,
+} from "@/lib/types";
 import type { House } from "@/lib/types";
 import { jobHubs, estimateCommute, commuteBand } from "@/lib/commute";
 import { enrichHouse } from "@/lib/detail";
@@ -47,7 +53,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const house = await loadHouse(id);
   if (!house) return { title: "숙소를 찾을 수 없습니다" };
   const title = `${house.name.trim()} · ${house.region}`;
-  const description = `${house.region}의 ${ROOM_TYPE_LABELS[house.roomType]} · 월 ${won(house.monthlyRent)} · ★ ${house.rating}. Nested에서 월 단위로 예약하세요.`;
+  const description = `${house.region}의 ${getAccommodationLabel(house)} · 월 ${won(house.monthlyRent)} · ★ ${house.rating}. Nested에서 월 단위로 예약하세요.`;
   return {
     title,
     description,
@@ -160,11 +166,21 @@ export default async function HomeDetail({
           {/* summary line */}
           <div style={{ paddingBottom: 22, borderBottom: "1px solid var(--border)" }}>
             <h2 className="display" style={{ fontSize: 20 }}>
-              {ROOM_TYPE_LABELS[house.roomType]} · 최대 {house.capacity}명
+              {getAccommodationLabel(house)} · 최대 {house.capacity ?? 1}명
             </h2>
             <p style={{ color: "var(--text-2)", fontSize: 14.5, marginTop: 4 }}>
               침실 {house.bedrooms}개 · 현재 거주 {house.residents}명 · {GENDER_LABELS[house.genderPolicy]} · 최소 {house.minStayMonths}개월
             </p>
+            {house.rentalUnit !== "whole" && house.sharedFacilities && house.sharedFacilities.length > 0 && (
+              <p style={{ color: "var(--text-2)", fontSize: 13.5, marginTop: 8 }}>
+                공용 시설: {house.sharedFacilities.map((facility) => SHARED_FACILITY_LABELS[facility]).join(" · ")}
+              </p>
+            )}
+            {house.classificationReviewRequired && (
+              <p style={{ color: "var(--warning)", fontSize: 12.5, marginTop: 8 }}>
+                기존 숙소 분류를 호스트가 확인 중입니다.
+              </p>
+            )}
           </div>
 
           {/* commute (only when arriving from commute search) */}
@@ -284,10 +300,10 @@ export default async function HomeDetail({
                     {/* ROOM_TYPE_LABELS: "ONE_ROOM" 같은 코드값을 "원룸" 같은
                         한글 라벨로 바꿔주는, 파일 상단에 이미 import된 매핑 */}
                     <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
-                      {ROOM_TYPE_LABELS[r.roomType]} · {r.region}
+                      {getAccommodationLabel(r)} · {r.region}
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>
-                      {won(r.monthlyRent)} / 월
+                      {won(r.monthlyRent)} / 월 · {getPriceUnitLabel(r.rentalUnit)}
                     </div>
                     {/* 추천 이유 — reasons 배열을 콤마로 이어붙여 한 줄로 표시 */}
                     {r.reasons?.length > 0 && (

@@ -23,6 +23,34 @@ enum RoomType {
   APARTMENT
 }
 
+// 신규 숙소 분류. 기존 RoomType은 운영 데이터 호환을 위해 유지하고,
+// 등록·검색 UI는 아래 세 축을 사용한다.
+enum RentalUnit {
+  WHOLE
+  PRIVATE_ROOM
+  BED
+}
+
+enum BuildingType {
+  STUDIO
+  APARTMENT
+  HOUSE
+}
+
+enum SharedFacility {
+  BATHROOM
+  KITCHEN
+  LIVING_ROOM
+  LAUNDRY_ROOM
+  ENTRANCE
+}
+
+enum BookingMode {
+  UNIT
+  BED
+  WHOLE_ROOM
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -217,10 +245,17 @@ model Room {
   avgRating   Float @default(0)
   reviewCount Int   @default(0)
 
+  // 기존 분류. 신규 등록에서도 하위 호환을 위해 서버가 자동 계산해 저장한다.
   roomType RoomType
 
-  // 함께 지낼 수 있는 최대 인원입니다.
-  // 독채는 정원 개념이 없어 null로 저장합니다.
+  // 신규 분류 3축. 기존 데이터는 일부가 애매하므로 nullable로 시작한다.
+  rentalUnit                  RentalUnit?
+  buildingType                BuildingType?
+  sharedFacilities            SharedFacility[] @default([])
+  classificationReviewRequired Boolean          @default(false)
+
+  // 함께 지낼 수 있는 최대 인원입니다. 신규 숙소는 전체 숙소도 포함해 필수로 받는다.
+  // 기존 독채 데이터와의 호환 때문에 DB 컬럼 자체는 nullable로 유지한다.
   capacity Int?
 
   // 침실 개수입니다.
@@ -252,6 +287,8 @@ model Room {
   createdAt DateTime @default(now())
 
   @@index([region])
+  @@index([rentalUnit])
+  @@index([buildingType])
   @@index([district])
   @@index([neighborhood])
   @@index([legalDongCode])
@@ -319,6 +356,9 @@ model Reservation {
   checkOut             DateTime
   months               Int
   status               ReservationStatus @default(PENDING_PAYMENT)
+  // 대표 결제자가 확보한 예약 단위와 자리 수. 기존 예약은 UNIT/1로 안전하게 유지된다.
+  bookingMode          BookingMode        @default(UNIT)
+  reservedSpots        Int                @default(1)
   monthlyRent          Int
   deposit              Int
   cleaningFee          Int
@@ -333,8 +373,8 @@ model Reservation {
   tenantReview         TenantReview?
   createdAt            DateTime          @default(now())
 
-  // DB-level guard against double-booking is enforced with an exclusion
-  // constraint on (roomId, tstzrange(checkIn, checkOut)) via a migration.
+  // 기간 중복과 다인실 잔여 자리는 예약 서비스가 숙소 행 잠금 및
+  // serializable transaction 안에서 검증한다.
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@index([companionId])

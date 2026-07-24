@@ -2,14 +2,60 @@
 
 // Aligns with ARCHITECTURE.md RoomType enum
 export type RoomType = "one_room" | "share_room" | "whole_house" | "apartment";
+export type RentalUnit = "whole" | "private_room" | "bed";
+export type BuildingType = "studio" | "apartment" | "house";
+export type SharedFacility =
+  | "bathroom"
+  | "kitchen"
+  | "living_room"
+  | "laundry_room"
+  | "entrance";
+export type BookingMode = "unit" | "bed" | "whole_room";
 export type GenderPolicy = "any" | "male_only" | "female_only";
 
+// 기존 RoomType 라벨은 분류 확인이 끝나지 않은 운영 데이터 표시용으로 유지한다.
 export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
-  one_room: "개인실·원룸",
-  share_room: "쉐어룸",
+  one_room: "기존 개인실·원룸",
+  share_room: "기존 쉐어룸",
   whole_house: "독채",
-  apartment: "아파트",
+  apartment: "기존 아파트",
 };
+
+export const RENTAL_UNIT_LABELS: Record<RentalUnit, string> = {
+  whole: "전체 숙소",
+  private_room: "개인실",
+  bed: "다인실·침대",
+};
+
+export const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {
+  studio: "원룸",
+  apartment: "아파트",
+  house: "주택",
+};
+
+export const SHARED_FACILITY_LABELS: Record<SharedFacility, string> = {
+  bathroom: "욕실·샤워실",
+  kitchen: "주방",
+  living_room: "거실",
+  laundry_room: "세탁실",
+  entrance: "출입구",
+};
+
+export function getAccommodationLabel(house: Pick<House, "rentalUnit" | "buildingType" | "roomType">): string {
+  if (house.rentalUnit && house.buildingType) {
+    return `${BUILDING_TYPE_LABELS[house.buildingType]} · ${RENTAL_UNIT_LABELS[house.rentalUnit]}`;
+  }
+  if (house.rentalUnit) return RENTAL_UNIT_LABELS[house.rentalUnit];
+  if (house.buildingType) return `${BUILDING_TYPE_LABELS[house.buildingType]} · 분류 확인 필요`;
+  return ROOM_TYPE_LABELS[house.roomType];
+}
+
+export function getPriceUnitLabel(rentalUnit?: RentalUnit | null): string {
+  if (rentalUnit === "whole") return "숙소 전체";
+  if (rentalUnit === "private_room") return "개인실";
+  if (rentalUnit === "bed") return "1자리";
+  return "숙소";
+}
 
 export const GENDER_LABELS: Record<GenderPolicy, string> = {
   any: "성별 무관",
@@ -41,10 +87,15 @@ export interface House {
   cleaningFee: number; // 청소비 (one-time, due at move-in)
   maintenanceFee: number; // 관리비 (monthly)
   roomType: RoomType;
+  /** 신규 3축 숙소 분류. 기존 데이터는 null일 수 있다. */
+  rentalUnit?: RentalUnit | null;
+  buildingType?: BuildingType | null;
+  sharedFacilities?: SharedFacility[];
+  classificationReviewRequired?: boolean;
   /** 침실 개수. 미입력이면 null. */
   bedrooms: number | null;
   residents: number;
-  /** 함께 지낼 수 있는 최대 인원. 독채는 정원 개념이 없어 null. */
+  /** 함께 지낼 수 있는 최대 인원. 기존 데이터는 null일 수 있다. */
   capacity: number | null;
   amenities: string[];
   vibe: string[]; // e.g. "quiet", "social", "creative"
@@ -147,6 +198,8 @@ export interface Booking {
   totalDueNow: number;
   serviceFeeRate: number; // e.g. 0.05
   status: "hold" | "paid" | "cancelled";
+  bookingMode?: BookingMode;
+  reservedSpots?: number;
   rawStatus?: string; // original server status, for states the 3-way map collapses
   checkOut?: string;  // YYYY-MM-DD — used for the contract D-day countdown
   extensionMonths?: number | null; // pending extension request, if any
@@ -171,7 +224,11 @@ export interface SearchParams {
   district?: string;
   legalDongCode?: string;
   verified?: boolean;
+  /** @deprecated 기존 URL 호환용. 신규 검색 UI는 아래 3축을 사용한다. */
   roomTypes?: RoomType[];
+  rentalUnits?: RentalUnit[];
+  buildingTypes?: BuildingType[];
+  sharedFacilities?: SharedFacility[];
   minRent?: number;
   maxRent?: number;
   availableFrom?: string; // ISO date; house must be available on/before this

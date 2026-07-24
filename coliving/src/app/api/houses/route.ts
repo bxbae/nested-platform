@@ -10,7 +10,9 @@ interface HouseWithCommute extends House {
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
   const q = (p.get("q") ?? "").toLowerCase().trim();
-  const roomType = p.get("roomType");
+  const rentalUnit = p.get("rentalUnit");
+  const buildingType = p.get("buildingType");
+  const sharedFacility = p.get("sharedFacility");
   const vibe = p.get("vibe");
   const maxRent = p.get("maxRent") ? Number(p.get("maxRent")) : null;
   const maxCommute = p.get("maxCommute") ? Number(p.get("maxCommute")) : null;
@@ -30,7 +32,14 @@ export async function GET(req: NextRequest) {
   result = result.filter((h) => {
     if (q && !`${h.name} ${h.neighborhood} ${h.city} ${h.blurb}`.toLowerCase().includes(q))
       return false;
-    if (roomType && roomType !== "any" && h.roomType !== roomType) return false;
+    if (rentalUnit && rentalUnit !== "any" && h.rentalUnit !== rentalUnit) return false;
+    if (buildingType && buildingType !== "any" && h.buildingType !== buildingType) return false;
+    if (
+      sharedFacility &&
+      sharedFacility !== "any" &&
+      !h.sharedFacilities?.includes(sharedFacility as NonNullable<House["sharedFacilities"]>[number])
+    )
+      return false;
     if (vibe && vibe !== "any" && !h.vibe.includes(vibe)) return false;
     if (maxRent && h.monthlyRent > maxRent) return false;
     if (maxCommute && h.commute && h.commute.minutes > maxCommute) return false;

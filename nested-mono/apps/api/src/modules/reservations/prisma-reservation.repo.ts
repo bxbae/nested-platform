@@ -6,7 +6,16 @@ import type {
   ReservationRecord,
   CouponRecord,
   ReservationStatus,
+  BookingMode,
 } from "./ports";
+
+const INVENTORY_HOLDING_STATUSES: ReservationStatus[] = [
+  "PENDING_PAYMENT",
+  "CONFIRMED",
+  "EARLY_CHECKOUT_REQUESTED",
+  "EARLY_CHECKOUT_APPROVED",
+  "EXTENSION_REQUESTED",
+];
 
 // Prisma-backed implementation of the ReservationRepo port.
 //
@@ -14,8 +23,8 @@ import type {
 // apps/api/src/prisma. The key correctness detail is `createHold`, which runs
 // the overlap check and the insert inside one SERIALIZABLE transaction so two
 // concurrent bookings cannot both succeed (double-booking prevention,
-// ARCHITECTURE.md §11). A DB-level exclusion constraint on (room_id, daterange)
-// is the backstop.
+// ARCHITECTURE.md §11). The Room row lock is required because a daterange-only
+// exclusion constraint would incorrectly block valid overlapping BED bookings.
 //
 // The `prisma` field is typed loosely here to keep this module self-contained
 // for the reference build; wire the real PrismaService via DI in production.
@@ -37,6 +46,8 @@ export class PrismaReservationRepo implements ReservationRepo {
         maintenanceFee: true,
         minStayMonths: true,
         availableFrom: true,
+        rentalUnit: true,
+        capacity: true,
       },
     });
   }
@@ -55,7 +66,7 @@ export class PrismaReservationRepo implements ReservationRepo {
     return this.prisma.reservation.findMany({
       where: {
         roomId,
-        status: { in: ["PENDING_PAYMENT", "CONFIRMED"] },
+        status: { in: INVENTORY_HOLDING_STATUSES },
         // overlap: existing.checkIn < newCheckOut AND existing.checkOut > newCheckIn
         checkIn: { lt: checkOut },
         checkOut: { gt: checkIn },
@@ -66,24 +77,45 @@ export class PrismaReservationRepo implements ReservationRepo {
   async createHold(
     data: Omit<ReservationRecord, "id" | "createdAt">,
   ): Promise<ReservationRecord> {
-    // Serializable transaction: re-check overlap under lock, then insert.
+    // 같은 숙소 행을 먼저 잠가서, 다인실의 남은 자리 계산과 예약 생성이
+    // 하나의 임계 구역에서 수행되도록 한다. 단순 overlap 검사만으로는
+    // 동시에 들어온 두 건이 남은 한 자리를 모두 확보할 수 있다.
     return this.prisma.$transaction(
       async (tx: any) => {
-        const conflict = await tx.reservation.findFirst({
+        await tx.$queryRawUnsafe(
+          'SELECT "id" FROM "Room" WHERE "id" = $1 FOR UPDATE',
+          data.roomId,
+        );
+
+        const room = await tx.room.findUnique({
+          where: { id: data.roomId },
+          select: { rentalUnit: true, capacity: true },
+        });
+        if (!room) {
+          throw new ConflictException({
+            code: "ROOM_NOT_FOUND",
+            message: "숙소를 찾을 수 없습니다.",
+          });
+        }
+
+        const overlaps = await tx.reservation.findMany({
           where: {
             roomId: data.roomId,
-            status: { in: ["PENDING_PAYMENT", "CONFIRMED"] },
+            status: { in: INVENTORY_HOLDING_STATUSES },
             checkIn: { lt: data.checkOut },
             checkOut: { gt: data.checkIn },
           },
-          select: { id: true },
+          select: { bookingMode: true, reservedSpots: true },
         });
-        if (conflict) {
-          throw new ConflictException({
-            code: "DATES_UNAVAILABLE",
-            message: "선택한 기간은 이미 예약되었습니다.",
-          });
-        }
+
+        assertInventoryAvailable(
+          room.rentalUnit,
+          room.capacity,
+          overlaps,
+          data.bookingMode,
+          data.reservedSpots,
+        );
+
         return tx.reservation.create({ data });
       },
       { isolationLevel: "Serializable" },
@@ -286,4 +318,45 @@ export class PrismaReservationRepo implements ReservationRepo {
       data: { usedCount: { increment: 1 } },
     });
   }
+}
+
+
+function assertInventoryAvailable(
+  rentalUnit: "WHOLE" | "PRIVATE_ROOM" | "BED" | null,
+  capacityValue: number | null,
+  overlaps: Array<{ bookingMode: BookingMode; reservedSpots: number }>,
+  requestedMode: BookingMode,
+  requestedSpots: number,
+): void {
+  if (rentalUnit !== "BED") {
+    if (overlaps.length > 0) throwUnavailable();
+    return;
+  }
+
+  const capacity = Math.max(1, capacityValue ?? 1);
+  if (requestedMode === "WHOLE_ROOM") {
+    if (overlaps.length > 0) throwUnavailable();
+    return;
+  }
+
+  const occupied = overlaps.reduce((sum, reservation) => {
+    // UNIT은 신규 BED 도입 전 생성된 예약일 수 있으므로, 기존 예약을
+    // 한 자리로 축소 해석하지 않고 방 전체 점유로 보수적으로 처리한다.
+    if (reservation.bookingMode !== "BED") return capacity;
+    return sum + Math.max(1, reservation.reservedSpots);
+  }, 0);
+
+  if (occupied + requestedSpots > capacity) {
+    throw new ConflictException({
+      code: "NOT_ENOUGH_SPOTS",
+      message: `선택한 기간에 남은 자리가 ${Math.max(0, capacity - occupied)}개뿐입니다.`,
+    });
+  }
+}
+
+function throwUnavailable(): never {
+  throw new ConflictException({
+    code: "DATES_UNAVAILABLE",
+    message: "선택한 기간은 이미 예약되었습니다.",
+  });
 }

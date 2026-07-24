@@ -7,7 +7,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { won } from "@/lib/format";
 import { computePrice } from "@/lib/pricing";
-import { ROOM_TYPE_LABELS, GENDER_LABELS, type RoomType, type GenderPolicy } from "@/lib/types";
+import {
+  BUILDING_TYPE_LABELS,
+  GENDER_LABELS,
+  RENTAL_UNIT_LABELS,
+  SHARED_FACILITY_LABELS,
+  type BuildingType,
+  type GenderPolicy,
+  type RentalUnit,
+  type SharedFacility,
+} from "@/lib/types";
 import { createRoom } from "@/lib/api/rooms";
 import { AddressSearch, type AddressValue } from "@/components/AddressSearch";
 import { becomeHost } from "@/lib/api/auth";
@@ -17,7 +26,15 @@ import { uploadImage } from "@/lib/api/storage";
 import { USE_REAL_API } from "@/lib/api/config";
 import { getAmenityLabel } from "@/lib/amenities";
 
-const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
+const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
+const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "house"];
+const SHARED_FACILITIES: SharedFacility[] = [
+  "bathroom",
+  "kitchen",
+  "living_room",
+  "laundry_room",
+  "entrance",
+];
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
 const AMENITIES = ["Rooftop", "Coworking room", "Laundry", "Fiber wifi", "Weekly cleaning", "Gym", "Garden", "Parcel locker"];
 
@@ -32,7 +49,9 @@ const listingSchema = z.object({
   jibunAddress: z.string(),
   detailAddress: z.string(),
   zipCode: z.string(),
-  roomType: z.enum(["one_room", "share_room", "whole_house", "apartment"]),
+  rentalUnit: z.enum(["whole", "private_room", "bed"]),
+  buildingType: z.enum(["studio", "apartment", "house"]),
+  sharedFacilities: z.array(z.enum(["bathroom", "kitchen", "living_room", "laundry_room", "entrance"])),
   gender: z.enum(["any", "female_only", "male_only"]),
   monthlyRent: z.coerce.number().min(100000, "월세는 10만원 이상이어야 합니다."),
   deposit: z.coerce.number().min(0),
@@ -40,20 +59,29 @@ const listingSchema = z.object({
   maintenanceFee: z.coerce.number().min(0),
   minStay: z.coerce.number().min(1).max(12),
   availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
-  // 독채가 아니면 필수. 아래 superRefine 에서 타입에 따라 갈린다.
-  capacity: z.coerce.number().int().min(1).max(20).optional(),
+  // 신규 숙소는 전체 숙소도 포함해 최대 수용 인원을 받는다.
+  capacity: z.coerce.number().int().min(1).max(20),
   // 침실 개수 — 선택 항목이라 비워도 등록된다.
-  bedrooms: z.coerce.number().int().min(1).max(10).optional(),
+  bedrooms: z.preprocess(
+    (value) => (value === "" || value == null ? undefined : value),
+    z.coerce.number().int().min(1).max(10).optional(),
+  ),
   verifiedByHost: z.literal(true, {
     errorMap: () => ({ message: "실제 매물임을 확인해주세요." }),
   }),
 }).superRefine((data, ctx) => {
-  // 독채는 통째로 빌리므로 정원 개념이 없다. 서버도 같은 규칙으로 막는다.
-  if (data.roomType !== "whole_house" && !data.capacity) {
+  if (data.rentalUnit === "whole" && data.sharedFacilities.length > 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["capacity"],
-      message: "함께 지낼 인원수를 입력하세요.",
+      path: ["sharedFacilities"],
+      message: "전체 숙소는 공유 시설을 선택하지 않습니다.",
+    });
+  }
+  if (data.rentalUnit !== "whole" && data.sharedFacilities.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sharedFacilities"],
+      message: "다른 입주자와 함께 사용하는 시설을 하나 이상 선택하세요.",
     });
   }
 });
@@ -92,7 +120,7 @@ export default function NewListing() {
     resolver: zodResolver(listingSchema),
     mode: "onChange",
     defaultValues: {
-      name: "", city: "", district: "", neighborhood: "", legalDongCode: "", roadAddress: "", jibunAddress: "", detailAddress: "", zipCode: "", roomType: "one_room", gender: "any",
+      name: "", city: "", district: "", neighborhood: "", legalDongCode: "", roadAddress: "", jibunAddress: "", detailAddress: "", zipCode: "", rentalUnit: "whole", buildingType: "studio", sharedFacilities: [], gender: "any", capacity: 1,
       monthlyRent: 700000, deposit: 3000000, cleaningFee: 70000, maintenanceFee: 50000, minStay: 3,
       availableFrom: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
       verifiedByHost: false as unknown as true,
@@ -158,14 +186,15 @@ export default function NewListing() {
         await createRoom({
           name: form.name,
           region: form.neighborhood,
-          roomType: form.roomType,
+          rentalUnit: form.rentalUnit,
+          buildingType: form.buildingType,
+          sharedFacilities: form.sharedFacilities,
           monthlyRent: Number(form.monthlyRent),
           deposit: Number(form.deposit),
           cleaningFee: Number(form.cleaningFee),
           maintenanceFee: Number(form.maintenanceFee),
           minStayMonths: Number(form.minStay),
-          // 독채는 정원을 보내지 않는다 (서버가 거부한다).
-          capacity: form.roomType === "whole_house" ? null : Number(form.capacity),
+          capacity: Number(form.capacity),
           bedrooms: form.bedrooms ? Number(form.bedrooms) : null,
           availableFrom: form.availableFrom,
           address: {
@@ -216,6 +245,16 @@ export default function NewListing() {
   }
   function toggleAmenity(a: string) {
     setAmenities((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
+  }
+  function toggleSharedFacility(facility: SharedFacility) {
+    const current = v.sharedFacilities ?? [];
+    setValue(
+      "sharedFacilities",
+      current.includes(facility)
+        ? current.filter((item) => item !== facility)
+        : [...current, facility],
+      { shouldDirty: true, shouldValidate: true },
+    );
   }
 
   // The account is signed in but still a GUEST — offer the one-click upgrade
@@ -397,27 +436,70 @@ export default function NewListing() {
           <Field label="입주 가능일" error={errors.availableFrom?.message}>
             <input type="date" {...register("availableFrom")} />
           </Field>
-          <Field label="방 종류">
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {ROOM_TYPES.map((rt) => (
-                <button key={rt} type="button" className="chip" data-active={v.roomType === rt} onClick={() => setValue("roomType", rt, { shouldValidate: true })}>
-                  {ROOM_TYPE_LABELS[rt]}
-                </button>
+          <Field label="예약 공간" error={errors.rentalUnit?.message}>
+            <select
+              value={v.rentalUnit}
+              onChange={(event) => {
+                const rentalUnit = event.target.value as RentalUnit;
+                setValue("rentalUnit", rentalUnit, { shouldValidate: true, shouldDirty: true });
+                if (rentalUnit === "whole") {
+                  setValue("sharedFacilities", [], { shouldValidate: true, shouldDirty: true });
+                }
+              }}
+              style={{ width: "100%" }}
+            >
+              {RENTAL_UNITS.map((unit) => (
+                <option key={unit} value={unit}>{RENTAL_UNIT_LABELS[unit]}</option>
               ))}
-            </div>
+            </select>
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>
+              {v.rentalUnit === "whole"
+                ? "거실·주방·욕실을 포함한 숙소 전체를 한 팀이 사용합니다."
+                : v.rentalUnit === "private_room"
+                  ? "침실은 단독으로 사용하고 선택한 시설을 다른 입주자와 공유합니다."
+                  : "침실의 한 자리와 선택한 공용 시설을 다른 입주자와 공유합니다."}
+            </p>
           </Field>
-          {/* 인원수 — 독채는 정원 개념이 없어 숨긴다 */}
-          {v.roomType !== "whole_house" && (
-            <Field label="함께 지낼 인원 (명)" error={errors.capacity?.message}>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                placeholder="예: 3"
-                {...register("capacity")}
-              />
+
+          <Field label="건물 유형" error={errors.buildingType?.message}>
+            <select
+              value={v.buildingType}
+              onChange={(event) => setValue("buildingType", event.target.value as BuildingType, { shouldValidate: true, shouldDirty: true })}
+              style={{ width: "100%" }}
+            >
+              {BUILDING_TYPES.map((type) => (
+                <option key={type} value={type}>{BUILDING_TYPE_LABELS[type]}</option>
+              ))}
+            </select>
+          </Field>
+
+          {v.rentalUnit !== "whole" && (
+            <Field label="공유 시설" error={errors.sharedFacilities?.message}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {SHARED_FACILITIES.map((facility) => (
+                  <button
+                    key={facility}
+                    type="button"
+                    className="chip"
+                    data-active={(v.sharedFacilities ?? []).includes(facility)}
+                    onClick={() => toggleSharedFacility(facility)}
+                  >
+                    {SHARED_FACILITY_LABELS[facility]}
+                  </button>
+                ))}
+              </div>
             </Field>
           )}
+
+          <Field label="최대 수용 인원 (명)" error={errors.capacity?.message}>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              placeholder="예: 3"
+              {...register("capacity")}
+            />
+          </Field>
 
           <Field label="성별 조건">
             <div style={{ display: "flex", gap: 8 }}>
@@ -434,7 +516,12 @@ export default function NewListing() {
       {/* 가격 설정 */}
       <Section title="가격 설정">
         <div style={{ display: "grid", gap: 14 }}>
-          <PriceField label="월세" error={errors.monthlyRent?.message} reg={register("monthlyRent")} step={10000} />
+          <PriceField
+            label={`월세 / ${v.rentalUnit === "whole" ? "전체" : v.rentalUnit === "private_room" ? "개인실" : "1자리"}`}
+            error={errors.monthlyRent?.message}
+            reg={register("monthlyRent")}
+            step={10000}
+          />
           <PriceField label="보증금" reg={register("deposit")} step={100000} />
           <PriceField label="청소비 (1회)" reg={register("cleaningFee")} step={10000} />
           <PriceField label="관리비 (월)" reg={register("maintenanceFee")} step={10000} />

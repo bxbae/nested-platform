@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import type { House } from "@/lib/types";
+import { getPriceUnitLabel, type BookingMode, type House } from "@/lib/types";
 import { won } from "@/lib/format";
 import { computePrice, addMonths, toISODate } from "@/lib/pricing";
 import {
@@ -11,7 +11,7 @@ import {
   requestBooking as requestBookingApi,
   confirmBooking as confirmBookingApi,
 } from "@/lib/api/reservations";
-import { getMatches, type MatchCandidate } from "@/lib/api/match";
+import { listFriends, type FriendProfile } from "@/lib/api/friends";
 import { useAuth } from "@/lib/api/useAuth"; // 로그인한 사용자 정보 가져오기
 
 type Step = "config" | "pay" | "done";
@@ -49,11 +49,17 @@ export function BookingWidget({ house }: { house: House }) {
   // the server — we only apply on click so every keystroke doesn't re-quote.
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState("");
-  // 룸메이트와 함께 예약. 성향 매칭에서 궁합이 맞는 상대만 고를 수 있다 —
-  // 아무나 지정하는 게 아니라 이미 잘 맞는다고 판단된 사람과 함께 사는 흐름.
-  const [withCompanion, setWithCompanion] = useState(false);
-  const [mates, setMates] = useState<MatchCandidate[]>([]);
-  const [matesLoading, setMatesLoading] = useState(false);
+  const isBedBooking = house.rentalUnit === "bed";
+  const roomCapacity = Math.max(1, house.capacity ?? 1);
+  const [bookingMode, setBookingMode] = useState<BookingMode>(
+    isBedBooking ? "bed" : "unit",
+  );
+  const [reservedSpots, setReservedSpots] = useState(1);
+  // 여러 자리를 대표자가 전액 결제할 수 있고, 필요할 때만 현재 친구 한 명을
+  // 예약에 초대한다. 친구를 선택하지 않아도 여러 자리 예약은 가능하다.
+  const [inviteFriend, setInviteFriend] = useState(false);
+  const [friends, setFriends] = useState<FriendProfile[]>([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
   const [companionId, setCompanionId] = useState("");
 
   // check-out is derived from check-in + months (월 단위 예약)
@@ -62,24 +68,27 @@ export function BookingWidget({ house }: { house: House }) {
   // Local estimate, used only until the server quote arrives (and in demo mode).
   // The server is authoritative for money — coupon validity lives there — so
   // `price` below prefers the quoted breakdown whenever we have one.
+  const priceUnits = isBedBooking ? reservedSpots : 1;
   const localPrice = computePrice({
-    monthlyRent: house.monthlyRent,
-    deposit: house.deposit,
-    cleaningFee: house.cleaningFee,
-    maintenanceFee: house.maintenanceFee,
+    monthlyRent: house.monthlyRent * priceUnits,
+    deposit: house.deposit * priceUnits,
+    cleaningFee: house.cleaningFee * priceUnits,
+    maintenanceFee: house.maintenanceFee * priceUnits,
     months,
   });
   const price = avail.price ?? localPrice;
 
   // ── 예약 가능 여부 ── re-check whenever dates change (debounced)
   const checkAvailability = useCallback(async () => {
-    setAvail((a) => ({ ...a, loading: true }));
+    setAvail({ loading: true, available: null });
     try {
       const data = await checkAvailabilityApi({
         houseId: house.id,
         checkIn,
         months,
         couponCode: appliedCoupon || undefined,
+        bookingMode,
+        reservedSpots,
       });
       setAvail({
         loading: false,
@@ -92,7 +101,7 @@ export function BookingWidget({ house }: { house: House }) {
     } catch {
       setAvail({ loading: false, available: null, reason: "확인 중 오류가 발생했습니다." });
     }
-  }, [house.id, checkIn, months, appliedCoupon]);
+  }, [house.id, checkIn, months, appliedCoupon, bookingMode, reservedSpots]);
 
   useEffect(() => {
     const t = setTimeout(checkAvailability, 250);
@@ -100,23 +109,33 @@ export function BookingWidget({ house }: { house: House }) {
   }, [checkAvailability]);
 
   // ── 예약 요청 → hold ──
-  // 체크박스를 켤 때만 매칭 목록을 불러온다 — 대부분의 예약은 혼자 하므로
-  // 화면 진입마다 부르면 불필요한 요청이 된다.
-  async function toggleCompanion(on: boolean) {
-    setWithCompanion(on);
+  async function toggleFriendInvite(on: boolean) {
+    setInviteFriend(on);
     if (!on) {
       setCompanionId("");
       return;
     }
-    if (mates.length > 0) return;
-    setMatesLoading(true);
+    if (friends.length > 0) return;
+    setFriendsLoading(true);
     try {
-      setMates(await getMatches());
+      setFriends(await listFriends());
     } catch {
-      setMates([]);
+      setFriends([]);
     } finally {
-      setMatesLoading(false);
+      setFriendsLoading(false);
     }
+  }
+
+  function chooseBedBooking(mode: "single" | "group" | "whole") {
+    setInviteFriend(false);
+    setCompanionId("");
+    if (mode === "whole") {
+      setBookingMode("whole_room");
+      setReservedSpots(roomCapacity);
+      return;
+    }
+    setBookingMode("bed");
+    setReservedSpots(mode === "group" ? Math.min(roomCapacity, 2) : 1);
   }
 
   async function requestBooking() {
@@ -129,7 +148,9 @@ export function BookingWidget({ house }: { house: House }) {
         guestName: name || "게스트",
         moveIn: checkIn,
         months,
-        companionId: withCompanion && companionId ? companionId : undefined,
+        bookingMode,
+        reservedSpots,
+        companionId: inviteFriend && companionId ? companionId : undefined,
       });
       setHoldId(booking.id);
       setStep("pay");
@@ -200,7 +221,10 @@ export function BookingWidget({ house }: { house: House }) {
     }
   }
 
-  const canRequest = avail.available === true && !avail.loading;
+  const canRequest =
+    avail.available === true &&
+    !avail.loading &&
+    (!inviteFriend || Boolean(companionId));
 
   // 본인이 등록한 숙소면 예약 위젯 대신 안내 문구만 표시
   if (isOwnListing) {
@@ -220,7 +244,7 @@ export function BookingWidget({ house }: { house: House }) {
         <span className="display" style={{ fontSize: 26, fontWeight: 700 }}>
           {won(house.monthlyRent)}
         </span>
-        <span style={{ color: "var(--text-2)" }}>/ 월</span>
+        <span style={{ color: "var(--text-2)" }}> / 월 · {getPriceUnitLabel(house.rentalUnit)}</span>
       </div>
 
       {step === "config" && (
@@ -304,54 +328,131 @@ export function BookingWidget({ house }: { house: House }) {
             )}
           </div>
 
-          {/* 룸메이트와 함께 예약 (공동 예약) */}
-          <div style={{ marginTop: 14 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={withCompanion}
-                onChange={(e) => toggleCompanion(e.target.checked)}
-                style={{ width: 15, height: 15, cursor: "pointer" }}
-              />
-              룸메이트와 함께 살기
-            </label>
-
-            {withCompanion && (
-              <div style={{ marginTop: 8 }}>
-                {matesLoading ? (
-                  <p style={{ fontSize: 12.5, color: "var(--text-2)" }}>매칭된 상대를 불러오는 중…</p>
-                ) : mates.length === 0 ? (
-                  <p style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
-                    아직 매칭된 상대가 없어요.{" "}
-                    <a href="/me/preference" style={{ color: "var(--primary)" }}>생활 성향 설문</a>을
-                    마치면 잘 맞는 룸메이트를 찾아드려요.
-                  </p>
-                ) : (
-                  <>
-                    <select
-                      value={companionId}
-                      onChange={(e) => setCompanionId(e.target.value)}
-                      aria-label="룸메이트 선택"
-                      style={{
-                        width: "100%", padding: "9px 12px", fontSize: 13.5,
-                        border: "1px solid var(--border)", borderRadius: "var(--r-sm)",
-                      }}
-                    >
-                      <option value="">룸메이트를 선택하세요</option>
-                      {mates.map((mate) => (
-                        <option key={mate.userId} value={mate.userId}>
-                          {mate.name} · 궁합 {mate.score}%
-                        </option>
-                      ))}
-                    </select>
-                    <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6, lineHeight: 1.6 }}>
-                      결제는 예약자인 내가 전액 진행하고, 상대에게는 수락 요청이 전달돼요.
-                    </p>
-                  </>
+          {/* 다인실 예약 방식 */}
+          {isBedBooking && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)", marginBottom: 8 }}>
+                예약 방식
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <BookingChoice
+                  active={bookingMode === "bed" && reservedSpots === 1}
+                  title="내 자리만 예약"
+                  description="1자리만 결제하고 남은 자리는 다른 입주자가 예약할 수 있어요."
+                  onClick={() => chooseBedBooking("single")}
+                />
+                {roomCapacity >= 2 && (
+                  <BookingChoice
+                    active={bookingMode === "bed" && reservedSpots >= 2}
+                    title="여러 자리 예약"
+                    description="대표자가 선택한 자리 수의 금액을 한 번에 결제해요."
+                    onClick={() => chooseBedBooking("group")}
+                  />
+                )}
+                {roomCapacity >= 2 && (
+                  <BookingChoice
+                    active={bookingMode === "whole_room"}
+                    title="방 전체 예약"
+                    description={`${roomCapacity}자리를 모두 결제하고 다른 예약을 받지 않아요.`}
+                    onClick={() => chooseBedBooking("whole")}
+                  />
                 )}
               </div>
-            )}
-          </div>
+
+              {bookingMode === "bed" && reservedSpots >= 2 && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: "10px 12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--r-sm)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-2)" }}>예약 자리</div>
+                    <div style={{ fontSize: 14, marginTop: 2 }}>{reservedSpots}자리</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <Stepper
+                      label="자리 줄이기"
+                      disabled={reservedSpots <= 2}
+                      onClick={() => setReservedSpots((value) => Math.max(2, value - 1))}
+                    >
+                      −
+                    </Stepper>
+                    <span style={{ minWidth: 20, textAlign: "center", fontWeight: 600 }}>{reservedSpots}</span>
+                    <Stepper
+                      label="자리 늘리기"
+                      disabled={reservedSpots >= roomCapacity}
+                      onClick={() => setReservedSpots((value) => Math.min(roomCapacity, value + 1))}
+                    >
+                      +
+                    </Stepper>
+                  </div>
+                </div>
+              )}
+
+              {reservedSpots >= 2 && (
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={inviteFriend}
+                      onChange={(event) => toggleFriendInvite(event.target.checked)}
+                      style={{ width: 15, height: 15, cursor: "pointer" }}
+                    />
+                    현재 친구 한 명을 함께 지낼 사람으로 초대
+                  </label>
+
+                  {inviteFriend && (
+                    <div style={{ marginTop: 8 }}>
+                      {friendsLoading ? (
+                        <p style={{ fontSize: 12.5, color: "var(--text-2)" }}>친구 목록을 불러오는 중…</p>
+                      ) : friends.length === 0 ? (
+                        <p style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+                          선택할 수 있는 친구가 없습니다. 친구를 추가한 뒤 다시 시도해주세요.
+                        </p>
+                      ) : (
+                        <>
+                          <select
+                            value={companionId}
+                            onChange={(event) => setCompanionId(event.target.value)}
+                            aria-label="함께 예약할 친구 선택"
+                            style={{
+                              width: "100%",
+                              padding: "9px 12px",
+                              fontSize: 13.5,
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--r-sm)",
+                            }}
+                          >
+                            <option value="">친구를 선택하세요</option>
+                            {friends.map((friend) => (
+                              <option key={friend.userId} value={friend.userId}>
+                                {friend.name}
+                              </option>
+                            ))}
+                          </select>
+                          <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6, lineHeight: 1.6 }}>
+                            대표 예약자가 전액 결제하고 친구에게는 참여 수락 요청이 전달됩니다.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {avail.price?.remainingSpots != null && bookingMode === "bed" && (
+                <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 8 }}>
+                  예약 후 남는 자리: {avail.price.remainingSpots}자리
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 쿠폰 (할인 계산은 서버가 수행) */}
           <div style={{ marginTop: 14 }}>
@@ -402,8 +503,8 @@ export function BookingWidget({ house }: { house: House }) {
           {/* 실시간 가격 계산 (서버 견적 우선) */}
           <Ledger
             rows={[
-              ["보증금", won(price.deposit)],
-              [`첫 달 월세`, won(price.monthlyRent)],
+              [`보증금${priceUnits > 1 ? ` (${priceUnits}자리)` : ""}`, won(price.deposit)],
+              [`첫 달 월세${priceUnits > 1 ? ` (${priceUnits}자리)` : ""}`, won(price.monthlyRent)],
               ["청소비", won(price.cleaningFee)],
               ["관리비 (월)", won(price.maintenanceFee)],
               ["서비스 수수료 (5%)", won(price.serviceFee)],
@@ -425,7 +526,7 @@ export function BookingWidget({ house }: { house: House }) {
           </button>
           {error && <p style={{ color: "var(--primary)", fontSize: 13, marginTop: 10, textAlign: "center" }}>{error}</p>}
           <p style={{ fontSize: 12, color: "var(--text-2)", textAlign: "center", marginTop: 10 }}>
-            {months}개월 총 계약금액 {won(price.contractTotal)} · 아직 결제되지 않습니다
+            {priceUnits > 1 ? `${priceUnits}자리 · ` : ""}{months}개월 총 계약금액 {won(price.contractTotal)} · 아직 결제되지 않습니다
           </p>
         </>
       )}
@@ -434,7 +535,7 @@ export function BookingWidget({ house }: { house: House }) {
         <div style={{ marginTop: 18 }}>
           <strong style={{ fontSize: 15 }}>결제하기</strong>
           <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
-            {checkIn} ~ {checkOut} · {months}개월
+            {checkIn} ~ {checkOut} · {months}개월{priceUnits > 1 ? ` · ${priceUnits}자리` : ""}
           </div>
 
           <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
@@ -527,6 +628,39 @@ export function BookingWidget({ house }: { house: House }) {
         </div>
       )}
     </div>
+  );
+}
+
+function BookingChoice({
+  active,
+  title,
+  description,
+  onClick,
+}: {
+  active: boolean;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="press"
+      style={{
+        width: "100%",
+        textAlign: "left",
+        padding: "10px 12px",
+        border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
+        borderRadius: "var(--r-sm)",
+        background: active ? "var(--primary-soft)" : "#fff",
+      }}
+    >
+      <strong style={{ display: "block", fontSize: 13.5 }}>{title}</strong>
+      <span style={{ display: "block", marginTop: 3, fontSize: 12, color: "var(--text-2)", lineHeight: 1.5 }}>
+        {description}
+      </span>
+    </button>
   );
 }
 

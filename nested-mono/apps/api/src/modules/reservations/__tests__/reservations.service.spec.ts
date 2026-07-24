@@ -19,6 +19,8 @@ function makeRoom(over: Partial<RoomRecord> = {}): RoomRecord {
     maintenanceFee: 50_000,
     minStayMonths: 3,
     availableFrom: new Date("2026-01-01"),
+    rentalUnit: null,
+    capacity: null,
     ...over,
   };
 }
@@ -45,13 +47,25 @@ class FakeRepo implements ReservationRepo {
     );
   }
   async createHold(data: Omit<ReservationRecord, "id" | "createdAt">) {
-    // emulate the serializable re-check
-    const conflict = await this.findOverlapping(
+    // emulate the room-row lock + capacity-aware inventory re-check
+    const overlaps = await this.findOverlapping(
       data.roomId,
       data.checkIn,
       data.checkOut,
     );
-    if (conflict.length) {
+    const room = this.rooms.get(data.roomId)!;
+    const capacity = Math.max(1, room.capacity ?? 1);
+    const occupied = overlaps.reduce((sum, reservation) => {
+      if (reservation.bookingMode !== "BED") return capacity;
+      return sum + reservation.reservedSpots;
+    }, 0);
+    const unavailable =
+      room.rentalUnit !== "BED"
+        ? overlaps.length > 0
+        : data.bookingMode === "WHOLE_ROOM"
+          ? overlaps.length > 0
+          : occupied + data.reservedSpots > capacity;
+    if (unavailable) {
       const e: any = new Error("conflict");
       e.code = "DATES_UNAVAILABLE";
       throw e;
@@ -398,4 +412,80 @@ describe("ReservationsService", () => {
       ),
     ).rejects.toMatchObject({ response: { code: "FORBIDDEN" } });
   });
+
+  it("다인실은 남은 자리만큼 겹치는 기간에도 추가 예약할 수 있다", async () => {
+    const repo = new FakeRepo();
+    repo.rooms.set("room1", makeRoom({ rentalUnit: "BED", capacity: 3 }));
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+
+    const first = await svc.create(
+      { roomId: "room1", checkIn: future, months: 3, bookingMode: "BED", reservedSpots: 1 },
+      "guestA",
+    );
+    const second = await svc.create(
+      { roomId: "room1", checkIn: future, months: 3, bookingMode: "BED", reservedSpots: 2 },
+      "guestB",
+    );
+
+    expect(first.reservedSpots).toBe(1);
+    expect(second.reservedSpots).toBe(2);
+    await expect(
+      svc.create(
+        { roomId: "room1", checkIn: future, months: 3, bookingMode: "BED", reservedSpots: 1 },
+        "guestC",
+      ),
+    ).rejects.toMatchObject({ response: { code: "NOT_ENOUGH_SPOTS" } });
+  });
+
+  it("다인실 여러 자리 금액은 자리 수만큼 계산한다", async () => {
+    const repo = new FakeRepo();
+    repo.rooms.set("room1", makeRoom({ rentalUnit: "BED", capacity: 3 }));
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    const quote = await svc.quote({
+      roomId: "room1",
+      checkIn: future,
+      months: 6,
+      bookingMode: "BED",
+      reservedSpots: 2,
+    });
+    expect(quote.dueNow).toBe(7_980_000);
+    expect(quote.reservedSpots).toBe(2);
+    expect(quote.remainingSpots).toBe(1);
+  });
+
+  it("다인실 전체 예약은 기존 자리 예약이 있으면 거절한다", async () => {
+    const repo = new FakeRepo();
+    repo.rooms.set("room1", makeRoom({ rentalUnit: "BED", capacity: 3 }));
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    await svc.create(
+      { roomId: "room1", checkIn: future, months: 3, bookingMode: "BED", reservedSpots: 1 },
+      "guestA",
+    );
+    await expect(
+      svc.create(
+        { roomId: "room1", checkIn: future, months: 3, bookingMode: "WHOLE_ROOM" },
+        "guestB",
+      ),
+    ).rejects.toMatchObject({ response: { code: "DATES_UNAVAILABLE" } });
+  });
+
+  it("친구 초대가 있는 다인실 예약은 두 자리 이상이어야 한다", async () => {
+    const repo = new FakeRepo();
+    repo.rooms.set("room1", makeRoom({ rentalUnit: "BED", capacity: 3 }));
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+    await expect(
+      svc.create(
+        {
+          roomId: "room1",
+          checkIn: future,
+          months: 3,
+          bookingMode: "BED",
+          reservedSpots: 1,
+          companionId: "mate1",
+        },
+        "guestA",
+      ),
+    ).rejects.toMatchObject({ response: { code: "COMPANION_REQUIRES_TWO_SPOTS" } });
+  });
+
 });

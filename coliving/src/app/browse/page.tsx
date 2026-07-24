@@ -3,11 +3,17 @@
 import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import type { House } from "@/lib/types";
+import type { BuildingType, House, RentalUnit, SharedFacility } from "@/lib/types";
 import { won } from "@/lib/format";
 import { jobHubs, commuteBand } from "@/lib/commute";
 import { Thumbnail } from "@/components/Thumbnail";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
+import {
+  BUILDING_TYPE_LABELS,
+  getAccommodationLabel,
+  getPriceUnitLabel,
+  RENTAL_UNIT_LABELS,
+  SHARED_FACILITY_LABELS,
+} from "@/lib/types";
 import { regionLabel } from "@/lib/seoul";
 
 // Leaflet touches window, so load the map only on the client.
@@ -20,12 +26,23 @@ const BrowseMap = dynamic(() => import("@/components/BrowseMap"), {
 
 const vibes = ["any", "quiet", "social", "creative", "calm", "wellness", "international"];
 const VIBE_LABELS: Record<string, string> = { any: "전체", quiet: "조용한 생활", social: "교류가 활발한 곳", creative: "창작자 중심", calm: "차분한 환경", wellness: "건강한 생활", international: "국제적인 환경" };
-const roomTypes = ["any", "one_room", "share_room", "whole_house", "apartment"];
+const rentalUnits: Array<"any" | RentalUnit> = ["any", "whole", "private_room", "bed"];
+const buildingTypes: Array<"any" | BuildingType> = ["any", "studio", "apartment", "house"];
+const sharedFacilities: Array<"any" | SharedFacility> = [
+  "any",
+  "bathroom",
+  "kitchen",
+  "living_room",
+  "laundry_room",
+  "entrance",
+];
 
 export default function Browse() {
   const [hub, setHub] = useState<string>("gangnam");
   const [q, setQ] = useState("");
-  const [roomType, setRoomType] = useState("any");
+  const [rentalUnit, setRentalUnit] = useState<"any" | RentalUnit>("any");
+  const [buildingType, setBuildingType] = useState<"any" | BuildingType>("any");
+  const [sharedFacility, setSharedFacility] = useState<"any" | SharedFacility>("any");
   const [vibe, setVibe] = useState("any");
   const [maxRent, setMaxRent] = useState(1000000);
   const [maxCommute, setMaxCommute] = useState(60);
@@ -38,7 +55,9 @@ export default function Browse() {
     setLoading(true);
     const params = new URLSearchParams({
       q,
-      roomType,
+      rentalUnit,
+      buildingType,
+      sharedFacility,
       vibe,
       maxRent: String(maxRent),
       maxCommute: String(maxCommute),
@@ -49,7 +68,7 @@ export default function Browse() {
     const data = await res.json();
     setResults(data.houses);
     setLoading(false);
-  }, [q, roomType, vibe, maxRent, maxCommute, hub, sort]);
+  }, [q, rentalUnit, buildingType, sharedFacility, vibe, maxRent, maxCommute, hub, sort]);
 
   useEffect(() => {
     const t = setTimeout(load, 180);
@@ -121,11 +140,40 @@ export default function Browse() {
           />
         </div>
         <div className="field">
-          <label>주거 형태</label>
-          <select value={roomType} onChange={(e) => setRoomType(e.target.value)}>
-            {roomTypes.map((r) => (
-              <option key={r} value={r}>
-                {r === "any" ? "전체 유형" : ROOM_TYPE_LABELS[r as keyof typeof ROOM_TYPE_LABELS]}
+          <label>예약 공간</label>
+          <select
+            value={rentalUnit}
+            onChange={(e) => setRentalUnit(e.target.value as "any" | RentalUnit)}
+          >
+            {rentalUnits.map((value) => (
+              <option key={value} value={value}>
+                {value === "any" ? "전체" : RENTAL_UNIT_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>건물 유형</label>
+          <select
+            value={buildingType}
+            onChange={(e) => setBuildingType(e.target.value as "any" | BuildingType)}
+          >
+            {buildingTypes.map((value) => (
+              <option key={value} value={value}>
+                {value === "any" ? "전체" : BUILDING_TYPE_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>공유 시설</label>
+          <select
+            value={sharedFacility}
+            onChange={(e) => setSharedFacility(e.target.value as "any" | SharedFacility)}
+          >
+            {sharedFacilities.map((value) => (
+              <option key={value} value={value}>
+                {value === "any" ? "전체" : SHARED_FACILITY_LABELS[value]}
               </option>
             ))}
           </select>
@@ -226,7 +274,7 @@ export default function Browse() {
                       <span style={{ fontSize: 13 }}>★ {h.rating}</span>
                     </div>
                     <div style={{ color: "var(--text-2)", fontSize: 13, marginTop: 2 }}>
-                      {regionLabel(h.neighborhood)}
+                      {getAccommodationLabel(h)} · {regionLabel(h.neighborhood)}
                       {h.commute && (
                         <span style={{ color: band?.color, fontWeight: 600 }}>
                           {" · "}{band?.label.toLowerCase()}
@@ -242,7 +290,7 @@ export default function Browse() {
                     </div>
                     <div style={{ marginTop: 12, fontSize: 14 }}>
                       <strong>{won(h.monthlyRent)}</strong>
-                      <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월</span>
+                      <span style={{ color: "var(--text-2)", fontSize: 13 }}> / {getPriceUnitLabel(h.rentalUnit)}</span>
                     </div>
                   </div>
                 </Link>

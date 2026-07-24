@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { won } from "@/lib/format";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
+import { getAccommodationLabel, getPriceUnitLabel } from "@/lib/types";
 import type { House } from "@/lib/types";
 import { wishlist as demoWishlist } from "@/lib/me";
 import { listFavorites, removeFavorite } from "@/lib/api/favorites";
@@ -77,7 +77,7 @@ export default function Wishlist() {
               <Thumbnail src={h.photo} color={h.color} height={160}>
                 <div style={{ padding: 12, height: "100%", display: "flex", alignItems: "flex-start" }}>
                   <span className="chip glass" style={{ border: "none", color: "var(--text)", fontWeight: 600 }}>
-                    {ROOM_TYPE_LABELS[h.roomType]}
+                    {getAccommodationLabel(h)}
                   </span>
                 </div>
               </Thumbnail>
@@ -88,7 +88,7 @@ export default function Wishlist() {
                 </div>
                 <div style={{ marginTop: 10, fontSize: 15 }}>
                   <strong>{won(h.monthlyRent)}</strong>
-                  <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월</span>
+                  <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월 · {getPriceUnitLabel(h.rentalUnit)}</span>
                 </div>
               </div>
             </Link>

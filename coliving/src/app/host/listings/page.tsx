@@ -3,7 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { won } from "@/lib/format";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
+import {
+  BUILDING_TYPE_LABELS,
+  RENTAL_UNIT_LABELS,
+  SHARED_FACILITY_LABELS,
+  getAccommodationLabel,
+  type BuildingType,
+  type RentalUnit,
+  type SharedFacility,
+} from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
 import { listMyRooms, updateRoom, deleteRoom, type HostListing } from "@/lib/api/rooms";
 import { uploadImage } from "@/lib/api/storage";
@@ -18,7 +26,23 @@ export default function HostListings() {
   // 인라인 편집 — 사진·주소처럼 등록 흐름 전체가 필요한 항목은 제외하고,
   // 자주 손보는 금액·조건만 이 화면에서 바로 고친다.
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ monthlyRent: 0, deposit: 0, minStayMonths: 1 });
+  const [draft, setDraft] = useState<{
+    monthlyRent: number;
+    deposit: number;
+    minStayMonths: number;
+    capacity: number;
+    rentalUnit: RentalUnit | "";
+    buildingType: BuildingType | "";
+    sharedFacilities: SharedFacility[];
+  }>({
+    monthlyRent: 0,
+    deposit: 0,
+    minStayMonths: 1,
+    capacity: 1,
+    rentalUnit: "",
+    buildingType: "",
+    sharedFacilities: [],
+  });
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoUrl, setPhotoUrl] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -48,6 +72,10 @@ export default function HostListings() {
       monthlyRent: h.monthlyRent,
       deposit: h.deposit,
       minStayMonths: h.minStayMonths ?? 1,
+      capacity: h.capacity ?? 1,
+      rentalUnit: h.rentalUnit ?? "",
+      buildingType: h.buildingType ?? "",
+      sharedFacilities: h.sharedFacilities ?? [],
     });
     // gallery is already in display order (index 0 = 대표 사진).
     setPhotos(h.gallery ?? []);
@@ -89,14 +117,40 @@ export default function HostListings() {
     }
   }
 
+  function toggleSharedFacility(facility: SharedFacility) {
+    setDraft((current) => ({
+      ...current,
+      sharedFacilities: current.sharedFacilities.includes(facility)
+        ? current.sharedFacilities.filter((item) => item !== facility)
+        : [...current.sharedFacilities, facility],
+    }));
+  }
+
   async function saveEdit(id: string) {
     if (saving) return;
+    if (!draft.rentalUnit || !draft.buildingType) {
+      setError("예약 공간과 건물 유형을 선택해주세요.");
+      return;
+    }
+    if (!Number.isInteger(draft.capacity) || draft.capacity < 1 || draft.capacity > 20) {
+      setError("최대 수용 인원은 1명부터 20명까지 입력해주세요.");
+      return;
+    }
+    if (draft.rentalUnit !== "whole" && draft.sharedFacilities.length === 0) {
+      setError("개인실과 다인실은 공유 시설을 하나 이상 선택해주세요.");
+      return;
+    }
     setSaving(true);
     try {
       await updateRoom(id, {
         monthlyRent: Number(draft.monthlyRent),
         deposit: Number(draft.deposit),
         minStayMonths: Number(draft.minStayMonths),
+        capacity: Number(draft.capacity),
+        rentalUnit: draft.rentalUnit,
+        buildingType: draft.buildingType,
+        sharedFacilities: draft.rentalUnit === "whole" ? [] : draft.sharedFacilities,
+        classificationReviewRequired: false,
         images: photos,
       });
       setEditingId(null);
@@ -157,7 +211,12 @@ export default function HostListings() {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <strong style={{ fontSize: 16 }}>{h.name.trim()}</strong>
-                    <span className="chip" style={{ fontSize: 11 }}>{ROOM_TYPE_LABELS[h.roomType]}</span>
+                    <span className="chip" style={{ fontSize: 11 }}>{getAccommodationLabel(h)}</span>
+                    {h.classificationReviewRequired && (
+                      <span className="chip" style={{ fontSize: 11, color: "var(--warning)" }}>
+                        분류 확인 필요
+                      </span>
+                    )}
                     {h.published ? (
                       <span
                         className="chip"
@@ -259,6 +318,70 @@ export default function HostListings() {
                           )}
                         </div>
                       </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                          예약 공간
+                          <select
+                            value={draft.rentalUnit}
+                            onChange={(event) => {
+                              const rentalUnit = event.target.value as RentalUnit | "";
+                              setDraft((current) => ({
+                                ...current,
+                                rentalUnit,
+                                sharedFacilities: rentalUnit === "whole" ? [] : current.sharedFacilities,
+                              }));
+                            }}
+                            style={{ width: "100%", marginTop: 3 }}
+                          >
+                            <option value="">선택해주세요</option>
+                            {(Object.keys(RENTAL_UNIT_LABELS) as RentalUnit[]).map((unit) => (
+                              <option key={unit} value={unit}>{RENTAL_UNIT_LABELS[unit]}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                          건물 유형
+                          <select
+                            value={draft.buildingType}
+                            onChange={(event) => setDraft((current) => ({ ...current, buildingType: event.target.value as BuildingType | "" }))}
+                            style={{ width: "100%", marginTop: 3 }}
+                          >
+                            <option value="">선택해주세요</option>
+                            {(Object.keys(BUILDING_TYPE_LABELS) as BuildingType[]).map((type) => (
+                              <option key={type} value={type}>{BUILDING_TYPE_LABELS[type]}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      {draft.rentalUnit && draft.rentalUnit !== "whole" && (
+                        <div>
+                          <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>공유 시설</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {(Object.keys(SHARED_FACILITY_LABELS) as SharedFacility[]).map((facility) => (
+                              <button
+                                key={facility}
+                                type="button"
+                                className="chip"
+                                data-active={draft.sharedFacilities.includes(facility)}
+                                onClick={() => toggleSharedFacility(facility)}
+                              >
+                                {SHARED_FACILITY_LABELS[facility]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                        최대 수용 인원
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={draft.capacity}
+                          onChange={(event) => setDraft({ ...draft, capacity: Number(event.target.value) })}
+                          style={{ width: "100%", marginTop: 3 }}
+                        />
+                      </label>
                       <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
                         월세 (원)
                         <input

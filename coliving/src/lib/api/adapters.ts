@@ -13,6 +13,9 @@
 import type {
   House,
   RoomType,
+  RentalUnit,
+  BuildingType,
+  SharedFacility,
   GenderPolicy,
   SearchParams,
   PaginatedRooms,
@@ -33,6 +36,42 @@ const ROOM_TYPE_FROM_API: Record<string, RoomType> = {
   WHOLE_HOUSE: "whole_house",
   APARTMENT: "apartment",
 };
+
+const RENTAL_UNIT_TO_API: Record<RentalUnit, string> = {
+  whole: "WHOLE",
+  private_room: "PRIVATE_ROOM",
+  bed: "BED",
+};
+const RENTAL_UNIT_FROM_API: Record<string, RentalUnit> = {
+  WHOLE: "whole",
+  PRIVATE_ROOM: "private_room",
+  BED: "bed",
+};
+const BUILDING_TYPE_TO_API: Record<BuildingType, string> = {
+  studio: "STUDIO",
+  apartment: "APARTMENT",
+  house: "HOUSE",
+};
+const BUILDING_TYPE_FROM_API: Record<string, BuildingType> = {
+  STUDIO: "studio",
+  APARTMENT: "apartment",
+  HOUSE: "house",
+};
+const SHARED_FACILITY_TO_API: Record<SharedFacility, string> = {
+  bathroom: "BATHROOM",
+  kitchen: "KITCHEN",
+  living_room: "LIVING_ROOM",
+  laundry_room: "LAUNDRY_ROOM",
+  entrance: "ENTRANCE",
+};
+const SHARED_FACILITY_FROM_API: Record<string, SharedFacility> = {
+  BATHROOM: "bathroom",
+  KITCHEN: "kitchen",
+  LIVING_ROOM: "living_room",
+  LAUNDRY_ROOM: "laundry_room",
+  ENTRANCE: "entrance",
+};
+
 const GENDER_TO_API: Record<GenderPolicy, string> = {
   any: "ANY",
   male_only: "MALE_ONLY",
@@ -56,9 +95,11 @@ export function filtersToApiQuery(f: SearchParams): URLSearchParams {
   if (f.legalDongCode) p.set("legalDongCode", f.legalDongCode);
   if (f.verified) p.set("verifiedByHost", "true");
   if (f.roomTypes?.length) p.set("roomTypes", f.roomTypes.map(toApiRoomType).join(","));
-  // 슬라이더를 건드리지 않았으면 minRent/maxRent 가 경계값(RENT_MIN/RENT_MAX)
-  // 그대로 들어온다. 그걸 그대로 보내면 범위 밖 매물이 조용히 빠지므로
-  // (URL 파라미터를 만드는 filtersToParams 와 동일하게) 경계값은 생략한다.
+  if (f.rentalUnits?.length) p.set("rentalUnits", f.rentalUnits.map((v) => RENTAL_UNIT_TO_API[v]).join(","));
+  if (f.buildingTypes?.length) p.set("buildingTypes", f.buildingTypes.map((v) => BUILDING_TYPE_TO_API[v]).join(","));
+  if (f.sharedFacilities?.length) p.set("sharedFacilities", f.sharedFacilities.map((v) => SHARED_FACILITY_TO_API[v]).join(","));
+  // 슬라이더를 건드리지 않았으면 minRent/maxRent가 경계값 그대로 들어옵니다.
+  // 기본 경계값은 API에 보내지 않아 범위 밖 숙소가 누락되지 않게 합니다.
   if (f.minRent != null && f.minRent > RENT_MIN) p.set("minRent", String(f.minRent));
   if (f.maxRent != null && f.maxRent < RENT_MAX) p.set("maxRent", String(f.maxRent));
   if (f.availableFrom) p.set("availableFrom", f.availableFrom);
@@ -102,6 +143,10 @@ export interface ApiRoom {
   lat: number;
   lng: number;
   roomType: string;
+  rentalUnit?: string | null;
+  buildingType?: string | null;
+  sharedFacilities?: string[];
+  classificationReviewRequired?: boolean;
   genderPolicy?: string;
   monthlyRent: number;
   deposit: number;
@@ -159,6 +204,12 @@ export function apiRoomToHouse(r: ApiRoom): House {
     cleaningFee: r.cleaningFee,
     maintenanceFee: r.maintenanceFee,
     roomType: fromApiRoomType(r.roomType),
+    rentalUnit: r.rentalUnit ? RENTAL_UNIT_FROM_API[r.rentalUnit] ?? null : null,
+    buildingType: r.buildingType ? BUILDING_TYPE_FROM_API[r.buildingType] ?? null : null,
+    sharedFacilities: (r.sharedFacilities ?? [])
+      .map((facility) => SHARED_FACILITY_FROM_API[facility])
+      .filter((facility): facility is SharedFacility => Boolean(facility)),
+    classificationReviewRequired: r.classificationReviewRequired ?? false,
     // 서버가 내려주는 침실 개수. 미입력이면 null.
     bedrooms: (r as { bedrooms?: number | null }).bedrooms ?? null,
     // 서버가 계산한 현재 거주 인원 (진행 중 예약 + 수락한 동반자).

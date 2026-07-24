@@ -40,21 +40,21 @@ export function Nav() {
     },
     {
       icon: "▣",
-      label: t.oneRoom,
-      description: t.oneRoomDescription,
-      href: "/search?roomTypes=one_room",
+      label: t.rentalWhole,
+      description: t.rentalWholeDescription,
+      href: "/search?rentalUnits=whole",
     },
     {
       icon: "♟",
-      label: t.shareRoom,
-      description: t.shareRoomDescription,
-      href: "/search?roomTypes=share_room",
+      label: t.rentalPrivateRoom,
+      description: t.rentalPrivateRoomDescription,
+      href: "/search?rentalUnits=private_room",
     },
     {
       icon: "◇",
-      label: t.wholeHouse,
-      description: t.wholeHouseDescription,
-      href: "/search?roomTypes=whole_house",
+      label: t.rentalBed,
+      description: t.rentalBedDescription,
+      href: "/search?rentalUnits=bed",
     },
   ];
 

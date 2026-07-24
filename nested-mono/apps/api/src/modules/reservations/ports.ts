@@ -1,6 +1,9 @@
 // ── Ports ── abstract dependencies so services are testable with fakes.
 // In production these are backed by Prisma and the Toss/PortOne SDKs.
 
+export type RentalUnit = "WHOLE" | "PRIVATE_ROOM" | "BED";
+export type BookingMode = "UNIT" | "BED" | "WHOLE_ROOM";
+
 export type ReservationStatus =
   | "PENDING_PAYMENT"
   | "CONFIRMED"
@@ -22,6 +25,8 @@ export interface RoomRecord {
   maintenanceFee: number;
   minStayMonths: number;
   availableFrom: Date;
+  rentalUnit: RentalUnit | null;
+  capacity: number | null;
 }
 
 export type CompanionStatus = "PENDING" | "ACCEPTED" | "DECLINED";
@@ -38,6 +43,8 @@ export interface ReservationRecord {
   checkOut: Date;
   months: number;
   status: ReservationStatus;
+  bookingMode: BookingMode;
+  reservedSpots: number;
   monthlyRent: number;
   deposit: number;
   cleaningFee: number;
