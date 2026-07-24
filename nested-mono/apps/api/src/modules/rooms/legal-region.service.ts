@@ -22,16 +22,53 @@ export class LegalRegionService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  // "서울특별시" ↔ "서울", "경기도" ↔ "경기" 같은 축약/정식 표기를 함께 반환합니다.
+  private cityAliases(city: string): string[] {
+    const trimmed = city.trim();
+    if (!trimmed) return [];
+
+    const aliases = new Set<string>([trimmed]);
+    const suffixes = ["특별자치시", "특별자치도", "특별시", "광역시", "도"];
+
+    for (const suffix of suffixes) {
+      if (trimmed.endsWith(suffix) && trimmed.length > suffix.length) {
+        aliases.add(trimmed.slice(0, -suffix.length));
+      }
+    }
+
+    // 짧은 이름으로 들어온 경우 정식 명칭도 후보에 넣습니다.
+    const expansions: Record<string, string[]> = {
+      서울: ["서울특별시"],
+      부산: ["부산광역시"],
+      대구: ["대구광역시"],
+      인천: ["인천광역시"],
+      광주: ["광주광역시"],
+      대전: ["대전광역시"],
+      울산: ["울산광역시"],
+      세종: ["세종특별자치시"],
+      경기: ["경기도"],
+      강원: ["강원도", "강원특별자치도"],
+      제주: ["제주도", "제주특별자치도"],
+    };
+    for (const value of expansions[trimmed] ?? []) aliases.add(value);
+
+    return [...aliases];
+  }
+
   // VWorld가 응답하지 않을 때 쓰는 폴백. 실제 매물이 등록된 동만 돌려주므로
   // 검색 필터에서 결과가 0건인 동을 고르는 일이 없습니다.
   private async neighborhoodsFromRooms(
     city: string,
     district: string,
   ): Promise<LegalRegionOption[]> {
+    // 등록 데이터는 "서울", VWorld/프론트는 "서울특별시"처럼 표기가 다릅니다.
+    // 두 표기를 모두 후보로 넣어 어느 쪽으로 저장돼 있든 걸리게 합니다.
+    const cityAliases = this.cityAliases(city);
+
     const rows = await this.prisma.room.findMany({
       where: {
         published: true,
-        ...(city ? { city } : {}),
+        ...(cityAliases.length ? { city: { in: cityAliases } } : {}),
         ...(district ? { district } : {}),
         neighborhood: { not: null },
       },
