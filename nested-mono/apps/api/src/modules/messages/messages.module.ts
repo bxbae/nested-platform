@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Injectable,
@@ -33,6 +34,11 @@ export class MessagesService {
     const rows = await this.prisma.chatRoom.findMany({
       where: {
         OR: [{ guestId: userId }, { hostId: userId }],
+        NOT: {
+          hiddenBy: {
+            has: userId,
+          },
+        },
       },
       include: {
         room: {
@@ -62,19 +68,44 @@ export class MessagesService {
           },
           take: 1,
         },
+        _count: {
+          select: {
+            messages: {
+              where: {
+                senderId: {
+                  not: userId,
+                },
+                NOT: {
+                  readBy: {
+                    has: userId,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: {
         createdAt: "desc",
       },
     });
 
-    return rows.sort((a, b) => {
-      const aTime = new Date(a.messages[0]?.createdAt ?? a.createdAt).getTime();
+    return rows
+      .sort((a, b) => {
+        const aTime = new Date(
+          a.messages[0]?.createdAt ?? a.createdAt,
+        ).getTime();
 
-      const bTime = new Date(b.messages[0]?.createdAt ?? b.createdAt).getTime();
+        const bTime = new Date(
+          b.messages[0]?.createdAt ?? b.createdAt,
+        ).getTime();
 
-      return bTime - aTime;
-    });
+        return bTime - aTime;
+      })
+      .map(({ _count, ...row }) => ({
+        ...row,
+        unreadCount: _count.messages,
+      }));
   }
 
   async listMessages(chatRoomId: string, userId: string) {
@@ -104,10 +135,21 @@ export class MessagesService {
   }
 
   async openRoom(guestId: string, roomId: string, hostId: string) {
-    return this.prisma.chatRoom.upsert({
+    const chatRoom = await this.prisma.chatRoom.upsert({
       where: { roomId_guestId: { roomId, guestId } },
       update: {},
       create: { roomId, guestId, hostId },
+    });
+
+    if (!chatRoom.hiddenBy.includes(guestId)) {
+      return chatRoom;
+    }
+
+    return this.prisma.chatRoom.update({
+      where: { id: chatRoom.id },
+      data: {
+        hiddenBy: chatRoom.hiddenBy.filter((userId) => userId !== guestId),
+      },
     });
   }
 
@@ -150,10 +192,21 @@ export class MessagesService {
       });
     }
 
-    return this.prisma.chatRoom.upsert({
+    const chatRoom = await this.prisma.chatRoom.upsert({
       where: { roomId_guestId: { roomId, guestId } },
       update: {},
       create: { roomId, guestId, hostId },
+    });
+
+    if (!chatRoom.hiddenBy.includes(hostId)) {
+      return chatRoom;
+    }
+
+    return this.prisma.chatRoom.update({
+      where: { id: chatRoom.id },
+      data: {
+        hiddenBy: chatRoom.hiddenBy.filter((userId) => userId !== hostId),
+      },
     });
   }
 
@@ -161,6 +214,11 @@ export class MessagesService {
     const rows = await this.prisma.directConversation.findMany({
       where: {
         OR: [{ participantAId: userId }, { participantBId: userId }],
+        NOT: {
+          hiddenBy: {
+            has: userId,
+          },
+        },
       },
       include: {
         participantA: {
@@ -179,18 +237,42 @@ export class MessagesService {
             avatarUrl: true,
           },
         },
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+        messages: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
+        _count: {
+          select: {
+            messages: {
+              where: {
+                senderId: {
+                  not: userId,
+                },
+                NOT: {
+                  readBy: {
+                    has: userId,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: {
+        updatedAt: "desc",
+      },
     });
 
-    return rows.map((row) => ({
+    return rows.map(({ _count, ...row }) => ({
       id: row.id,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       other:
         row.participantAId === userId ? row.participantB : row.participantA,
       messages: row.messages,
+      unreadCount: _count.messages,
     }));
   }
 
@@ -210,12 +292,25 @@ export class MessagesService {
 
     const [participantAId, participantBId] = orderedPair(userId, targetUserId);
 
-    return this.prisma.directConversation.upsert({
+    const conversation = await this.prisma.directConversation.upsert({
       where: {
         participantAId_participantBId: { participantAId, participantBId },
       },
       update: {},
       create: { participantAId, participantBId },
+    });
+
+    if (!conversation.hiddenBy.includes(userId)) {
+      return conversation;
+    }
+
+    return this.prisma.directConversation.update({
+      where: { id: conversation.id },
+      data: {
+        hiddenBy: conversation.hiddenBy.filter(
+          (hiddenUserId) => hiddenUserId !== userId,
+        ),
+      },
     });
   }
 
@@ -259,6 +354,7 @@ export class MessagesService {
         },
         data: {
           updatedAt: new Date(),
+          hiddenBy: [],
         },
       });
 
@@ -295,6 +391,94 @@ export class MessagesService {
     this.messageEvents.emitChanged(userId);
 
     return { updated: unread.length };
+  }
+
+  async hideRoom(chatRoomId: string, userId: string) {
+    const chatRoom = await this.assertRoomMember(chatRoomId, userId);
+
+    const unread = await this.prisma.message.findMany({
+      where: {
+        chatRoomId,
+        senderId: { not: userId },
+        NOT: { readBy: { has: userId } },
+      },
+      select: {
+        id: true,
+        readBy: true,
+      },
+    });
+
+    await this.prisma.$transaction([
+      ...unread.map((message) =>
+        this.prisma.message.update({
+          where: { id: message.id },
+          data: {
+            readBy: message.readBy.includes(userId)
+              ? message.readBy
+              : [...message.readBy, userId],
+          },
+        }),
+      ),
+      this.prisma.chatRoom.update({
+        where: { id: chatRoomId },
+        data: {
+          hiddenBy: chatRoom.hiddenBy.includes(userId)
+            ? chatRoom.hiddenBy
+            : [...chatRoom.hiddenBy, userId],
+        },
+      }),
+    ]);
+
+    this.messageEvents.emitChanged(userId);
+
+    return {
+      hidden: true,
+      readUpdated: unread.length,
+    };
+  }
+
+  async hideDirect(conversationId: string, userId: string) {
+    const conversation = await this.assertDirectMember(conversationId, userId);
+
+    const unread = await this.prisma.directMessage.findMany({
+      where: {
+        conversationId,
+        senderId: { not: userId },
+        NOT: { readBy: { has: userId } },
+      },
+      select: {
+        id: true,
+        readBy: true,
+      },
+    });
+
+    await this.prisma.$transaction([
+      ...unread.map((message) =>
+        this.prisma.directMessage.update({
+          where: { id: message.id },
+          data: {
+            readBy: message.readBy.includes(userId)
+              ? message.readBy
+              : [...message.readBy, userId],
+          },
+        }),
+      ),
+      this.prisma.directConversation.update({
+        where: { id: conversationId },
+        data: {
+          hiddenBy: conversation.hiddenBy.includes(userId)
+            ? conversation.hiddenBy
+            : [...conversation.hiddenBy, userId],
+        },
+      }),
+    ]);
+
+    this.messageEvents.emitChanged(userId);
+
+    return {
+      hidden: true,
+      readUpdated: unread.length,
+    };
   }
 
   async markAllRead(userId: string) {
@@ -381,6 +565,11 @@ export class MessagesService {
                 hostId: userId,
               },
             ],
+            NOT: {
+              hiddenBy: {
+                has: userId,
+              },
+            },
           },
         },
       }),
@@ -404,6 +593,11 @@ export class MessagesService {
                 participantBId: userId,
               },
             ],
+            NOT: {
+              hiddenBy: {
+                has: userId,
+              },
+            },
           },
         },
       }),
@@ -416,26 +610,37 @@ export class MessagesService {
     };
   }
 
-  private createRoomMessage(
+  private async createRoomMessage(
     chatRoomId: string,
     senderId: string,
     data: { body?: string; imageUrl?: string },
   ) {
-    return this.prisma.message.create({
-      data: {
-        chatRoomId,
-        senderId,
-        body: data.body,
-        imageUrl: data.imageUrl,
-        readBy: [senderId],
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const message = await tx.message.create({
+        data: {
+          chatRoomId,
+          senderId,
+          body: data.body,
+          imageUrl: data.imageUrl,
+          readBy: [senderId],
+        },
+      });
+
+      await tx.chatRoom.update({
+        where: { id: chatRoomId },
+        data: {
+          hiddenBy: [],
+        },
+      });
+
+      return message;
     });
   }
 
   private async assertRoomMember(chatRoomId: string, userId: string) {
     const room = await this.prisma.chatRoom.findUnique({
       where: { id: chatRoomId },
-      select: { guestId: true, hostId: true },
+      select: { guestId: true, hostId: true, hiddenBy: true },
     });
 
     if (!room) {
@@ -458,7 +663,7 @@ export class MessagesService {
   private async assertDirectMember(conversationId: string, userId: string) {
     const conversation = await this.prisma.directConversation.findUnique({
       where: { id: conversationId },
-      select: { participantAId: true, participantBId: true },
+      select: { participantAId: true, participantBId: true, hiddenBy: true },
     });
 
     if (!conversation) {
@@ -511,6 +716,11 @@ export class MessagesController {
     return this.messages.openRoomAsHost(req.user.id, dto.roomId, dto.guestId);
   }
 
+  @Delete("rooms/:chatRoomId")
+  hideRoom(@Req() req: any, @Param("chatRoomId") chatRoomId: string) {
+    return this.messages.hideRoom(chatRoomId, req.user.id);
+  }
+
   @Get("direct")
   directRooms(@Req() req: any) {
     return this.messages.listDirectConversations(req.user.id);
@@ -544,6 +754,11 @@ export class MessagesController {
   @Post("direct/:conversationId/read")
   readDirect(@Req() req: any, @Param("conversationId") conversationId: string) {
     return this.messages.markDirectRead(conversationId, req.user.id);
+  }
+
+  @Delete("direct/:conversationId")
+  hideDirect(@Req() req: any, @Param("conversationId") conversationId: string) {
+    return this.messages.hideDirect(conversationId, req.user.id);
   }
 
   @Get("unread-count")
