@@ -90,18 +90,18 @@ export class AdminService {
         verifiedAt: true,
         _count: { select: { reviews: true } },
         reservations: { where: { status: "COMPLETED" }, select: { id: true } },
-        // 입주자로서 받은 평가(TenantReview)들의 별점만 뽑아온다.
-        // 여기서는 목록만 가져오고, 평균 계산은 아래에서 JS로 처리한다
-        // (Prisma가 관계 필드의 평균을 select 안에서 바로 못 구해줌).
+        // 신규 — 입주자로서 받은 평가(TenantReview)의 별점 목록. 평균은
+        // 아래에서 JS로 계산한다 (Prisma가 관계의 평균을 select 안에서
+        // 바로 못 구해주기 때문).
         tenantReviewsReceived: { select: { rating: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
 
-    // 신고 건수는 관계(relation)로 못 가져오므로 별도 집계.
-    // targetType이 "USER"인 신고만 모아서, targetId(=회원 id)별로 개수를 센다.
-    // 회원 100명 전체를 한 번의 쿼리로 처리해서, N+1 문제를 피한다.
+    // 신규 — 신고 건수는 관계로 못 가져오므로 별도 집계.
+    // targetType이 "USER"인 신고만 모아서, targetId(=회원 id)별로 개수를
+    // 센다. 회원 전체를 한 번의 쿼리로 처리해 N+1을 피한다.
     const userIds = rows.map((u) => u.id);
     const reportGroups = await this.prisma.report.groupBy({
       by: ["targetId"],
@@ -117,7 +117,6 @@ export class AdminService {
       const reviewsWritten = _count.reviews;
       const tier = activityTier(completedStays, reviewsWritten);
 
-      // 받은 평가 별점 평균 계산 (소수점 첫째 자리까지)
       const reviewCount = tenantReviewsReceived.length;
       const avgRating =
         reviewCount > 0
@@ -133,9 +132,9 @@ export class AdminService {
         tierLabel: TIER_LABEL[tier],
         completedStays,
         reviewsWritten,
-        avgRating,                                    // 신규 — null이면 "받은 평가 없음"
-        reviewCount,                                   // 신규 — 몇 건 받았는지
-        reportCount: reportCountMap.get(u.id) ?? 0,     // 신규
+        avgRating,
+        reviewCount,
+        reportCount: reportCountMap.get(u.id) ?? 0,
       };
     });
   }
