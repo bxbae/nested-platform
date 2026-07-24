@@ -72,12 +72,9 @@ export class AdminService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  // members (검색 + 정지 토글)
   async members(q?: string) {
     const rows = await this.prisma.user.findMany({
       where: {
-        // Hide accounts that have deleted themselves — they're anonymised and
-        // shouldn't clutter the admin list.
         deletedAt: null,
         ...(q
           ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] }
@@ -91,18 +88,44 @@ export class AdminService {
         suspended: true,
         createdAt: true,
         verifiedAt: true,
-        // Counts that feed the activity tier.
         _count: { select: { reviews: true } },
         reservations: { where: { status: "COMPLETED" }, select: { id: true } },
+        // 입주자로서 받은 평가(TenantReview)들의 별점만 뽑아온다.
+        // 여기서는 목록만 가져오고, 평균 계산은 아래에서 JS로 처리한다
+        // (Prisma가 관계 필드의 평균을 select 안에서 바로 못 구해줌).
+        tenantReviewsReceived: { select: { rating: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
 
-    return rows.map(({ _count, reservations, ...u }) => {
+    // 신고 건수는 관계(relation)로 못 가져오므로 별도 집계.
+    // targetType이 "USER"인 신고만 모아서, targetId(=회원 id)별로 개수를 센다.
+    // 회원 100명 전체를 한 번의 쿼리로 처리해서, N+1 문제를 피한다.
+    const userIds = rows.map((u) => u.id);
+    const reportGroups = await this.prisma.report.groupBy({
+      by: ["targetId"],
+      where: { targetType: "USER", targetId: { in: userIds } },
+      _count: { targetId: true },
+    });
+    const reportCountMap = new Map(
+      reportGroups.map((g) => [g.targetId, g._count.targetId]),
+    );
+
+    return rows.map(({ _count, reservations, tenantReviewsReceived, ...u }) => {
       const completedStays = reservations.length;
       const reviewsWritten = _count.reviews;
       const tier = activityTier(completedStays, reviewsWritten);
+
+      // 받은 평가 별점 평균 계산 (소수점 첫째 자리까지)
+      const reviewCount = tenantReviewsReceived.length;
+      const avgRating =
+        reviewCount > 0
+          ? Math.round(
+              (tenantReviewsReceived.reduce((sum, r) => sum + r.rating, 0) / reviewCount) * 10,
+            ) / 10
+          : null;
+
       return {
         ...u,
         verified: u.verifiedAt != null,
@@ -110,6 +133,9 @@ export class AdminService {
         tierLabel: TIER_LABEL[tier],
         completedStays,
         reviewsWritten,
+        avgRating,                                    // 신규 — null이면 "받은 평가 없음"
+        reviewCount,                                   // 신규 — 몇 건 받았는지
+        reportCount: reportCountMap.get(u.id) ?? 0,     // 신규
       };
     });
   }
