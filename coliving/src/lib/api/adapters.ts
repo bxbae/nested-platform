@@ -169,6 +169,7 @@ export interface ApiRoom {
     body: string;
     createdAt?: string;
     author?: {
+      id?: string;
       name?: string;
       avatarColor?: string;
       avatarUrl?: string | null;
@@ -222,6 +223,7 @@ export function apiRoomToHouse(r: ApiRoom): House {
     reviews: r.reviewCount ?? (Array.isArray(r.reviewList) ? r.reviewList.length : r.reviews ?? 0),
     houseReviews: (r.reviewList ?? []).map((rv) => ({
       id: rv.id,
+      authorId: rv.author?.id,
       author: rv.author?.name ?? "게스트",
       rating: rv.rating,
       date: rv.createdAt
