@@ -431,6 +431,7 @@ export class RoomsService {
           include: {
             author: {
               select: {
+                id: true,
                 name: true,
                 avatarColor: true,
                 avatarUrl: true,

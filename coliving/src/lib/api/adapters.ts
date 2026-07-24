@@ -164,6 +164,7 @@ export interface ApiRoom {
   reviews?: number;
   reviewCount?: number;
   reviewList?: {
+    id: string;
     rating: number;
     body: string;
     createdAt?: string;
@@ -220,6 +221,7 @@ export function apiRoomToHouse(r: ApiRoom): House {
     rating: r.rating ?? 0,
     reviews: r.reviewCount ?? (Array.isArray(r.reviewList) ? r.reviewList.length : r.reviews ?? 0),
     houseReviews: (r.reviewList ?? []).map((rv) => ({
+      id: rv.id,
       author: rv.author?.name ?? "게스트",
       rating: rv.rating,
       date: rv.createdAt

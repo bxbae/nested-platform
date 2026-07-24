@@ -29,11 +29,17 @@ export class MessagesService {
     private readonly messageEvents: MessageEventsGateway,
   ) {}
 
-  listRooms(userId: string) {
-    return this.prisma.chatRoom.findMany({
-      where: { OR: [{ guestId: userId }, { hostId: userId }] },
+  async listRooms(userId: string) {
+    const rows = await this.prisma.chatRoom.findMany({
+      where: {
+        OR: [{ guestId: userId }, { hostId: userId }],
+      },
       include: {
-        room: { select: { name: true } },
+        room: {
+          select: {
+            name: true,
+          },
+        },
         guest: {
           select: {
             id: true,
@@ -50,9 +56,24 @@ export class MessagesService {
             avatarUrl: true,
           },
         },
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+        messages: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return rows.sort((a, b) => {
+      const aTime = new Date(a.messages[0]?.createdAt ?? a.createdAt).getTime();
+
+      const bTime = new Date(b.messages[0]?.createdAt ?? b.createdAt).getTime();
+
+      return bTime - aTime;
     });
   }
 
@@ -276,6 +297,69 @@ export class MessagesService {
     return { updated: unread.length };
   }
 
+  async markAllRead(userId: string) {
+    const [roomResult, directResult, notificationResult] =
+      await this.prisma.$transaction([
+        this.prisma.message.updateMany({
+          where: {
+            senderId: { not: userId },
+            NOT: {
+              readBy: {
+                has: userId,
+              },
+            },
+            chatRoom: {
+              OR: [{ guestId: userId }, { hostId: userId }],
+            },
+          },
+          data: {
+            readBy: {
+              push: userId,
+            },
+          },
+        }),
+
+        this.prisma.directMessage.updateMany({
+          where: {
+            senderId: { not: userId },
+            NOT: {
+              readBy: {
+                has: userId,
+              },
+            },
+            conversation: {
+              OR: [{ participantAId: userId }, { participantBId: userId }],
+            },
+          },
+          data: {
+            readBy: {
+              push: userId,
+            },
+          },
+        }),
+
+        this.prisma.notification.updateMany({
+          where: {
+            userId,
+            type: "MESSAGE",
+            read: false,
+          },
+          data: {
+            read: true,
+          },
+        }),
+      ]);
+
+    this.messageEvents.emitChanged(userId);
+
+    return {
+      roomUpdated: roomResult.count,
+      directUpdated: directResult.count,
+      notificationUpdated: notificationResult.count,
+      totalUpdated: roomResult.count + directResult.count,
+    };
+  }
+
   async unreadCount(userId: string) {
     const [roomUnread, directUnread] = await Promise.all([
       this.prisma.message.count({
@@ -465,6 +549,11 @@ export class MessagesController {
   @Get("unread-count")
   unreadCount(@Req() req: any) {
     return this.messages.unreadCount(req.user.id);
+  }
+
+  @Post("read-all")
+  readAll(@Req() req: any) {
+    return this.messages.markAllRead(req.user.id);
   }
 
   @Get(":chatRoomId")

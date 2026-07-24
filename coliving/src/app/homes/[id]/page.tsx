@@ -17,6 +17,7 @@ import { ContactHostButton } from "@/components/ContactHostButton";
 import { Gallery } from "@/components/Gallery";
 import { DetailActions } from "@/components/DetailActions";
 import { ReviewForm } from "@/components/ReviewForm";
+import { ReviewReportButton } from "@/components/ReviewReportButton";
 import { LocationMap } from "@/components/LocationMap";
 import { USE_REAL_API } from "@/lib/api/config";
 import { getRoom, getSimilarRooms } from "@/lib/api/rooms"; // 유사 숙소 추천(비슷한 숙소) API 함수 추가
@@ -321,7 +322,8 @@ export default async function HomeDetail({
             <ReviewForm roomId={house.id} />
             <div className="review-grid">
               {house.houseReviews.map((r, i) => (
-                <div key={i} className="card" style={{ padding: 18 }}>
+                <div key={r.id ?? i} className="card" style={{ padding: 18 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <UserAvatar
                       name={r.author}
@@ -336,6 +338,8 @@ export default async function HomeDetail({
                         {"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)} · {r.date}
                       </div>
                     </div>
+                  </div>
+                    {r.id && <ReviewReportButton reviewId={r.id} authorId={r.authorId} />}
                   </div>
                   <p style={{ fontSize: 14, color: "var(--text)", marginTop: 12, lineHeight: 1.6 }}>
                     {r.body}
