@@ -389,7 +389,7 @@ export default function MessagesPage() {
   const otherUserId = counterpart.id;
 
   return (
-    <div>
+    <div style={{ width: "100%", minWidth: 0 }}>
       <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>
         메시지
       </h1>
@@ -402,7 +402,7 @@ export default function MessagesPage() {
           아직 대화가 없어요.
         </div>
       ) : (
-        <div className="inquiry-split">
+        <div className="messages-split">
           <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
             {conversations.map((conversation) => {
               const meta = getConversationMeta(conversation, user?.id);
