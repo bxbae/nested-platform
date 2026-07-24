@@ -71,7 +71,7 @@ export function LanguageToggle() {
               padding: "0 8px",
               border: "none",
               borderRadius: 999,
-              background: active ? "var(--surface, #fff)" : "transparent",
+              background: active ? "var(--toggle-active-bg, var(--surface))" : "transparent",
               color: active ? "var(--text)" : "var(--text-2)",
               boxShadow: active ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
               fontSize: 11.5,

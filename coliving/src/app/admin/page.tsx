@@ -69,7 +69,7 @@ export default function AdminDashboard() {
       )}
 
       {/* GMV hero */}
-      <div style={{ background: "linear-gradient(135deg, var(--text), #3a3a42)", borderRadius: "var(--r-lg)", padding: 26, color: "#fff", marginBottom: 20 }}>
+      <div style={{ background: "linear-gradient(135deg, #2f2f3a, #4a4a56)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "var(--r-lg)", padding: 26, color: "#fff", marginBottom: 20 }}>
         <div style={{ fontSize: 13, opacity: 0.85 }}>누적 거래액 (GMV)</div>
         <div className="display" style={{ fontSize: 40, fontWeight: 700, marginTop: 4 }}>
           {loading || !stats ? "—" : won(stats.gmv)}

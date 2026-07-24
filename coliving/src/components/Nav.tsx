@@ -157,7 +157,7 @@ export function Nav() {
                   padding: "8px 13px",
                   borderRadius: 999,
                   color: active ? "var(--text)" : "var(--text-2)",
-                  background: active ? "#fff" : "transparent",
+                  background: active ? "var(--surface)" : "transparent",   // 다크모드에서 자동으로 어두운 회색(#202024)이 됨
                   border: active
                     ? "1px solid var(--border)"
                     : "1px solid transparent",
