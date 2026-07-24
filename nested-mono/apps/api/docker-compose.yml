@@ -1,8 +1,7 @@
-# Local dev infra for the Nested backend:
-# PostgreSQL + Redis + Ollama + Translation server
-#
-# docker compose up -d
+# Local dev infra for the Nested backend: PostgreSQL + Redis.
+#   docker compose up -d
 # Then: cp .env.example .env && npx prisma migrate dev && npm run start:dev
+version: "3.9"
 
 services:
   postgres:
@@ -18,9 +17,7 @@ services:
     volumes:
       - nested_pg:/var/lib/postgresql/data
     healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U nested
+      test: ["CMD-SHELL", "pg_isready -U nested"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -29,68 +26,17 @@ services:
     image: redis:7-alpine
     container_name: nested-redis
     restart: unless-stopped
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
     volumes:
       - nested_redis:/data
     healthcheck:
-      test:
-        - CMD
-        - redis-cli
-        - ping
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
 
-  ollama:
-    image: ollama/ollama
-    container_name: nested-ollama
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:11434:11434"
-    volumes:
-      - nested_ollama:/root/.ollama
-    healthcheck:
-      test:
-        - CMD
-        - ollama
-        - list
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-
-  translator:
-    build:
-      context: ../translator
-    container_name: nested-translator
-    restart: unless-stopped
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_URL: "http://ollama:11434"
-      OLLAMA_MODEL: "qwen3:4b-instruct"
-      OLLAMA_TIMEOUT_SECONDS: "90"
-    ports:
-      - "127.0.0.1:8000:8000"
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-
 volumes:
   nested_pg:
   nested_redis:
-  nested_ollama:
-    name: nested_ollama
