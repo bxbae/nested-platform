@@ -224,7 +224,7 @@ function MatchAnalysisSection({
         <h3 style={sectionTitleStyle}>왜 잘 맞나요?</h3>
         {detail.reasons.length > 0 ? <div style={{ display: "grid", gap: 11 }}>{detail.reasons.map((reason) => <div key={reason} style={reasonRowStyle}><span aria-hidden="true" style={checkIconStyle}>✓</span><span>{reason}</span></div>)}</div> : <p style={metaTextStyle}>일부 생활 성향에서 공통점이 있습니다.</p>}
       </div>
-      {detail.adjustmentPoints.length > 0 && <div style={warningBoxStyle}><h3 style={{ ...sectionTitleStyle, marginBottom: 9 }}>조율이 필요한 부분</h3><div style={{ display: "grid", gap: 8 }}>{detail.adjustmentPoints.map((point) => <div key={point} style={warningRowStyle}><span aria-hidden="true">⚠</span><span>{point}</span></div>)}</div></div>}
+      {detail.adjustmentPoints.length > 0 && <div style={warningBoxStyle}><h3 style={{ ...sectionTitleStyle, marginBottom: 9 ,color: "var(--primary)"}}>조율이 필요한 부분</h3><div style={{ display: "grid", gap: 8 }}>{detail.adjustmentPoints.map((point) => <div key={point} style={warningRowStyle}><span aria-hidden="true">⚠</span><span>{point}</span></div>)}</div></div>}
       <div style={actionRowStyle}>
         {isFriend ? <button type="button" style={secondaryButtonStyle} onClick={onViewProfile}>✓ 친구 · 프로필 보기</button> : <button type="button" style={secondaryButtonStyle} disabled={friendBusy} onClick={() => void onAddFriend()}>{friendBusy ? "추가 중…" : "+ 친구 추가"}</button>}
         <button type="button" style={primaryButtonStyle} onClick={() => void onMessage()}>메시지 보내기</button>
@@ -466,15 +466,15 @@ const checkIconStyle: CSSProperties = {
 const warningBoxStyle: CSSProperties = {
   padding: 17,
   borderRadius: 14,
-  border: "1px solid #efdba9",
-  background: "#fffaf0",
+  border: "1px solid rgba(255, 90, 95, 0.3)",
+  background: "rgba(255, 90, 95, 0.08)",
 };
 
 const warningRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   gap: 9,
-  color: "var(--text)",
+  color: "var(--primary)",
   fontSize: 13.5,
   lineHeight: 1.5,
 };
