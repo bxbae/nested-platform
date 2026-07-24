@@ -209,6 +209,13 @@ model Room {
   // 호스트가 실제 매물 및 임대 권한을 확인했는지 나타냅니다.
   verifiedByHost Boolean @default(false)
 
+  // 평점/리뷰 개수 캐시 — 검색 목록에서 매번 Review를 집계하지 않도록
+  // 리뷰가 생길 때마다 미리 계산해서 저장해둔다. 원본은 여전히 Review
+  // 테이블이고, 이 두 컬럼은 그걸 반영한 캐시일 뿐이다.
+  // reviews.module.ts의 create()가 갱신을 책임진다.
+  avgRating   Float @default(0)
+  reviewCount Int   @default(0)
+
   roomType RoomType
 
   // 함께 지낼 수 있는 최대 인원입니다.

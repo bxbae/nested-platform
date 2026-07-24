@@ -103,6 +103,9 @@ function withOccupancy<T extends { reservations?: OccupancyReservation[] }>(
     occupied: current.length > 0,
     availableAgainFrom,
     residents,
+    // 프론트 어댑터(apiRoomToHouse)는 `rating`을 찾는다 — DB 컬럼명은
+    // avgRating(내부 캐시임을 분명히 하려고)이라 여기서 한 번만 맞춰준다.
+    rating: (room as { avgRating?: number }).avgRating ?? 0,
   };
 }
 
@@ -340,19 +343,19 @@ export class RoomsService {
       },
     });
     if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
-    // Flatten a rating summary the frontend adapter expects.
-    const reviewCount = room.reviews.length;
-    const rating =
-      reviewCount > 0
-        ? Math.round(
-            (room.reviews.reduce(
-              (s: number, rv: { rating: number }) => s + rv.rating,
-              0,
-            ) /
-              reviewCount) *
-              10,
-          ) / 10
-        : 0;
+    // // Flatten a rating summary the frontend adapter expects.
+    // const reviewCount = room.reviews.length;
+    // const rating =
+    //   reviewCount > 0
+    //     ? Math.round(
+    //         (room.reviews.reduce(
+    //           (s: number, rv: { rating: number }) => s + rv.rating,
+    //           0,
+    //         ) /
+    //           reviewCount) *
+    //           10,
+    //       ) / 10
+    //     : 0;
     // `address` is the exact street address the host attested to. It must not
     // leave the server for a public listing view — guests only ever see the
     // approximate lat/lng (rendered as a privacy circle on the map).
@@ -366,10 +369,14 @@ export class RoomsService {
     } = room;
     // 현재 거주 인원 · 입주 가능 여부를 얹는다. 캐시가 60초라 예약 직후
     // 잠깐은 이전 값이 보일 수 있지만, 그 정도 지연은 감수할 만하다.
+    // rating/reviewCount는 여기서 다시 계산 안 한다 — withOccupancy()가
+    // Room.avgRating을 그대로 실어주고, reviewCount도 raw 컬럼이 이미
+    // publicRoom 안에 있다. 검색 목록과 상세 페이지가 같은 캐시 값을
+    // 보는 셈이라 둘이 서로 다른 숫자를 보여줄 일이 없다.
     const result = {
       ...withOccupancy(publicRoom),
-      rating,
-      reviewCount,
+      // rating,
+      // reviewCount,
       reviewList: room.reviews,
     };
     await this.redis.cacheSet(cacheKey, result, 60);
