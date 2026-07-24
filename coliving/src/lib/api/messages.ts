@@ -185,3 +185,11 @@ export async function getMessageUnreadCount(): Promise<MessageUnreadCount> {
     };
   }
 }
+
+export async function markAllMessagesRead(): Promise<void> {
+  if (!USE_REAL_API) {
+    return;
+  }
+
+  await api.post("/messages/read-all");
+}

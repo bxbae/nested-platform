@@ -1,8 +1,15 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
-import type { Socket } from "socket.io-client";
+import { io, type Socket } from "socket.io-client";
 import { useAuth } from "@/lib/api/useAuth";
 import {
   listChatRooms,
@@ -18,6 +25,8 @@ import {
 } from "@/lib/api/messages";
 import { uploadImage } from "@/lib/api/storage";
 import { createChatSocket } from "@/lib/api/socket";
+import { authStore } from "@/lib/api/auth-store";
+import { SOCKET_URL } from "@/lib/api/config";
 import { reportMessage } from "@/lib/api/reports";
 
 type Conversation =
@@ -33,6 +42,23 @@ type UnifiedMessage = {
   createdAt: string;
 };
 
+function getConversationActivityTime(conversation: Conversation): number {
+  const lastMessage = conversation.raw.messages?.[0];
+
+  const fallback =
+    conversation.kind === "direct"
+      ? conversation.raw.updatedAt
+      : conversation.raw.createdAt;
+
+  return new Date(lastMessage?.createdAt ?? fallback).getTime();
+}
+
+function sortConversations(items: Conversation[]): Conversation[] {
+  return [...items].sort(
+    (a, b) => getConversationActivityTime(b) - getConversationActivityTime(a),
+  );
+}
+
 export default function MessagesPage() {
   const { user } = useAuth();
   const [roomChats, setRoomChats] = useState<ApiChatRoom[]>([]);
@@ -46,8 +72,13 @@ export default function MessagesPage() {
   const [error, setError] = useState<string | null>(null);
   // 전송 전 미리보기: 파일을 고르면 바로 업로드하지 않고 여기 담아뒀다가
   // 사용자가 확인 후 "보내기"를 눌러야 실제로 업로드+전송한다.
-  const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null);
-  const pendingImageRef = useRef<{ file: File; previewUrl: string } | null>(null);
+  const [pendingImage, setPendingImage] = useState<{
+    file: File;
+    previewUrl: string;
+  } | null>(null);
+  const pendingImageRef = useRef<{ file: File; previewUrl: string } | null>(
+    null,
+  );
   // 신고 팝업 상태
   const [reportTargetId, setReportTargetId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState("");
@@ -66,21 +97,41 @@ export default function MessagesPage() {
   // 언마운트 시 남아있는 미리보기 objectURL을 정리한다.
   useEffect(() => {
     return () => {
-      if (pendingImageRef.current) URL.revokeObjectURL(pendingImageRef.current.previewUrl);
+      if (pendingImageRef.current)
+        URL.revokeObjectURL(pendingImageRef.current.previewUrl);
     };
   }, []);
 
   const conversations = useMemo<Conversation[]>(
-    () => [
-      ...directChats.map((raw) => ({
-        kind: "direct" as const,
-        id: raw.id,
-        raw,
-      })),
-      ...roomChats.map((raw) => ({ kind: "room" as const, id: raw.id, raw })),
-    ],
+    () =>
+      sortConversations([
+        ...directChats.map((raw) => ({
+          kind: "direct" as const,
+          id: raw.id,
+          raw,
+        })),
+        ...roomChats.map((raw) => ({
+          kind: "room" as const,
+          id: raw.id,
+          raw,
+        })),
+      ]),
     [directChats, roomChats],
   );
+
+  const refreshConversationLists = useCallback(async () => {
+    try {
+      const [rooms, directs] = await Promise.all([
+        listChatRooms(),
+        listDirectConversations(),
+      ]);
+
+      setRoomChats(rooms);
+      setDirectChats(directs);
+    } catch (cause) {
+      console.error("대화 목록 갱신 실패:", cause);
+    }
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -97,14 +148,18 @@ export default function MessagesPage() {
         const params = new URLSearchParams(window.location.search);
         const wantedRoom = params.get("room");
         const wantedDirect = params.get("direct");
-        const all: Conversation[] = [
+        const all = sortConversations([
           ...directs.map((raw) => ({
             kind: "direct" as const,
             id: raw.id,
             raw,
           })),
-          ...rooms.map((raw) => ({ kind: "room" as const, id: raw.id, raw })),
-        ];
+          ...rooms.map((raw) => ({
+            kind: "room" as const,
+            id: raw.id,
+            raw,
+          })),
+        ]);
 
         setActive(
           all.find((item) =>
@@ -124,6 +179,38 @@ export default function MessagesPage() {
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    const token = authStore.getAccessToken();
+
+    if (!token) return;
+
+    const messageSocket = io(`${SOCKET_URL}/messages`, {
+      auth: {
+        token,
+      },
+      transports: ["websocket"],
+    });
+
+    const handleMessagesChanged = () => {
+      void refreshConversationLists();
+    };
+
+    const handleWindowFocus = () => {
+      void refreshConversationLists();
+    };
+
+    messageSocket.on("messages:changed", handleMessagesChanged);
+
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      messageSocket.off("messages:changed", handleMessagesChanged);
+      messageSocket.disconnect();
+
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [refreshConversationLists]);
 
   const loadActiveThread = useCallback(async (conversation: Conversation) => {
     const result =
@@ -215,7 +302,6 @@ export default function MessagesPage() {
     pendingImageRef.current = pendingImage;
   }, [pendingImage]);
 
-
   useEffect(() => {
     if (!shouldStickToBottomRef.current) return;
     const frame = window.requestAnimationFrame(() => {
@@ -278,7 +364,9 @@ export default function MessagesPage() {
       setDraft("");
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "메시지를 보내지 못했습니다.");
+      setError(
+        cause instanceof Error ? cause.message : "메시지를 보내지 못했습니다.",
+      );
       return false;
     } finally {
       setSending(false);
@@ -372,7 +460,9 @@ export default function MessagesPage() {
       await reportMessage(reportTargetId, reportReason.trim());
       setReportDone(true);
     } catch (cause) {
-      setReportError(cause instanceof Error ? cause.message : "신고 접수에 실패했습니다.");
+      setReportError(
+        cause instanceof Error ? cause.message : "신고 접수에 실패했습니다.",
+      );
     } finally {
       setReportSubmitting(false);
     }
@@ -635,7 +725,9 @@ export default function MessagesPage() {
                             )}
                             <div
                               style={{
-                                background: mine ? "var(--primary)" : "var(--surface)",
+                                background: mine
+                                  ? "var(--primary)"
+                                  : "var(--surface)",
                                 color: mine ? "#fff" : "var(--text)",
                                 padding: message.imageUrl ? 4 : "10px 13px",
                                 borderRadius: mine
@@ -669,8 +761,23 @@ export default function MessagesPage() {
                           </div>
 
                           {!mine && (
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, marginBottom: 2 }}>
-                              <span style={{ color: "var(--text-2)", fontSize: 10.5 }}>{formatMessageTime(message.createdAt)}</span>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "flex-start",
+                                gap: 3,
+                                marginBottom: 2,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: "var(--text-2)",
+                                  fontSize: 10.5,
+                                }}
+                              >
+                                {formatMessageTime(message.createdAt)}
+                              </span>
                               <button
                                 type="button"
                                 aria-label="메시지 신고"
@@ -699,15 +806,36 @@ export default function MessagesPage() {
                 </div>
               </div>
 
-              <div style={{ flexShrink: 0, padding: "12px 14px", borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
+              <div
+                style={{
+                  flexShrink: 0,
+                  padding: "12px 14px",
+                  borderTop: "1px solid var(--border)",
+                  background: "var(--surface)",
+                }}
+              >
                 {pendingImage && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 10px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "0 0 10px",
+                    }}
+                  >
                     <div style={{ position: "relative", flexShrink: 0 }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={pendingImage.previewUrl}
                         alt="보낼 사진 미리보기"
-                        style={{ width: 72, height: 72, borderRadius: 12, objectFit: "cover", border: "1px solid var(--border)", display: "block" }}
+                        style={{
+                          width: 72,
+                          height: 72,
+                          borderRadius: 12,
+                          objectFit: "cover",
+                          border: "1px solid var(--border)",
+                          display: "block",
+                        }}
                       />
                       <button
                         type="button"
@@ -733,28 +861,61 @@ export default function MessagesPage() {
                       </button>
                     </div>
                     <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-                      {uploading ? "전송 중…" : "사진을 확인하고 보내기를 눌러주세요."}
+                      {uploading
+                        ? "전송 중…"
+                        : "사진을 확인하고 보내기를 눌러주세요."}
                     </span>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button type="button" className="press" aria-label="이미지 전송" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ width: 38, height: 38, borderRadius: 999, background: "var(--bg-2)" }}>
+                  <button
+                    type="button"
+                    className="press"
+                    aria-label="이미지 전송"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 999,
+                      background: "var(--bg-2)",
+                    }}
+                  >
                     🖼
                   </button>
-                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => onPickImage(event.target.files)} />
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(event) => onPickImage(event.target.files)}
+                  />
                   <input
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      if (
+                        event.key === "Enter" &&
+                        !event.nativeEvent.isComposing
+                      ) {
                         event.preventDefault();
                         void handleSend();
                       }
                     }}
-                    placeholder={pendingImage ? "사진과 함께 보낼 메시지 (선택)" : "메시지를 입력하세요"}
+                    placeholder={
+                      pendingImage
+                        ? "사진과 함께 보낼 메시지 (선택)"
+                        : "메시지를 입력하세요"
+                    }
                     style={{ flex: 1, minWidth: 0 }}
                   />
-                  <button className="btn btn-primary press" onClick={() => void handleSend()} disabled={(!draft.trim() && !pendingImage) || sending || uploading}>
+                  <button
+                    className="btn btn-primary press"
+                    onClick={() => void handleSend()}
+                    disabled={
+                      (!draft.trim() && !pendingImage) || sending || uploading
+                    }
+                  >
                     {sending || uploading ? "전송 중…" : "보내기"}
                   </button>
                 </div>
@@ -840,18 +1001,34 @@ function ReportMessageModal({
       >
         {done ? (
           <>
-            <strong style={{ display: "block", fontSize: 16, marginBottom: 8 }}>신고가 접수됐어요</strong>
-            <p style={{ fontSize: 13.5, color: "var(--text-2)", marginBottom: 20 }}>
+            <strong style={{ display: "block", fontSize: 16, marginBottom: 8 }}>
+              신고가 접수됐어요
+            </strong>
+            <p
+              style={{
+                fontSize: 13.5,
+                color: "var(--text-2)",
+                marginBottom: 20,
+              }}
+            >
               운영팀이 확인 후 처리할게요. 신고해주셔서 감사합니다.
             </p>
-            <button className="btn btn-primary press" onClick={onCancel} style={{ width: "100%" }}>
+            <button
+              className="btn btn-primary press"
+              onClick={onCancel}
+              style={{ width: "100%" }}
+            >
               확인
             </button>
           </>
         ) : (
           <>
-            <strong style={{ display: "block", fontSize: 16, marginBottom: 4 }}>메시지 신고</strong>
-            <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 14 }}>
+            <strong style={{ display: "block", fontSize: 16, marginBottom: 4 }}>
+              메시지 신고
+            </strong>
+            <p
+              style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 14 }}
+            >
               신고 사유를 알려주시면 운영팀이 확인 후 조치할게요.
             </p>
             <textarea
@@ -869,7 +1046,17 @@ function ReportMessageModal({
                 fontFamily: "inherit",
               }}
             />
-            {error && <p style={{ fontSize: 12.5, color: "var(--primary)", marginTop: 8 }}>{error}</p>}
+            {error && (
+              <p
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--primary)",
+                  marginTop: 8,
+                }}
+              >
+                {error}
+              </p>
+            )}
             <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
               <button
                 type="button"
