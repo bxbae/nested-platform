@@ -169,13 +169,22 @@ export default function AdminBanners() {
           <div className="field">
             <label htmlFor="banner-image">배너 이미지</label>
             <input id="banner-image" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={handleImageUpload} disabled={uploading} />
-            <span style={{ color: "var(--text-2)", fontSize: 12 }}>권장 비율은 가로형 16:7 이상이며 최대 10MB입니다.</span>
+            <span style={{ color: "var(--text-2)", fontSize: 12 }}>권장 해상도는 2400 x 1050px이며, 메인 화면에서 16:7 비율로 자동 잘림 처리됩니다. 메인 상단 배너를 2개 이상 노출하면 5초마다 자동 슬라이드됩니다.</span>
           </div>
 
           {uploading && <span style={{ color: "var(--secondary)", fontSize: 13 }}>이미지 업로드 중…</span>}
 
           {imageUrl && (
-            <div style={{ position: "relative", height: 190, overflow: "hidden", borderRadius: 16, background: "var(--bg-2)" }}>
+            <div
+              style={{
+                position: "relative",
+                width: "100%",
+                aspectRatio: "16 / 7",
+                overflow: "hidden",
+                borderRadius: 16,
+                background: "var(--bg-2)",
+              }}
+            >
               <img src={imageUrl} alt="등록할 배너 미리보기" style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }} />
               <button type="button" className="btn btn-ghost" onClick={() => setImageUrl("")} style={{ position: "absolute", top: 10, right: 10, padding: "7px 12px", background: "rgba(255,255,255,0.94)", color: "#222" }}>
                 이미지 제거
@@ -224,7 +233,7 @@ export default function AdminBanners() {
         <div style={{ display: "grid", gap: 14 }}>
           {list.map((banner) => (
             <div key={banner.id} className="card" style={{ overflow: "hidden", opacity: banner.active ? 1 : 0.62 }}>
-              <div style={{ height: 180, background: banner.imageUrl ? `url("${banner.imageUrl}") center / cover no-repeat` : `linear-gradient(135deg, ${banner.color}, ${banner.color}bb)`, display: "flex", alignItems: "flex-end", padding: 20 }}>
+              <div style={{ width: "100%", aspectRatio: "16 / 7", background: banner.imageUrl ? `url("${banner.imageUrl}") center / cover no-repeat` : `linear-gradient(135deg, ${banner.color}, ${banner.color}bb)`, display: "flex", alignItems: "flex-end", padding: 20 }}>
                 <strong style={{ color: "#fff", fontSize: 18, padding: "6px 10px", borderRadius: 8, background: "rgba(0,0,0,0.34)", textShadow: "0 1px 4px rgba(0,0,0,0.25)" }}>
                   {banner.title}
                 </strong>
