@@ -113,6 +113,7 @@ model User {
   wishlists             Wishlist[]
   favorites             Favorite[]
   reportsMade           Report[]                 @relation("Reporter")
+  reportsReceived       Report[]                 @relation("ReportedUser")
   chatRooms             ChatRoom[]               @relation("GuestChatRooms")
   hostChatRooms         ChatRoom[]               @relation("HostChatRooms")
   settlements           Settlement[]
@@ -454,6 +455,7 @@ enum NotificationType {
 
   PAYMENT
   REVIEW
+  REPORT
   SYSTEM
 
   // 기존 알림 데이터 호환용
@@ -518,16 +520,29 @@ enum ReportStatus {
 }
 
 model Report {
-  id         String           @id @default(cuid())
+  id String @id @default(cuid())
+
   reporterId String
-  reporter   User             @relation("Reporter", fields: [reporterId], references: [id])
+  reporter   User   @relation("Reporter", fields: [reporterId], references: [id])
+
+  reportedUserId String?
+  reportedUser   User?   @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: SetNull)
+
   targetType ReportTargetType
   targetId   String
   reason     String
   status     ReportStatus     @default(RECEIVED)
-  createdAt  DateTime         @default(now())
+
+  reporterNotifiedAt DateTime?
+  reportedNotifiedAt DateTime?
+  resolvedNotifiedAt DateTime?
+  resolvedAt         DateTime?
+
+  createdAt DateTime @default(now())
 
   @@index([status])
+  @@index([reporterId])
+  @@index([reportedUserId])
 }
 
 // ── Amenities (many-to-many with Room) ─────────────────────────────
