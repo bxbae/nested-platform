@@ -5,12 +5,16 @@ import {
 import { z } from "zod";
 import { toBadges } from "../../common/activity-tier";
 import { PrismaService } from "../../prisma/prisma.service";
+import { RedisService } from "../../redis/redis.module";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
 
 @Injectable()
 export class ReviewsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   // Reviews for a listing, with the author's trust badges so a reader can weigh
   // the review — a verified, frequent guest carries more signal than a new one.
@@ -45,8 +49,8 @@ export class ReviewsService {
   // reviewCount) 재계산을 같이 처리한다. 둘이 따로 놀면(리뷰는 생겼는데
   // 캐시가 안 갱신되는 등) 검색 카드가 실제 리뷰 수와 어긋나게 된다.
   async create(authorId: string, data: { roomId: string; rating: number; body: string }) {
-    return this.prisma.$transaction(async (tx) => {
-      const review = await tx.review.create({ data: { ...data, authorId } });
+    const review = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.review.create({ data: { ...data, authorId } });
 
       const agg = await tx.review.aggregate({
         where: { roomId: data.roomId },
@@ -61,8 +65,15 @@ export class ReviewsService {
         },
       });
 
-      return review;
+      return created;
     });
+
+    // rooms.service.ts findOne()의 60초 캐시를 즉시 무효화 — 안 그러면
+    // 방금 단 리뷰가 최대 1분 동안 상세 페이지에 안 보인다.
+    // (트랜잭션 밖에서: DB 커밋이 확정된 뒤에 캐시를 지워야, 캐시가
+    // 무효화된 순간과 새 값을 읽을 수 있는 순간 사이에 텀이 안 생긴다.)
+    await this.redis.cacheSet(`room:${data.roomId}`, null, 1);
+      return review;
   }
 
   // Reviews I wrote — the guest-side "내 리뷰" list. Includes the room so the
