@@ -134,6 +134,7 @@ export class CommunityService {
 
   async create(
     authorId: string,
+    authorRole: string,
     dto: {
       roomId: string;
       category: Category;
@@ -143,6 +144,14 @@ export class CommunityService {
       sharedLifestyleFields?: string[];
     },
   ) {
+    // "공지" is admin-only — enforced here, not just hidden in the compose
+    // UI, since the UI check alone doesn't stop a direct API call.
+    if (dto.category === "NOTICE" && authorRole !== "ADMIN") {
+      throw new ForbiddenException({
+        code: "NOTICE_ADMIN_ONLY",
+        message: "공지 카테고리는 관리자만 작성할 수 있습니다.",
+      });
+    }
     const safeFields = (dto.sharedLifestyleFields ?? []).filter((v) =>
       (LIFESTYLE_FIELDS as readonly string[]).includes(v),
     );
@@ -416,7 +425,7 @@ export class CommunityController {
     @Req() req: any,
     @Body(new ZodValidationPipe(createPostSchema)) dto: any,
   ) {
-    return this.community.create(req.user.id, dto);
+    return this.community.create(req.user.id, req.user.role, dto);
   }
   @Patch("comments/:commentId") @UseGuards(JwtAuthGuard) updateComment(
     @Req() req: any,
