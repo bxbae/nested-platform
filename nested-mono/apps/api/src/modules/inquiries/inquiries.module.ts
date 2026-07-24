@@ -20,6 +20,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 const createSchema = z.object({
   title: z.string().trim().min(2).max(120),
@@ -179,6 +180,9 @@ export class AdminInquiriesController {
 }
 
 @Module({
+  // NotificationsGateway 를 주입받으므로 해당 모듈을 가져와야 한다
+  // (community.module.ts 와 같은 구조).
+  imports: [NotificationsModule],
   controllers: [InquiriesController, AdminInquiriesController],
   providers: [InquiriesService],
 })
