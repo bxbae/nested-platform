@@ -61,6 +61,9 @@ export default function PostPage() {
   useEffect(() => { reload().finally(() => setLoading(false)); }, [id]);
 
   const isAuthor = !!user && !!post && user.id === post.authorId;
+  // 관리자는 남의 글도 지울 수 있다(백엔드도 같은 규칙). 다만 수정·상태 변경은
+  // 작성자만 하도록 두고, 관리자에게는 삭제만 열어준다.
+  const isAdmin = user?.role === "ADMIN";
 
   async function submitReply() {
     if (!post || !reply.trim() || posting) return;
@@ -124,6 +127,15 @@ export default function PostPage() {
                   <button className="chip" onClick={() => void changeStatus("CLOSED")}>마감</button>
                 </>}
                 <button className="chip" onClick={() => void sharePost()}>링크 공유</button>
+                {!isAuthor && isAdmin && (
+                  <button
+                    className="chip"
+                    style={{ color: "var(--primary)" }}
+                    onClick={() => void removePost()}
+                  >
+                    관리자 삭제
+                  </button>
+                )}
                 {!isAuthor && <button className="chip" onClick={() => { setReportTarget({ type: "COMMUNITY_POST", id: post.id }); setMenuOpen(false); }}>신고하기</button>}
               </div>
             )}
@@ -187,7 +199,7 @@ export default function PostPage() {
       <h2 style={{ fontSize: 17, margin: "28px 0 12px" }}>댓글 {post.replies}개</h2>
       <div style={{ display: "grid", gap: 10 }}>
         {post.comments.length === 0 && <p style={{ color: "var(--text-2)" }}>아직 댓글이 없어요.</p>}
-        {post.comments.map(comment => <CommentCard key={comment.id} comment={comment} currentUserId={user?.id} onProfile={setProfileUserId} onReply={(id, name) => setReplyTo({ id, name })} onEdit={setEditingComment} onDelete={removeComment} onReport={id => setReportTarget({ type: "COMMUNITY_COMMENT", id })} />)}
+        {post.comments.map(comment => <CommentCard key={comment.id} comment={comment} currentUserId={user?.id} isAdmin={isAdmin} onProfile={setProfileUserId} onReply={(id, name) => setReplyTo({ id, name })} onEdit={setEditingComment} onDelete={removeComment} onReport={id => setReportTarget({ type: "COMMUNITY_COMMENT", id })} />)}
       </div>
 
       <div className="card" style={{ padding: 16, marginTop: 18 }}>
@@ -206,9 +218,10 @@ export default function PostPage() {
   );
 }
 
-function CommentCard({ comment, currentUserId, onProfile, onReply, onEdit, onDelete, onReport }: {
+function CommentCard({ comment, currentUserId, isAdmin, onProfile, onReply, onEdit, onDelete, onReport }: {
   comment: ApiComment;
   currentUserId?: string;
+  isAdmin?: boolean;
   onProfile: (id: string) => void;
   onReply: (id: string, name: string) => void;
   onEdit: (v: { id: string; body: string }) => void;
@@ -226,6 +239,7 @@ function CommentCard({ comment, currentUserId, onProfile, onReply, onEdit, onDel
       <CommentContent
         comment={comment}
         mine={mine}
+        isAdmin={isAdmin}
         onProfile={onProfile}
         onReply={onReply}
         onEdit={onEdit}
@@ -240,6 +254,7 @@ function CommentCard({ comment, currentUserId, onProfile, onReply, onEdit, onDel
               <CommentContent
                 comment={reply}
                 mine={currentUserId === reply.author.id}
+                isAdmin={isAdmin}
                 onProfile={onProfile}
                 onReply={onReply}
                 onEdit={onEdit}
@@ -272,9 +287,10 @@ function CommentCard({ comment, currentUserId, onProfile, onReply, onEdit, onDel
   );
 }
 
-function CommentContent({ comment, mine, onProfile, onReply, onEdit, onDelete, onReport, nested = false }: {
+function CommentContent({ comment, mine, isAdmin, onProfile, onReply, onEdit, onDelete, onReport, nested = false }: {
   comment: ApiComment;
   mine: boolean;
+  isAdmin?: boolean;
   onProfile: (id: string) => void;
   onReply: (id: string, name: string) => void;
   onEdit: (v: { id: string; body: string }) => void;
@@ -318,7 +334,18 @@ function CommentContent({ comment, mine, onProfile, onReply, onEdit, onDelete, o
             <button onClick={() => void onDelete(comment.id)}>삭제</button>
           </>
         ) : (
-          <button onClick={() => onReport(comment.id)}>신고</button>
+          <>
+            {/* 관리자는 수정은 못 하고 삭제만 가능하다 (백엔드도 같은 규칙). */}
+            {isAdmin && (
+              <button
+                style={{ color: "var(--primary)" }}
+                onClick={() => void onDelete(comment.id)}
+              >
+                관리자 삭제
+              </button>
+            )}
+            <button onClick={() => onReport(comment.id)}>신고</button>
+          </>
         )}
       </div>
     </div>
