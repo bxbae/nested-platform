@@ -475,7 +475,7 @@ export default function MessagesPage() {
                   gap: 12,
                   padding: "14px 18px",
                   borderBottom: "1px solid var(--border)",
-                  background: "#fff",
+                  background: "var(--surface)",
                 }}
               >
                 <Avatar
@@ -635,7 +635,7 @@ export default function MessagesPage() {
                             )}
                             <div
                               style={{
-                                background: mine ? "var(--primary)" : "#fff",
+                                background: mine ? "var(--primary)" : "var(--surface)",
                                 color: mine ? "#fff" : "var(--text)",
                                 padding: message.imageUrl ? 4 : "10px 13px",
                                 borderRadius: mine
@@ -699,7 +699,7 @@ export default function MessagesPage() {
                 </div>
               </div>
 
-              <div style={{ flexShrink: 0, padding: "12px 14px", borderTop: "1px solid var(--border)", background: "#fff" }}>
+              <div style={{ flexShrink: 0, padding: "12px 14px", borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
                 {pendingImage && (
                   <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 10px" }}>
                     <div style={{ position: "relative", flexShrink: 0 }}>

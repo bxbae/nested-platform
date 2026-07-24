@@ -39,7 +39,7 @@ export default async function Home() {
           position: "relative",
           minHeight: 620,
           overflow: "visible",
-          background: "#f7f2ec",
+          background: "var(--bg-2)",   // 라이트: #f7f7f7(연한 회색), 다크: #202024(짙은 회색)로 자동 전환
           zIndex: 10,
         }}
       >
@@ -81,6 +81,7 @@ export default async function Home() {
                   marginTop: 18,
                   lineHeight: 1.14,
                   letterSpacing: "-0.04em",
+                  color: "#1a1a1a",
                 }}
               >
                 직장과 가까운 집,
@@ -92,7 +93,7 @@ export default async function Home() {
               <p
                 style={{
                   fontSize: 18,
-                  color: "var(--text-2)",
+                  color: "#4a4a4a",
                   marginTop: 20,
                   lineHeight: 1.65,
                   maxWidth: 540,
