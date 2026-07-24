@@ -9,6 +9,7 @@ import { popularRegions, recommendedHomes, totalListings } from "@/lib/landing";
 import { loadHouses } from "@/lib/houses-source";
 import type { House } from "@/lib/types";
 import { PersonalizedSection } from "@/components/PersonalizedSection";
+import { AgeGroupSection } from "@/components/AgeGroupSection";
 import { regionLabel } from "@/lib/seoul";
 
 // 항상 최신 숙소 데이터를 반영하도록 요청 시점에 렌더링합니다.
@@ -327,6 +328,7 @@ export default async function Home() {
       </section>
 
       <PersonalizedSection />
+      <AgeGroupSection />
 
       {/* 추천 숙소 */}
       <section

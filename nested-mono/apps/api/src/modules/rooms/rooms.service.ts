@@ -646,7 +646,8 @@ export class RoomsService {
   // ═══════════════════════════════════════════════════════════
   // 1) 찜 목록 기반으로 규칙 기반 점수를 매겨 후보 10개를 추린다.
   // 2) 그 후보들에 대해 AI가 자연어 추천 한줄평을 붙인다 (아래 explainPersonalized).
-  async getPersonalizedRooms(userId: string, limit = 10) {
+  // 홈 화면 카드가 한 줄(4칸)에 맞게 떨어지도록 기본값을 4로 둔다.
+  async getPersonalizedRooms(userId: string, limit = 4) {
     const favorites = await this.prisma.favorite.findMany({
       where: { userId },
       include: { room: true },
@@ -712,6 +713,73 @@ export class RoomsService {
             : "새로운 스타일의 숙소를 추천드려요",
       })),
       userName: user?.name ?? null,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 연령대별 인기 숙소
+  // ═══════════════════════════════════════════════════════════
+  // 같은 연령대(20대/30대/…) 사용자들이 실제로 찜하거나 예약한 숙소를 집계한다.
+  // 서비스 초기에는 표본이 적어 결과가 비거나 한두 건에 그치므로,
+  // 모자란 자리는 전체 인기순(찜 수)으로 채워 카드가 항상 4칸을 채우게 한다.
+  async getAgeGroupRooms(userId: string, limit = 4) {
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { birthDate: true },
+    });
+
+    if (!me?.birthDate) return { rooms: [], ageGroup: null };
+
+    const age =
+      new Date().getFullYear() - new Date(me.birthDate).getFullYear();
+    // 10년 단위로 내림. 10대 미만/80대 이상은 의미가 없어 제외한다.
+    const decade = Math.floor(age / 10) * 10;
+    if (decade < 10 || decade > 70) return { rooms: [], ageGroup: null };
+
+    // 같은 연령대의 생년 범위 (예: 30대 → 올해-39 ~ 올해-30년생)
+    const thisYear = new Date().getFullYear();
+    const from = new Date(`${thisYear - decade - 9}-01-01`);
+    const to = new Date(`${thisYear - decade}-12-31`);
+
+    const peers = await this.prisma.user.findMany({
+      where: { id: { not: userId }, birthDate: { gte: from, lte: to } },
+      select: { id: true },
+    });
+    const peerIds = peers.map((p) => p.id);
+
+    // 같은 연령대의 찜을 방별로 집계
+    const counts = new Map<string, number>();
+    if (peerIds.length > 0) {
+      const favs = await this.prisma.favorite.groupBy({
+        by: ["roomId"],
+        where: { userId: { in: peerIds } },
+        _count: { roomId: true },
+      });
+      for (const f of favs) counts.set(f.roomId, f._count.roomId);
+    }
+
+    const rooms = await this.prisma.room.findMany({
+      where: { published: true },
+      include: { images: true, ...occupancyInclude(), _count: { select: { favorites: true } } },
+    });
+
+    const picked = rooms
+      .map((room) => ({
+        room,
+        peerCount: counts.get(room.id) ?? 0,
+        totalCount: room._count.favorites,
+      }))
+      .sort((a, b) => {
+        // 또래가 고른 숙소가 우선, 그다음 전체 인기순, 마지막은 최신순.
+        if (b.peerCount !== a.peerCount) return b.peerCount - a.peerCount;
+        if (b.totalCount !== a.totalCount) return b.totalCount - a.totalCount;
+        return b.room.createdAt.getTime() - a.room.createdAt.getTime();
+      })
+      .slice(0, limit);
+
+    return {
+      rooms: picked.map(({ room }) => withOccupancy(room)),
+      ageGroup: decade,
     };
   }
 

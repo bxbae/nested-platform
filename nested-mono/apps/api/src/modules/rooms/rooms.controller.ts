@@ -144,6 +144,13 @@ export class RoomsController {
     return this.rooms.getPersonalizedRooms(req.user.id);
   }
 
+  // GET /rooms/age-group — 같은 연령대에게 인기 있는 숙소
+  @Get("age-group")
+  @UseGuards(JwtAuthGuard)
+  getAgeGroup(@Req() req: any) {
+    return this.rooms.getAgeGroupRooms(req.user.id);
+  }
+
   @Get(":id/similar")
   findSimilar(@Param("id") id: string) {
     return this.rooms.findSimilar(id);

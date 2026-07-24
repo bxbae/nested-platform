@@ -150,6 +150,24 @@ export async function getSimilarRooms(id: string): Promise<(House & { reasons: s
   return rows.map((r) => ({ ...apiRoomToHouse(r), reasons: r.reasons ?? [] }));
 }
 
+// GET /rooms/age-group — 같은 연령대에게 인기 있는 숙소
+// 또래가 찜한 숙소를 우선 집계하고, 표본이 모자라면 전체 인기순으로 채운다.
+// ageGroup 은 20/30/40 같은 숫자로, 화면에서 "30대에게 인기 있는 숙소" 문구를 만든다.
+export async function getAgeGroupRooms(): Promise<{
+  rooms: House[];
+  ageGroup: number | null;
+}> {
+  if (!USE_REAL_API) return { rooms: [], ageGroup: null };
+  const res = await api.get<{
+    rooms: ApiRoom[];
+    ageGroup: number | null;
+  }>("/rooms/age-group");
+  return {
+    rooms: res.rooms.map((r) => apiRoomToHouse(r)),
+    ageGroup: res.ageGroup,
+  };
+}
+
 // GET /rooms/personalized — 개인화 숙소 추천
 // 찜 목록 기반으로 스코어링한 숙소 목록 + 로그인한 사용자 이름을 같이 받아온다.
 // 이름은 홈 화면에서 "OOO님을 위한 숙소 추천!"이라는 타이틀을 만드는 데 쓰인다.
