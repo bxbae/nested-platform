@@ -149,8 +149,8 @@ export default function AdminMembers() {
       )}
 
       <div className="card" style={{ overflow: "hidden" }}>
-        <div className="admin-table-head" style={{ gridTemplateColumns: "1.5fr auto auto auto 1fr" }}>
-          <span>회원</span><span style={{ padding: "0px 22px"}}>역할</span><span style={{ padding: "0px 12.5px"}}>가입일</span><span style={{ padding: "0px 12px"}}>상태</span><span></span>
+        <div className="admin-table-head" style={{ gridTemplateColumns: "1.5fr auto auto auto auto auto 1fr" }}>
+          <span>회원</span><span>역할</span><span>가입일</span><span>상태</span><span>평균 별점</span><span>신고</span><span></span>
         </div>
 
         {!loading && members.length === 0 && (
@@ -162,7 +162,7 @@ export default function AdminMembers() {
         {members.map((m) => {
           const isSelf = m.id === user?.id;
           return (
-            <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: "1.5fr auto auto auto 1fr" }}>
+            <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: "1.5fr auto auto auto auto auto 1fr" }}>
               <span style={{ minWidth: 0 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {m.name}{isSelf && <span style={{ color: "var(--text-2)", fontWeight: 400 }}> (나)</span>}
@@ -231,6 +231,20 @@ export default function AdminMembers() {
                 >
                   {m.suspended ? "정지" : "정상"}
                 </span>
+              </span>
+
+              <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+                {m.avgRating !== null ? `★ ${m.avgRating}` : "—"}
+              </span>
+
+              <span
+                style={{
+                  fontSize: 13,
+                  color: m.reportCount > 0 ? "var(--primary)" : "var(--text-2)",
+                  fontWeight: m.reportCount > 0 ? 700 : 400,
+                }}
+              >
+                {m.reportCount > 0 ? `${m.reportCount}건` : "—"}
               </span>
 
               <span style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
