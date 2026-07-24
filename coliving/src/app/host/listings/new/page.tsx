@@ -11,6 +11,7 @@ import { ROOM_TYPE_LABELS, GENDER_LABELS, type RoomType, type GenderPolicy } fro
 import { createRoom } from "@/lib/api/rooms";
 import { AddressSearch, type AddressValue } from "@/components/AddressSearch";
 import { becomeHost } from "@/lib/api/auth";
+import { useAuth } from "@/lib/api/useAuth";
 import { ApiError } from "@/lib/api/client";
 import { uploadImage } from "@/lib/api/storage";
 import { USE_REAL_API } from "@/lib/api/config";
@@ -66,7 +67,13 @@ export default function NewListing() {
   const [saving, setSaving] = useState(false);
   // Set when the API rejects the listing because the account is still a GUEST.
   // We show an inline upgrade prompt instead of a dead-end error.
+  // 게스트가 폼을 다 채운 뒤에야 전환 안내를 만나면 흐름이 끊긴다.
+  // 페이지에 들어온 시점에 역할을 보고 먼저 안내한다.
+  const { user } = useAuth();
   const [needsHost, setNeedsHost] = useState(false);
+  const [dismissedGate, setDismissedGate] = useState(false);
+  const isGuest = user != null && user.role !== "HOST" && user.role !== "ADMIN";
+  const showHostGate = needsHost || (isGuest && !dismissedGate);
   const [upgrading, setUpgrading] = useState(false);
   // Kept so the upgrade prompt can resubmit exactly what the user filled in.
   const [pendingForm, setPendingForm] = useState<ListingForm | null>(null);
@@ -199,6 +206,7 @@ export default function NewListing() {
     try {
       await becomeHost();
       setNeedsHost(false);
+      setDismissedGate(true);
       if (pendingForm) await submit(pendingForm);
     } catch (e) {
       setError(e instanceof Error ? e.message : "호스트 전환에 실패했어요.");
@@ -212,13 +220,14 @@ export default function NewListing() {
 
   // The account is signed in but still a GUEST — offer the one-click upgrade
   // rather than an error the user can do nothing about.
-  if (needsHost) {
+  if (showHostGate) {
     return (
       <div className="card" style={{ padding: 40, textAlign: "center", maxWidth: 460, margin: "40px auto" }}>
         <strong style={{ fontSize: 18 }}>호스트로 전환해야 등록할 수 있어요</strong>
         <p style={{ color: "var(--text-2)", marginTop: 8, lineHeight: 1.6 }}>
-          지금 계정은 게스트예요. 호스트로 전환하면 방금 입력한 내용 그대로 등록됩니다.
-          등록한 숙소는 관리자 승인 후 노출돼요.
+          {needsHost
+            ? "지금 계정은 게스트예요. 호스트로 전환하면 방금 입력한 내용 그대로 등록됩니다."
+            : "숙소를 등록하려면 호스트로 전환해야 해요. 전환은 한 번이면 끝나고 바로 등록을 시작할 수 있어요."}
         </p>
         <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 18 }}>
           <button
@@ -227,9 +236,15 @@ export default function NewListing() {
             disabled={upgrading}
             style={{ opacity: upgrading ? 0.6 : 1 }}
           >
-            {upgrading ? "전환 중…" : "호스트로 전환하고 등록"}
+            {upgrading ? "전환 중…" : needsHost ? "호스트로 전환하고 등록" : "호스트로 전환하고 시작하기"}
           </button>
-          <button className="btn btn-ghost press" onClick={() => setNeedsHost(false)}>
+          <button
+            className="btn btn-ghost press"
+            onClick={() => {
+              setNeedsHost(false);
+              setDismissedGate(true);
+            }}
+          >
             돌아가기
           </button>
         </div>
