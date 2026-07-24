@@ -35,15 +35,7 @@ export default async function Home() {
       <NoticeBar />
 
       {/* 메인 히어로 */}
-      <section
-        style={{
-          position: "relative",
-          minHeight: 620,
-          overflow: "visible",
-          background: "var(--bg-2)",   // 라이트: #f7f7f7(연한 회색), 다크: #202024(짙은 회색)로 자동 전환
-          zIndex: 10,
-        }}
-      >
+      <section className="home-hero-section">
         {/* 관리자가 등록한 메인 배너 이미지를 자동 슬라이드로 표시합니다. */}
         <HomeBanner />
 
@@ -59,18 +51,7 @@ export default async function Home() {
           }}
         />
 
-        <div
-          className="wrap"
-          style={{
-            position: "relative",
-            minHeight: 620,
-            paddingTop: 78,
-            paddingBottom: 68,
-            display: "flex",
-            alignItems: "center",
-            zIndex: 2,
-          }}
-        >
+        <div className="wrap home-hero-inner">
           <div style={{ width: "100%" }}>
             <div className="home-hero-copy" style={{ maxWidth: 760 }}>
               <span className="eyebrow">서울의 공유주거</span>
