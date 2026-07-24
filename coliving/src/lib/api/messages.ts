@@ -22,6 +22,7 @@ export interface ApiChatRoom {
   guestId: string;
   hostId: string;
   createdAt: string;
+  unreadCount?: number;
 
   room: {
     name: string;
@@ -100,7 +101,7 @@ export interface ApiDirectConversation {
   id: string;
   createdAt: string;
   updatedAt: string;
-  unreadCount: number;
+  unreadCount?: number;
   other?: {
     id: string;
     name: string;

@@ -127,8 +127,8 @@ export default function MessagesPage() {
 
   const unreadConversationCount = useMemo(
     () =>
-      conversations.filter((conversation) =>
-        Boolean(conversation.raw.unreadCount),
+      conversations.filter(
+        (conversation) => (conversation.raw.unreadCount ?? 0) > 0,
       ).length,
     [conversations],
   );
