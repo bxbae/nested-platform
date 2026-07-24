@@ -149,7 +149,7 @@ export default function AdminMembers() {
       )}
 
       <div className="card" style={{ overflow: "hidden" }}>
-        <div className="admin-table-head" style={{ gridTemplateColumns: "2.4fr 0.9fr 1fr 0.9fr 0.9fr" }}>
+        <div className="admin-table-head" style={{ gridTemplateColumns: "1.5fr auto auto auto 1fr" }}>
           <span>회원</span><span>역할</span><span>가입일</span><span>상태</span><span></span>
         </div>
 
@@ -162,7 +162,7 @@ export default function AdminMembers() {
         {members.map((m) => {
           const isSelf = m.id === user?.id;
           return (
-            <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: "2.4fr 0.9fr 1fr 0.9fr 0.9fr" }}>
+            <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: "1.5fr auto auto auto 1fr" }}>
               <span style={{ minWidth: 0 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {m.name}{isSelf && <span style={{ color: "var(--text-2)", fontWeight: 400 }}> (나)</span>}
