@@ -245,9 +245,9 @@ export default function NewListing() {
           <circle cx="25" cy="20" r="11" stroke="var(--primary)" strokeWidth="2.5" fill="none" />
           <path d="M14 20 l4 4 l8 -9" stroke="var(--text)" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <strong style={{ fontSize: 18 }}>등록 신청이 접수되었습니다</strong>
+        <strong style={{ fontSize: 18 }}>숙소가 등록되었습니다</strong>
         <p style={{ color: "var(--text-2)", marginTop: 8 }}>
-          관리자 검토 후 게시됩니다. 승인 전까지는 검색 결과에 노출되지 않습니다.
+          지금 바로 검색 결과에서 확인하실 수 있습니다.
         </p>
         <button className="btn btn-primary press" style={{ marginTop: 18 }} onClick={() => window.location.assign("/host/listings")}>
           숙소 관리로 이동
