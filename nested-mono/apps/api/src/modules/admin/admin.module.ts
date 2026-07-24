@@ -387,6 +387,15 @@ export class AdminService {
 
     let reported: { id: string; name: string; email: string } | null = null;
     let chat: { kind: "ROOM" | "DIRECT"; id: string } | null = null;
+    // MESSAGE의 "채팅 보기"랑 같은 역할 — REVIEW 신고는 관리자가 "어떤
+    // 숙소의, 누가 쓴, 언제 쓴 무슨 내용"인지 한 번에 볼 수 있어야 한다.
+    let review: {
+      id: string;
+      body: string;
+      rating: number;
+      createdAt: Date;
+      room: { id: string; name: string };
+    } | null = null;
 
     if (report.targetType === "USER") {
       reported = await this.prisma.user.findUnique({
@@ -400,11 +409,27 @@ export class AdminService {
       });
       reported = room?.host ?? null;
     } else if (report.targetType === "REVIEW") {
-      const review = await this.prisma.review.findUnique({
+      const found = await this.prisma.review.findUnique({
         where: { id: report.targetId },
-        select: { author: { select: { id: true, name: true, email: true } } },
+        select: {
+          id: true,
+          body: true,
+          rating: true,
+          createdAt: true,
+          author: { select: { id: true, name: true, email: true } },
+          room: { select: { id: true, name: true } },
+        },
       });
-      reported = review?.author ?? null;
+      reported = found?.author ?? null;
+      if (found) {
+        review = {
+          id: found.id,
+          body: found.body,
+          rating: found.rating,
+          createdAt: found.createdAt,
+          room: found.room,
+        };
+      }
     } else if (report.targetType === "COMMUNITY_POST") {
       const post = await this.prisma.post.findUnique({
         where: { id: report.targetId },
@@ -443,7 +468,7 @@ export class AdminService {
       }
     }
 
-    return { reporter: report.reporter, reported, chat };
+    return { reporter: report.reporter, reported, chat, review };
   }
 
   // 채팅방(숙소 문의) 대화 조회 — 관리자는 대화 참여자가 아니어도

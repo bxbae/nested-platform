@@ -14,6 +14,11 @@ export class ReportsService {
 
   private async reportedUserId(reporterId: string, type: TargetType, id: string): Promise<string | null> {
     if (type === "USER") return id;
+    if (type === "REVIEW") {
+      const row = await this.prisma.review.findUnique({ where: { id }, select: { authorId: true } });
+      if (!row) throw new NotFoundException("리뷰를 찾을 수 없습니다.");
+      return row.authorId;
+    }
     if (type === "COMMUNITY_POST") {
       const row = await this.prisma.post.findUnique({ where: { id }, select: { authorId: true } });
       if (!row) throw new NotFoundException("게시글을 찾을 수 없습니다.");
