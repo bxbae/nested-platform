@@ -10,7 +10,8 @@ import {
 } from "@/lib/api/admin";
 import { uploadImage } from "@/lib/api/storage";
 
-const POSITIONS = ["메인 상단", "검색 결과", "앱 홈"];
+const BANNER_POSITION = "메인 상단";
+const MAX_BANNERS = 5;
 const DEFAULT_COLOR = "#FF5A5F";
 
 export default function AdminBanners() {
@@ -19,7 +20,6 @@ export default function AdminBanners() {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [color, setColor] = useState(DEFAULT_COLOR);
-  const [position, setPosition] = useState(POSITIONS[0]);
   const [linkUrl, setLinkUrl] = useState("");
   const [order, setOrder] = useState(0);
   const [imageUrl, setImageUrl] = useState("");
@@ -29,7 +29,11 @@ export default function AdminBanners() {
 
   async function refresh() {
     try {
-      setList(await listBanners());
+      const banners = (await listBanners())
+        .filter((banner) => banner.position === BANNER_POSITION)
+        .sort((a, b) => a.order - b.order);
+
+      setList(banners);
     } catch {
       setList([]);
       setError("배너 목록을 불러오지 못했습니다.");
@@ -45,7 +49,6 @@ export default function AdminBanners() {
   function resetForm() {
     setTitle("");
     setColor(DEFAULT_COLOR);
-    setPosition(POSITIONS[0]);
     setLinkUrl("");
     setOrder(0);
     setImageUrl("");
@@ -73,8 +76,13 @@ export default function AdminBanners() {
   }
 
   async function create() {
+    if (list.length >= MAX_BANNERS) {
+      setError("메인 배너는 최대 5장까지 등록할 수 있습니다.");
+      return;
+    }
+
     if (!title.trim() || busy || uploading) return;
-    if (position === "메인 상단" && !imageUrl.trim()) {
+    if (!imageUrl.trim()) {
       setError("메인 상단 배너에는 이미지를 등록해주세요.");
       return;
     }
@@ -85,7 +93,7 @@ export default function AdminBanners() {
       await createBanner({
         title: title.trim(),
         color,
-        position,
+        position: BANNER_POSITION,
         linkUrl: linkUrl.trim() || null,
         imageUrl: imageUrl.trim() || null,
         order,
@@ -146,10 +154,12 @@ export default function AdminBanners() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
         <div>
           <h1 className="display" style={{ fontSize: 30 }}>배너 관리</h1>
-          <p style={{ color: "var(--text-2)", marginTop: 4 }}>노출 중 배너 {activeCount}개</p>
+          <p style={{ color: "var(--text-2)", marginTop: 4 }}>
+            등록 배너 {list.length}/{MAX_BANNERS} · 노출 중 {activeCount}개
+          </p>
         </div>
-        <button className="btn btn-primary press" onClick={() => { setCreating((current) => !current); resetForm(); }}>
-          {creating ? "취소" : "+ 새 배너"}
+        <button className="btn btn-primary press" disabled={!creating && list.length >= MAX_BANNERS} onClick={() => { setCreating((current) => !current); resetForm(); }}>
+          {creating ? "취소" : list.length >= MAX_BANNERS ? "최대 5장 등록됨" : "+ 새 배너"}
         </button>
       </div>
 
@@ -198,12 +208,6 @@ export default function AdminBanners() {
           </div>
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "end" }}>
-            <label style={{ display: "grid", gap: 7, fontSize: 13.5, color: "var(--text-2)" }}>
-              위치
-              <select value={position} onChange={(event) => setPosition(event.target.value)} style={{ padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "var(--r-sm)" }}>
-                {POSITIONS.map((value) => <option key={value} value={value}>{value}</option>)}
-              </select>
-            </label>
 
             <label style={{ display: "grid", gap: 7, fontSize: 13.5, color: "var(--text-2)" }}>
               노출 순서
