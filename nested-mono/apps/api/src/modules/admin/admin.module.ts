@@ -199,6 +199,38 @@ export class AdminService {
       },
     });
   }
+  // 게시중인 숙소 — 별점이 낮은 순으로 정렬해 관리자가 문제 매물을 먼저 보게 합니다.
+  // 후기가 적으면 평균이 흔들리므로 reviewCount를 함께 내려 UI에서 판단하게 합니다.
+  async publishedRooms() {
+    const rooms = await this.prisma.room.findMany({
+      where: { published: true },
+      orderBy: { createdAt: "desc" },
+      include: {
+        host: { select: { name: true } },
+        images: { orderBy: { order: "asc" } },
+        reviews: { select: { rating: true } },
+      },
+    });
+
+    return rooms
+      .map((room) => {
+        const ratings = room.reviews.map((r) => r.rating);
+        const reviewCount = ratings.length;
+        const rating = reviewCount
+          ? ratings.reduce((sum, n) => sum + n, 0) / reviewCount
+          : 0;
+        const { reviews, ...rest } = room;
+        return { ...rest, rating: Number(rating.toFixed(2)), reviewCount };
+      })
+      .sort((a, b) => {
+        // 후기 없는 숙소는 평가할 근거가 없으므로 뒤로 보냅니다.
+        if (!a.reviewCount && !b.reviewCount) return 0;
+        if (!a.reviewCount) return 1;
+        if (!b.reviewCount) return -1;
+        return a.rating - b.rating;
+      });
+  }
+
   async setPublished(id: string, published: boolean) {
     const room = await this.prisma.room.findUnique({
       where: { id },
@@ -231,17 +263,21 @@ export class AdminService {
         data: { published },
       });
 
-      const notification = published
-        ? await tx.notification.create({
-            data: {
-              userId: room.hostId,
-              type: "ROOM_APPROVED",
-              title: "숙소 등록이 승인되었어요",
-              body: `"${room.name}" 숙소가 승인되어 서비스에 공개되었습니다.`,
-              targetUrl: "/host/listings",
-            },
-          })
-        : null;
+      // 공개 전환과 게시 중단 모두 호스트에게 알립니다. 중단은 호스트가
+      // 이유를 모르면 문의로 이어지므로 알림을 생략하지 않습니다.
+      const notification = await tx.notification.create({
+        data: {
+          userId: room.hostId,
+          type: published ? "ROOM_APPROVED" : "ROOM_UNPUBLISHED",
+          title: published
+            ? "숙소 등록이 승인되었어요"
+            : "숙소 게시가 중단되었어요",
+          body: published
+            ? `"${room.name}" 숙소가 승인되어 서비스에 공개되었습니다.`
+            : `"${room.name}" 숙소가 관리자에 의해 비공개 처리되었습니다. 자세한 내용은 고객센터로 문의해 주세요.`,
+          targetUrl: "/host/listings",
+        },
+      });
 
       return {
         updatedRoom,
@@ -892,6 +928,12 @@ export class AdminController {
   @Get("rooms/pending")
   pending() {
     return this.admin.pendingRooms();
+  }
+
+  // GET /admin/rooms/published — 게시중 숙소 (별점 낮은 순)
+  @Get("rooms/published")
+  publishedList() {
+    return this.admin.publishedRooms();
   }
 
   @Patch("rooms/:id/publish")

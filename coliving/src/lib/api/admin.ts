@@ -33,6 +33,44 @@ export async function listPendingRooms(): Promise<PendingListing[]> {
   }));
 }
 
+export interface PublishedListing extends PendingListing {
+  rating: number;
+  reviewCount: number;
+}
+
+// GET /admin/rooms/published — 게시중 숙소, 별점 낮은 순
+export async function listPublishedRooms(): Promise<PublishedListing[]> {
+  const rows = await api.get<
+    (ApiRoom & {
+      address?: string | null;
+      verifiedByHost?: boolean;
+      createdAt: string;
+      host?: { name?: string };
+      rating: number;
+      reviewCount: number;
+    })[]
+  >("/admin/rooms/published");
+
+  return rows.map((r) => ({
+    ...apiRoomToHouse(r),
+    address: r.address ?? null,
+    verifiedByHost: r.verifiedByHost ?? false,
+    hostName: r.host?.name ?? "호스트",
+    submittedAt: r.createdAt,
+    rating: r.rating,
+    reviewCount: r.reviewCount,
+  }));
+}
+
+// 후기가 3건 이상 쌓였고 평균이 3.0 미만이면 검토 대상으로 봅니다.
+// 후기 1~2건은 한 건만으로 평균이 크게 흔들려 오탐이 많습니다.
+export const LOW_RATING_THRESHOLD = 3.0;
+export const MIN_REVIEWS_FOR_WARNING = 3;
+
+export function isLowRated(room: PublishedListing): boolean {
+  return room.reviewCount >= MIN_REVIEWS_FOR_WARNING && room.rating < LOW_RATING_THRESHOLD;
+}
+
 // PATCH /admin/rooms/:id/publish — makes the listing searchable
 // ── Members (reference pattern for the admin section) ──
 // A page becomes "real" by: (1) a typed shape for the API response, (2) a
