@@ -140,6 +140,7 @@ export function apiRoomToHouse(r: ApiRoom): House {
     name: r.name,
     // 오늘 기준 입주 중인지 — 서버가 계산해 내려준다.
     occupied: (r as { occupied?: boolean }).occupied ?? false,
+    isMine: (r as { isMine?: boolean }).isMine ?? false,
     availableAgainFrom:
       (r as { availableAgainFrom?: string | null }).availableAgainFrom ?? null,
     city: r.city ?? "",

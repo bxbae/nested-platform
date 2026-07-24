@@ -110,6 +110,14 @@ export class ReservationsService {
         message: "숙소를 찾을 수 없습니다.",
       });
 
+    // 호스트 본인이 등록한 숙소는 예약(결제)할 수 없다.
+    if (room.hostId === guestId) {
+      throw new BadRequestException({
+        code: "SELF_BOOKING_NOT_ALLOWED",
+        message: "본인이 등록한 숙소는 예약할 수 없습니다.",
+     });
+    }  
+
     if (dto.companionId === guestId) {
       throw new BadRequestException({
         code: "INVALID_COMPANION",
