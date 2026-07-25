@@ -3,7 +3,7 @@
 // Aligns with ARCHITECTURE.md RoomType enum
 export type RoomType = "one_room" | "share_room" | "whole_house" | "apartment";
 export type RentalUnit = "whole" | "private_room" | "bed";
-export type BuildingType = "studio" | "apartment" | "house";
+export type BuildingType = "studio" | "apartment" | "officetel" | "house";
 export type SharedFacility =
   | "bathroom"
   | "kitchen"
@@ -22,14 +22,15 @@ export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
 };
 
 export const RENTAL_UNIT_LABELS: Record<RentalUnit, string> = {
-  whole: "전체 숙소",
-  private_room: "개인실",
-  bed: "다인실·침대",
+  whole: "단독형 숙소",
+  private_room: "공유형 · 개인실",
+  bed: "공유형 · 다인실",
 };
 
 export const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {
   studio: "원룸",
   apartment: "아파트",
+  officetel: "오피스텔",
   house: "주택",
 };
 

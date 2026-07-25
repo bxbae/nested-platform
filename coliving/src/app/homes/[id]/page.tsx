@@ -166,7 +166,9 @@ export default async function HomeDetail({
           {/* summary line */}
           <div style={{ paddingBottom: 22, borderBottom: "1px solid var(--border)" }}>
             <h2 className="display" style={{ fontSize: 20 }}>
-              {getAccommodationLabel(house)} · 최대 {house.capacity ?? 1}명
+              {getAccommodationLabel(house)}
+              {house.rentalUnit === "bed" &&
+                ` · 최대 ${Math.max(2, house.capacity ?? 2)}명`}
             </h2>
             <p style={{ color: "var(--text-2)", fontSize: 14.5, marginTop: 4 }}>
               침실 {house.bedrooms}개 · 현재 거주 {house.residents}명 · {GENDER_LABELS[house.genderPolicy]} · 최소 {house.minStayMonths}개월

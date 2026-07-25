@@ -19,7 +19,19 @@ export type QuoteDto = z.infer<typeof quoteSchema>;
 // companionId 를 주면 공동 예약이 된다: 결제는 예약자가 전액 하고, 상대에게는
 // 초대(PENDING)가 걸린다. 상대가 수락해야 함께 사는 것으로 확정된다.
 export const createReservationSchema = quoteSchema.extend({
+  // 기존 단일 초대 필드는 운영 중인 클라이언트와 예약 호환을 위해 유지한다.
   companionId: z.string().min(1).optional(),
+  // 신규 다중 초대. 대표 예약자를 제외한 선택 자리 수만큼 친구를 지정할 수 있다.
+  companionIds: z.array(z.string().min(1)).max(19).optional(),
+}).superRefine((data, ctx) => {
+  if (!data.companionIds) return;
+  if (new Set(data.companionIds).size !== data.companionIds.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["companionIds"],
+      message: "같은 친구를 중복 선택할 수 없습니다.",
+    });
+  }
 });
 export type CreateReservationDto = z.infer<typeof createReservationSchema>;
 

@@ -35,7 +35,7 @@ export const RENT_MAX = 1100000;
 
 const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
 const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
-const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "house"];
+const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "officetel", "house"];
 const SHARED_FACILITIES: SharedFacility[] = [
   "bathroom",
   "kitchen",

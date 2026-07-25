@@ -36,16 +36,48 @@ describe("RoomsService — 날짜 기반 가용성 필터", () => {
 
     const where = calls[0]?.where;
     expect(where).toBeDefined();
-    // 겹치는 예약이 "없는(none)" 방만
-    expect(where.reservations).toBeDefined();
-    expect(where.reservations.none.status.in).toEqual([
+
+    // 신규 분류 구조에서는 날짜 가용성 조건이 AND 안의 OR 분기로 들어간다.
+    // 다인실(BED)은 일부 침대 예약이 있어도 남은 자리를 판매할 수 있으므로
+    // UNIT/WHOLE_ROOM 예약이 겹칠 때만 방 전체를 제외한다.
+    const availabilityClause = where.AND?.find(
+      (clause: any) => Array.isArray(clause.OR),
+    );
+    expect(availabilityClause).toBeDefined();
+
+    const bedBranch = availabilityClause.OR.find(
+      (branch: any) => branch.rentalUnit === "BED",
+    );
+    expect(bedBranch).toBeDefined();
+    expect(bedBranch.reservations.none.bookingMode.in).toEqual([
+      "UNIT",
+      "WHOLE_ROOM",
+    ]);
+
+    const wholeOrPrivateBranch = availabilityClause.OR.find(
+      (branch: any) => Array.isArray(branch.rentalUnit?.in),
+    );
+    expect(wholeOrPrivateBranch.rentalUnit.in).toEqual([
+      "WHOLE",
+      "PRIVATE_ROOM",
+    ]);
+    expect(wholeOrPrivateBranch.reservations.none.status.in).toEqual([
       "PENDING_PAYMENT",
       "CONFIRMED",
+      "EARLY_CHECKOUT_REQUESTED",
+      "EARLY_CHECKOUT_APPROVED",
+      "EXTENSION_REQUESTED",
     ]);
+
     // overlap 규칙: existing.checkIn < 요청종료 AND existing.checkOut > 요청시작
-    expect(where.reservations.none.checkIn.lt).toEqual(new Date("2026-11-01"));
-    expect(where.reservations.none.checkOut.gt).toEqual(new Date("2026-08-01"));
-    // 입주 가능일도 요청 시작일 이전이어야 한다
+    expect(wholeOrPrivateBranch.reservations.none.checkIn.lt).toEqual(
+      new Date("2026-11-01"),
+    );
+    expect(wholeOrPrivateBranch.reservations.none.checkOut.gt).toEqual(
+      new Date("2026-08-01"),
+    );
+
+    // 입주 가능일도 요청 시작일 이전이어야 한다.
     expect(where.availableFrom.lte).toEqual(new Date("2026-08-01"));
   });
 

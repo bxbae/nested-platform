@@ -21,7 +21,7 @@ import { DEFAULT_FILTERS, RENT_MAX, RENT_MIN } from "../schema";
 
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
 const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
-const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "house"];
+const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "officetel", "house"];
 const SHARED_FACILITIES: SharedFacility[] = [
   "bathroom",
   "kitchen",
@@ -29,6 +29,14 @@ const SHARED_FACILITIES: SharedFacility[] = [
   "laundry_room",
   "entrance",
 ];
+
+function shiftISODate(value: string | undefined, days: number): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return undefined;
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 
 export function FilterSheet({
   open,
@@ -97,6 +105,10 @@ export function FilterSheet({
     }));
   };
 
+  const hasPartialStayRange = Boolean(draft.checkIn) !== Boolean(draft.checkOut);
+  const hasInvalidStayRange = Boolean(
+    draft.checkIn && draft.checkOut && draft.checkOut <= draft.checkIn,
+  );
 
   return (
     <>
@@ -406,31 +418,54 @@ export function FilterSheet({
             </div>
           </Section>
 
-          <Section title="입주 가능일">
-            <input
-              type="date"
-              value={draft.availableFrom ?? ""}
-              onChange={(event) =>
-                set({
-                  availableFrom: event.target.value,
-                })
-              }
-              style={{
-                padding: "11px 14px",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--r-sm)",
-                width: "100%",
-              }}
-            />
+          <Section title="입주 기간">
+            <div className="filter-stay-dates">
+              <label className="filter-date-field">
+                <span>입주일</span>
+                <input
+                  type="date"
+                  value={draft.checkIn ?? ""}
+                  max={shiftISODate(draft.checkOut, -1)}
+                  onChange={(event) => {
+                    const checkIn = event.target.value;
+                    set({
+                      checkIn,
+                      checkOut:
+                        draft.checkOut && checkIn && draft.checkOut <= checkIn
+                          ? ""
+                          : draft.checkOut,
+                      availableFrom: "",
+                    });
+                  }}
+                />
+              </label>
+
+              <label className="filter-date-field">
+                <span>퇴실일</span>
+                <input
+                  type="date"
+                  value={draft.checkOut ?? ""}
+                  min={shiftISODate(draft.checkIn, 1)}
+                  disabled={!draft.checkIn}
+                  onChange={(event) =>
+                    set({
+                      checkOut: event.target.value,
+                      availableFrom: "",
+                    })
+                  }
+                />
+              </label>
+            </div>
 
             <p
-              style={{
-                fontSize: 12.5,
-                color: "var(--text-2)",
-                marginTop: 6,
-              }}
+              className="filter-helper-text"
+              data-error={hasPartialStayRange || hasInvalidStayRange}
             >
-              선택한 날짜에 입주 가능한 숙소만 표시됩니다.
+              {hasPartialStayRange
+                ? "입주일과 퇴실일을 모두 선택해야 기간 필터가 적용됩니다."
+                : hasInvalidStayRange
+                  ? "퇴실일은 입주일보다 뒤여야 합니다."
+                  : "선택한 입주일과 퇴실일 사이에 예약 가능한 숙소만 표시됩니다."}
             </p>
           </Section>
 
@@ -593,6 +628,7 @@ export function FilterSheet({
               justifyContent: "center",
             }}
             onClick={() => onApply(draft)}
+            disabled={hasPartialStayRange || hasInvalidStayRange}
           >
             적용하기
           </button>
@@ -624,45 +660,23 @@ function MultiSelectDropdown<T extends string>({
 
   return (
     <details
-      style={{
-        border: "1px solid var(--border)",
-        borderRadius: "var(--r-sm)",
-        background: "var(--surface)",
-      }}
+      className="filter-multi-select"
+      data-active={values.length > 0}
     >
-      <summary
-        style={{
-          cursor: "pointer",
-          listStyle: "none",
-          padding: "12px 14px",
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <span style={{ fontWeight: 700, fontSize: 13 }}>{label}</span>
-        <span
-          style={{
-            minWidth: 0,
-            color: values.length ? "var(--text)" : "var(--text-2)",
-            fontSize: 13,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {summary}
+      <summary className="filter-multi-select-summary">
+        <span className="filter-multi-select-label">{label}</span>
+        <span className="filter-multi-select-value">
+          {values.length > 0 && (
+            <span className="filter-multi-select-check" aria-hidden="true">✓</span>
+          )}
+          <span>{summary}</span>
         </span>
       </summary>
-      <div
-        style={{
-          padding: "0 14px 12px",
-          display: "grid",
-          gap: 8,
-          borderTop: "1px solid var(--border)",
-        }}
-      >
-        <label style={{ display: "flex", gap: 8, alignItems: "center", paddingTop: 10, fontSize: 13 }}>
+      <div className="filter-multi-select-options">
+        <label
+          className="filter-multi-select-option"
+          data-active={values.length === 0}
+        >
           <input
             type="checkbox"
             checked={values.length === 0}
@@ -670,22 +684,29 @@ function MultiSelectDropdown<T extends string>({
           />
           전체
         </label>
-        {options.map((option) => (
-          <label key={option} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={values.includes(option)}
-              onChange={() =>
-                onChange(
-                  values.includes(option)
-                    ? values.filter((value) => value !== option)
-                    : [...values, option],
-                )
-              }
-            />
-            {labels[option]}
-          </label>
-        ))}
+        {options.map((option) => {
+          const active = values.includes(option);
+          return (
+            <label
+              key={option}
+              className="filter-multi-select-option"
+              data-active={active}
+            >
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={() =>
+                  onChange(
+                    active
+                      ? values.filter((value) => value !== option)
+                      : [...values, option],
+                  )
+                }
+              />
+              {labels[option]}
+            </label>
+          );
+        })}
       </div>
     </details>
   );

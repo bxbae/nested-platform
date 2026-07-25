@@ -5,6 +5,8 @@ import type {
   RoomRecord,
   ReservationRecord,
   CouponRecord,
+  CreateHoldData,
+  CompanionStatus,
 } from "../ports";
 
 // ── In-memory fakes ──
@@ -29,6 +31,8 @@ class FakeRepo implements ReservationRepo {
   rooms = new Map<string, RoomRecord>([["room1", makeRoom()]]);
   coupons = new Map<string, CouponRecord>();
   reservations: ReservationRecord[] = [];
+  companionMembers = new Map<string, Map<string, CompanionStatus>>();
+  friends = new Set<string>(["mate1", "mate2", "mate3"]);
   seq = 1;
 
   async findRoom(id: string) {
@@ -46,14 +50,15 @@ class FakeRepo implements ReservationRepo {
         r.checkOut > checkIn,
     );
   }
-  async createHold(data: Omit<ReservationRecord, "id" | "createdAt">) {
+  async createHold(data: CreateHoldData) {
+    const { companionIds = [], ...reservationData } = data;
     // emulate the room-row lock + capacity-aware inventory re-check
     const overlaps = await this.findOverlapping(
-      data.roomId,
-      data.checkIn,
-      data.checkOut,
+      reservationData.roomId,
+      reservationData.checkIn,
+      reservationData.checkOut,
     );
-    const room = this.rooms.get(data.roomId)!;
+    const room = this.rooms.get(reservationData.roomId)!;
     const capacity = Math.max(1, room.capacity ?? 1);
     const occupied = overlaps.reduce((sum, reservation) => {
       if (reservation.bookingMode !== "BED") return capacity;
@@ -62,20 +67,26 @@ class FakeRepo implements ReservationRepo {
     const unavailable =
       room.rentalUnit !== "BED"
         ? overlaps.length > 0
-        : data.bookingMode === "WHOLE_ROOM"
+        : reservationData.bookingMode === "WHOLE_ROOM"
           ? overlaps.length > 0
-          : occupied + data.reservedSpots > capacity;
+          : occupied + reservationData.reservedSpots > capacity;
     if (unavailable) {
       const e: any = new Error("conflict");
       e.code = "DATES_UNAVAILABLE";
       throw e;
     }
     const rec: ReservationRecord = {
-      ...data,
+      ...reservationData,
       id: `res${this.seq++}`,
       createdAt: new Date(),
     };
     this.reservations.push(rec);
+    if (companionIds.length > 0) {
+      this.companionMembers.set(
+        rec.id,
+        new Map(companionIds.map((id) => [id, "PENDING" as CompanionStatus])),
+      );
+    }
     return rec;
   }
   async findById(id: string) {
@@ -135,18 +146,39 @@ class FakeRepo implements ReservationRepo {
     return r;
   }
   async markCouponUsed() {}
+  async findFriendIds(_userId: string, candidateIds: string[]) {
+    return candidateIds.filter((id) => this.friends.has(id));
+  }
+  async findCompanionStatus(id: string, userId: string) {
+    const member = this.companionMembers.get(id)?.get(userId);
+    if (member) return member;
+    const r = this.reservations.find((x) => x.id === id);
+    return r?.companionId === userId ? r.companionStatus : null;
+  }
   async updateCompanionStatus(
     id: string,
-    status: "PENDING" | "ACCEPTED" | "DECLINED",
+    userId: string,
+    status: CompanionStatus,
   ) {
     const r = this.reservations.find((x) => x.id === id)!;
-    r.companionStatus = status;
-    r.companionRespondedAt = new Date();
-    return r;
+    const members = this.companionMembers.get(id);
+    if (members?.has(userId)) members.set(userId, status);
+    const respondedAt = new Date();
+    if (r.companionId === userId) {
+      r.companionStatus = status;
+      r.companionRespondedAt = respondedAt;
+      return r;
+    }
+    return {
+      ...r,
+      companionId: userId,
+      companionStatus: status,
+      companionRespondedAt: respondedAt,
+    };
   }
   async listByCompanion(companionId: string) {
     return this.reservations
-      .filter((r) => r.companionId === companionId)
+      .filter((r) => r.companionId === companionId || this.companionMembers.get(r.id)?.has(companionId))
       .map((r) => ({
         ...r,
         room: { id: r.roomId, name: "Test Room", region: "Test", image: null },
@@ -467,6 +499,77 @@ describe("ReservationsService", () => {
         "guestB",
       ),
     ).rejects.toMatchObject({ response: { code: "DATES_UNAVAILABLE" } });
+  });
+
+
+  it("다인실 여러 자리는 친구 목록에서 여러 명을 초대할 수 있다", async () => {
+    const repo = new FakeRepo();
+    repo.rooms.set("room1", makeRoom({ rentalUnit: "BED", capacity: 3 }));
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+
+    const reservation = await svc.create(
+      {
+        roomId: "room1",
+        checkIn: future,
+        months: 3,
+        bookingMode: "BED",
+        reservedSpots: 3,
+        companionIds: ["mate1", "mate2"],
+      },
+      "guestA",
+    );
+
+    expect(reservation.companionId).toBe("mate1");
+    expect(repo.companionMembers.get(reservation.id)?.get("mate1")).toBe("PENDING");
+    expect(repo.companionMembers.get(reservation.id)?.get("mate2")).toBe("PENDING");
+
+    const secondFriendResponse = await svc.respondToCompanionInvite(
+      reservation.id,
+      "mate2",
+      "accept",
+    );
+    expect(secondFriendResponse.companionId).toBe("mate2");
+    expect(secondFriendResponse.companionStatus).toBe("ACCEPTED");
+  });
+
+  it("친구가 아닌 사용자는 다인실 동반 입주자로 선택할 수 없다", async () => {
+    const repo = new FakeRepo();
+    repo.rooms.set("room1", makeRoom({ rentalUnit: "BED", capacity: 3 }));
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+
+    await expect(
+      svc.create(
+        {
+          roomId: "room1",
+          checkIn: future,
+          months: 3,
+          bookingMode: "BED",
+          reservedSpots: 2,
+          companionIds: ["stranger"],
+        },
+        "guestA",
+      ),
+    ).rejects.toMatchObject({ response: { code: "COMPANION_NOT_FRIEND" } });
+  });
+
+  it("예약 자리 수보다 많은 친구를 선택할 수 없다", async () => {
+    const repo = new FakeRepo();
+    repo.rooms.set("room1", makeRoom({ rentalUnit: "BED", capacity: 3 }));
+    const svc = new ReservationsService(repo, new FakeGateway(0));
+
+    await expect(
+      svc.create(
+        {
+          roomId: "room1",
+          checkIn: future,
+          months: 3,
+          bookingMode: "BED",
+          reservedSpots: 2,
+          companionIds: ["mate1", "mate2"],
+        },
+        "guestA",
+      ),
+    ).rejects.toMatchObject({ response: { code: "TOO_MANY_COMPANIONS" } });
   });
 
   it("친구 초대가 있는 다인실 예약은 두 자리 이상이어야 한다", async () => {

@@ -115,10 +115,21 @@ export class ReservationsService {
       });
     }
 
-    if (dto.companionId === guestId) {
+    const companionIds = [...new Set([
+      ...(dto.companionIds ?? []),
+      ...(dto.companionId ? [dto.companionId] : []),
+    ])];
+
+    if (companionIds.includes(guestId)) {
       throw new BadRequestException({
         code: "INVALID_COMPANION",
         message: "자기 자신을 룸메이트로 지정할 수 없습니다.",
+      });
+    }
+    if (companionIds.includes(room.hostId)) {
+      throw new BadRequestException({
+        code: "INVALID_COMPANION",
+        message: "숙소 호스트를 동반 입주자로 지정할 수 없습니다.",
       });
     }
 
@@ -129,11 +140,33 @@ export class ReservationsService {
       dto.reservedSpots,
     );
 
-    if (room.rentalUnit === "BED" && dto.companionId && booking.reservedSpots < 2) {
+    const usesMultiCompanionSelection = (dto.companionIds?.length ?? 0) > 0;
+    if (usesMultiCompanionSelection && room.rentalUnit !== "BED") {
+      throw new BadRequestException({
+        code: "COMPANION_REQUIRES_SHARED_ROOM",
+        message: "친구 다중 선택은 공유형 다인실 예약에서만 사용할 수 있습니다.",
+      });
+    }
+    if (room.rentalUnit === "BED" && companionIds.length > 0 && booking.reservedSpots < 2) {
       throw new BadRequestException({
         code: "COMPANION_REQUIRES_TWO_SPOTS",
         message: "친구와 함께 예약하려면 두 자리 이상을 선택해야 합니다.",
       });
+    }
+    if (room.rentalUnit === "BED" && companionIds.length > Math.max(0, booking.reservedSpots - 1)) {
+      throw new BadRequestException({
+        code: "TOO_MANY_COMPANIONS",
+        message: `선택한 ${booking.reservedSpots}자리에는 친구를 최대 ${Math.max(0, booking.reservedSpots - 1)}명까지 초대할 수 있습니다.`,
+      });
+    }
+    if (companionIds.length > 0) {
+      const friendIds = await this.repo.findFriendIds(guestId, companionIds);
+      if (friendIds.length !== companionIds.length) {
+        throw new ForbiddenException({
+          code: "COMPANION_NOT_FRIEND",
+          message: "현재 친구 목록에 있는 사용자만 동반 입주자로 선택할 수 있습니다.",
+        });
+      }
     }
 
     const checkOut = addMonths(dto.checkIn, dto.months);
@@ -157,11 +190,13 @@ export class ReservationsService {
     });
 
     try {
+      const legacyCompanionId = companionIds[0] ?? null;
       return await this.repo.createHold({
         roomId: room.id,
         guestId,
-        companionId: dto.companionId ?? null,
-        companionStatus: dto.companionId ? "PENDING" : null,
+        companionIds,
+        companionId: legacyCompanionId,
+        companionStatus: legacyCompanionId ? "PENDING" : null,
         companionRespondedAt: null,
         checkIn: dto.checkIn,
         checkOut,
@@ -299,13 +334,14 @@ export class ReservationsService {
         message: "예약을 찾을 수 없습니다.",
       });
     }
-    if (r.companionId !== userId) {
+    const companionStatus = await this.repo.findCompanionStatus(id, userId);
+    if (!companionStatus) {
       throw new ForbiddenException({
         code: "FORBIDDEN",
         message: "초대받은 사람만 응답할 수 있습니다.",
       });
     }
-    if (r.companionStatus !== "PENDING") {
+    if (companionStatus !== "PENDING") {
       throw new BadRequestException({
         code: "ALREADY_RESPONDED",
         message: "이미 응답한 초대입니다.",
@@ -313,6 +349,7 @@ export class ReservationsService {
     }
     return this.repo.updateCompanionStatus(
       id,
+      userId,
       decision === "accept" ? "ACCEPTED" : "DECLINED",
     );
   }

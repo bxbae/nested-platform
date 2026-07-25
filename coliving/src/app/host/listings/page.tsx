@@ -50,6 +50,8 @@ export default function HostListings() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // 숙소 상세의 "숙소 수정하기"로 들어왔을 때 수정창을 한 번만 자동으로 연다.
+  const openedFromDetailRef = useRef(false);
 
   async function load() {
     try {
@@ -65,6 +67,44 @@ export default function HostListings() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (openedFromDetailRef.current || listings.length === 0) return;
+
+    const requestedEditId = new URLSearchParams(window.location.search).get("edit");
+    if (!requestedEditId) return;
+
+    openedFromDetailRef.current = true;
+    const listing = listings.find((item) => item.id === requestedEditId);
+
+    if (!listing) {
+      setError("수정하려는 숙소를 숙소 관리 목록에서 찾지 못했어요.");
+      return;
+    }
+
+    setEditingId(listing.id);
+    setDraft({
+      monthlyRent: listing.monthlyRent,
+      deposit: listing.deposit,
+      minStayMonths: listing.minStayMonths ?? 1,
+      capacity:
+        listing.rentalUnit === "bed"
+          ? Math.max(2, listing.capacity ?? 2)
+          : 1,
+      rentalUnit: listing.rentalUnit ?? "",
+      buildingType: listing.buildingType ?? "",
+      sharedFacilities: listing.sharedFacilities ?? [],
+    });
+    setPhotos(listing.gallery ?? []);
+    setPhotoUrl("");
+    setPhotoError(null);
+
+    window.setTimeout(() => {
+      document
+        .getElementById(`listing-${listing.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }, [listings]);
 
   function startEdit(h: HostListing) {
     setEditingId(h.id);
@@ -201,7 +241,11 @@ export default function HostListings() {
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
           {listings.map((h) => (
-            <div key={h.id} className="card" style={{ overflow: "hidden", display: "flex", flexWrap: "wrap" }}>
+            <div
+              id={`listing-${h.id}`}
+              key={h.id}
+              className="card"
+              style={{ overflow: "hidden", display: "flex", flexWrap: "wrap" }}>
               <div style={{ width: 180, minWidth: 140, flex: "1 1 140px", maxWidth: 220 }}>
                 <Thumbnail src={h.photo} color={h.color} height="100%">
                   <div />
@@ -339,19 +383,25 @@ export default function HostListings() {
                             ))}
                           </select>
                         </label>
-                        <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-                          건물 유형
-                          <select
-                            value={draft.buildingType}
-                            onChange={(event) => setDraft((current) => ({ ...current, buildingType: event.target.value as BuildingType | "" }))}
-                            style={{ width: "100%", marginTop: 3 }}
-                          >
-                            <option value="">선택해주세요</option>
+                        <div style={{ fontSize: 12.5, color: "var(--text-2)", gridColumn: "1 / -1" }}>
+                          <div style={{ marginBottom: 6 }}>건물 유형</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                             {(Object.keys(BUILDING_TYPE_LABELS) as BuildingType[]).map((type) => (
-                              <option key={type} value={type}>{BUILDING_TYPE_LABELS[type]}</option>
+                              <button
+                                key={type}
+                                type="button"
+                                className="chip press"
+                                data-active={draft.buildingType === type}
+                                onClick={() =>
+                                  setDraft((current) => ({ ...current, buildingType: type }))
+                                }
+                                style={{ minWidth: 82, justifyContent: "center" }}
+                              >
+                                {BUILDING_TYPE_LABELS[type]}
+                              </button>
                             ))}
-                          </select>
-                        </label>
+                          </div>
+                        </div>
                       </div>
                       {draft.rentalUnit && draft.rentalUnit !== "whole" && (
                         <div>
@@ -391,6 +441,22 @@ export default function HostListings() {
                           style={{ width: "100%", marginTop: 3 }}
                         />
                       </label>
+                      {draft.rentalUnit === "bed" && (
+                        <div
+                          style={{
+                            padding: "10px 12px",
+                            border: "1px solid #f3c36b",
+                            borderRadius: "var(--r-sm)",
+                            background: "#fff8e8",
+                            color: "#7a4d00",
+                            fontSize: 12.5,
+                            lineHeight: 1.55,
+                          }}
+                        >
+                          공유형 {draft.capacity || 1}인실은 <strong>1인·침대 1자리 기준 월세</strong>를 입력하세요.
+                          여러 자리 예약 금액은 시스템이 자동 계산합니다.
+                        </div>
+                      )}
                       <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
                         보증금 (원)
                         <input

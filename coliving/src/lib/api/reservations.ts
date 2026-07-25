@@ -106,8 +106,10 @@ export async function requestBooking(input: {
   moveIn: string;
   months: number;
   couponCode?: string;
-  /** 함께 살 룸메이트. 지정하면 상대에게 수락 대기 초대가 걸린다. */
+  /** 기존 단일 동반자 필드. 이전 클라이언트 호환용. */
   companionId?: string;
+  /** 함께 입주할 친구들. 친구 목록에서 선택한 고유 ID만 보낸다. */
+  companionIds?: string[];
   bookingMode?: BookingMode;
   reservedSpots?: number;
 }): Promise<CreatedBooking> {
@@ -123,6 +125,7 @@ export async function requestBooking(input: {
         months: input.months,
         bookingMode: input.bookingMode,
         reservedSpots: input.reservedSpots,
+        companionIds: input.companionIds,
       }),
     });
     if (!res.ok) {
@@ -143,6 +146,7 @@ export async function requestBooking(input: {
       ...(input.reservedSpots ? { reservedSpots: input.reservedSpots } : {}),
       ...(input.couponCode ? { couponCode: input.couponCode } : {}),
       ...(input.companionId ? { companionId: input.companionId } : {}),
+      ...(input.companionIds?.length ? { companionIds: input.companionIds } : {}),
     }
   );
   return { id: r.id, status: r.status, totalDueNow: r.totalDueNow };
