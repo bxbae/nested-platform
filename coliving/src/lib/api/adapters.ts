@@ -50,11 +50,13 @@ const RENTAL_UNIT_FROM_API: Record<string, RentalUnit> = {
 const BUILDING_TYPE_TO_API: Record<BuildingType, string> = {
   studio: "STUDIO",
   apartment: "APARTMENT",
+  officetel: "OFFICETEL",
   house: "HOUSE",
 };
 const BUILDING_TYPE_FROM_API: Record<string, BuildingType> = {
   STUDIO: "studio",
   APARTMENT: "apartment",
+  OFFICETEL: "officetel",
   HOUSE: "house",
 };
 const SHARED_FACILITY_TO_API: Record<SharedFacility, string> = {

@@ -7,6 +7,8 @@ import type {
   CouponRecord,
   ReservationStatus,
   BookingMode,
+  CreateHoldData,
+  CompanionStatus,
 } from "./ports";
 
 const INVENTORY_HOLDING_STATUSES: ReservationStatus[] = [
@@ -74,9 +76,8 @@ export class PrismaReservationRepo implements ReservationRepo {
     });
   }
 
-  async createHold(
-    data: Omit<ReservationRecord, "id" | "createdAt">,
-  ): Promise<ReservationRecord> {
+  async createHold(data: CreateHoldData): Promise<ReservationRecord> {
+    const { companionIds = [], ...reservationData } = data;
     // 같은 숙소 행을 먼저 잠가서, 다인실의 남은 자리 계산과 예약 생성이
     // 하나의 임계 구역에서 수행되도록 한다. 단순 overlap 검사만으로는
     // 동시에 들어온 두 건이 남은 한 자리를 모두 확보할 수 있다.
@@ -84,11 +85,11 @@ export class PrismaReservationRepo implements ReservationRepo {
       async (tx: any) => {
         await tx.$queryRawUnsafe(
           'SELECT "id" FROM "Room" WHERE "id" = $1 FOR UPDATE',
-          data.roomId,
+          reservationData.roomId,
         );
 
         const room = await tx.room.findUnique({
-          where: { id: data.roomId },
+          where: { id: reservationData.roomId },
           select: { rentalUnit: true, capacity: true },
         });
         if (!room) {
@@ -100,10 +101,10 @@ export class PrismaReservationRepo implements ReservationRepo {
 
         const overlaps = await tx.reservation.findMany({
           where: {
-            roomId: data.roomId,
+            roomId: reservationData.roomId,
             status: { in: INVENTORY_HOLDING_STATUSES },
-            checkIn: { lt: data.checkOut },
-            checkOut: { gt: data.checkIn },
+            checkIn: { lt: reservationData.checkOut },
+            checkOut: { gt: reservationData.checkIn },
           },
           select: { bookingMode: true, reservedSpots: true },
         });
@@ -112,11 +113,22 @@ export class PrismaReservationRepo implements ReservationRepo {
           room.rentalUnit,
           room.capacity,
           overlaps,
-          data.bookingMode,
-          data.reservedSpots,
+          reservationData.bookingMode,
+          reservationData.reservedSpots,
         );
 
-        return tx.reservation.create({ data });
+        return tx.reservation.create({
+          data: {
+            ...reservationData,
+            ...(companionIds.length > 0
+              ? {
+                  companions: {
+                    create: companionIds.map((userId) => ({ userId })),
+                  },
+                }
+              : {}),
+          },
+        });
       },
       { isolationLevel: "Serializable" },
     );
@@ -214,11 +226,51 @@ export class PrismaReservationRepo implements ReservationRepo {
     return row?.room.hostId ?? null;
   }
 
+  async findFriendIds(userId: string, candidateIds: string[]): Promise<string[]> {
+    if (candidateIds.length === 0) return [];
+    const rows = await this.prisma.friendship.findMany({
+      where: {
+        OR: [
+          { userAId: userId, userBId: { in: candidateIds } },
+          { userBId: userId, userAId: { in: candidateIds } },
+        ],
+      },
+      select: { userAId: true, userBId: true },
+    });
+    return rows.map((row) => (row.userAId === userId ? row.userBId : row.userAId));
+  }
+
+  async findCompanionStatus(
+    id: string,
+    userId: string,
+  ): Promise<CompanionStatus | null> {
+    const row = await this.prisma.reservation.findUnique({
+      where: { id },
+      select: {
+        companionId: true,
+        companionStatus: true,
+        companions: {
+          where: { userId },
+          take: 1,
+          select: { status: true },
+        },
+      },
+    });
+    if (!row) return null;
+    return row.companions[0]?.status ??
+      (row.companionId === userId ? row.companionStatus : null);
+  }
+
   // 내가 동반자로 초대된 예약들. listByGuest 와 같은 형태로 돌려주어
   // 마이페이지에서 같은 카드 컴포넌트로 렌더할 수 있게 한다.
   async listByCompanion(companionId: string) {
     const rows = await this.prisma.reservation.findMany({
-      where: { companionId },
+      where: {
+        OR: [
+          { companionId },
+          { companions: { some: { userId: companionId } } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       include: {
         room: {
@@ -233,6 +285,11 @@ export class PrismaReservationRepo implements ReservationRepo {
             },
           },
         },
+        companions: {
+          where: { userId: companionId },
+          take: 1,
+          select: { status: true, respondedAt: true },
+        },
         payment: {
           select: {
             id: true,
@@ -244,25 +301,67 @@ export class PrismaReservationRepo implements ReservationRepo {
         },
       },
     });
-    return rows.map((r: (typeof rows)[number]) => ({
-      ...r,
-      room: {
-        id: r.room.id,
-        name: r.room.name,
-        region: r.room.region,
-        image: r.room.images[0]?.url ?? null,
-      },
-      payment: r.payment ?? null,
-    }));
+    return rows.map((r: (typeof rows)[number]) => {
+      const { companions, ...reservation } = r;
+      const membership = companions[0];
+      return {
+        ...reservation,
+        companionId: companionId,
+        companionStatus: membership?.status ?? r.companionStatus,
+        companionRespondedAt: membership?.respondedAt ?? r.companionRespondedAt,
+        room: {
+          id: r.room.id,
+          name: r.room.name,
+          region: r.room.region,
+          image: r.room.images[0]?.url ?? null,
+        },
+        payment: r.payment ?? null,
+      };
+    });
   }
 
   async updateCompanionStatus(
     id: string,
-    status: "PENDING" | "ACCEPTED" | "DECLINED",
+    userId: string,
+    status: CompanionStatus,
   ): Promise<ReservationRecord> {
-    return this.prisma.reservation.update({
-      where: { id },
-      data: { companionStatus: status, companionRespondedAt: new Date() },
+    return this.prisma.$transaction(async (tx) => {
+      const respondedAt = new Date();
+      const reservation = await tx.reservation.findUnique({ where: { id } });
+      if (!reservation) {
+        throw new ConflictException({
+          code: "RESERVATION_NOT_FOUND",
+          message: "예약을 찾을 수 없습니다.",
+        });
+      }
+
+      const member = await tx.reservationCompanionMember.findUnique({
+        where: { reservationId_userId: { reservationId: id, userId } },
+        select: { id: true },
+      });
+      if (member) {
+        await tx.reservationCompanionMember.update({
+          where: { id: member.id },
+          data: { status, respondedAt },
+        });
+      }
+
+      if (reservation.companionId === userId) {
+        return tx.reservation.update({
+          where: { id },
+          data: { companionStatus: status, companionRespondedAt: respondedAt },
+        });
+      }
+
+      // ReservationRecord still exposes the legacy companion fields. Shape the
+      // response for the friend who just answered without overwriting the first
+      // companion's compatibility columns.
+      return {
+        ...reservation,
+        companionId: userId,
+        companionStatus: status,
+        companionRespondedAt: respondedAt,
+      };
     });
   }
 

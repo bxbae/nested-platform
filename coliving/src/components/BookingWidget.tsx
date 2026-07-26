@@ -55,12 +55,12 @@ export function BookingWidget({ house }: { house: House }) {
     isBedBooking ? "bed" : "unit",
   );
   const [reservedSpots, setReservedSpots] = useState(1);
-  // 여러 자리를 대표자가 전액 결제할 수 있고, 필요할 때만 현재 친구 한 명을
-  // 예약에 초대한다. 친구를 선택하지 않아도 여러 자리 예약은 가능하다.
+  // 여러 자리는 대표자가 전액 결제한다. 동반 입주자는 전체 사용자 검색이
+  // 아니라 현재 친구 목록에서만 여러 명 선택할 수 있다.
   const [inviteFriend, setInviteFriend] = useState(false);
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
-  const [companionId, setCompanionId] = useState("");
+  const [selectedCompanionIds, setSelectedCompanionIds] = useState<string[]>([]);
 
   // check-out is derived from check-in + months (월 단위 예약)
   const checkOut = toISODate(addMonths(new Date(checkIn), months));
@@ -112,7 +112,7 @@ export function BookingWidget({ house }: { house: House }) {
   async function toggleFriendInvite(on: boolean) {
     setInviteFriend(on);
     if (!on) {
-      setCompanionId("");
+      setSelectedCompanionIds([]);
       return;
     }
     if (friends.length > 0) return;
@@ -128,7 +128,7 @@ export function BookingWidget({ house }: { house: House }) {
 
   function chooseBedBooking(mode: "single" | "group" | "whole") {
     setInviteFriend(false);
-    setCompanionId("");
+    setSelectedCompanionIds([]);
     if (mode === "whole") {
       setBookingMode("whole_room");
       setReservedSpots(roomCapacity);
@@ -150,7 +150,7 @@ export function BookingWidget({ house }: { house: House }) {
         months,
         bookingMode,
         reservedSpots,
-        companionId: inviteFriend && companionId ? companionId : undefined,
+        companionIds: inviteFriend ? selectedCompanionIds : undefined,
       });
       setHoldId(booking.id);
       setStep("pay");
@@ -224,15 +224,44 @@ export function BookingWidget({ house }: { house: House }) {
   const canRequest =
     avail.available === true &&
     !avail.loading &&
-    (!inviteFriend || Boolean(companionId));
+    (!inviteFriend || selectedCompanionIds.length > 0);
 
-  // 본인이 등록한 숙소면 예약 위젯 대신 안내 문구만 표시
+  // 본인이 등록한 숙소면 예약 위젯 대신 숙소 관리로 이동하는 버튼을 표시
   if (isOwnListing) {
+    const editUrl =
+      `/host/listings?edit=${encodeURIComponent(house.id)}` +
+      `#listing-${encodeURIComponent(house.id)}`;
+
     return (
-      <div className="card map-sticky" style={{ padding: 22, textAlign: "center" }}>
-        <p style={{ fontSize: 15, color: "var(--text-2)" }}>
-          본인이 등록한 숙소는 예약할 수 없어요.
+      <div
+        className="card map-sticky"
+        style={{ padding: 22, textAlign: "center" }}
+      >
+        <strong style={{ display: "block", fontSize: 16 }}>
+          내가 등록한 숙소입니다
+        </strong>
+        <p
+          style={{
+            fontSize: 13.5,
+            color: "var(--text-2)",
+            lineHeight: 1.6,
+            marginTop: 7,
+          }}
+        >
+          숙소 정보와 가격, 사진, 예약 조건을 관리할 수 있습니다.
         </p>
+        <button
+          type="button"
+          className="btn btn-primary press"
+          onClick={() => router.push(editUrl)}
+          style={{
+            width: "100%",
+            justifyContent: "center",
+            marginTop: 16,
+          }}
+        >
+          숙소 수정하기
+        </button>
       </div>
     );
   }
@@ -379,7 +408,13 @@ export function BookingWidget({ house }: { house: House }) {
                     <Stepper
                       label="자리 줄이기"
                       disabled={reservedSpots <= 2}
-                      onClick={() => setReservedSpots((value) => Math.max(2, value - 1))}
+                      onClick={() =>
+                        setReservedSpots((value) => {
+                          const next = Math.max(2, value - 1);
+                          setSelectedCompanionIds((ids) => ids.slice(0, Math.max(0, next - 1)));
+                          return next;
+                        })
+                      }
                     >
                       −
                     </Stepper>
@@ -404,7 +439,7 @@ export function BookingWidget({ house }: { house: House }) {
                       onChange={(event) => toggleFriendInvite(event.target.checked)}
                       style={{ width: 15, height: 15, cursor: "pointer" }}
                     />
-                    현재 친구 한 명을 함께 지낼 사람으로 초대
+                    친구 목록에서 동반 입주자 선택
                   </label>
 
                   {inviteFriend && (
@@ -417,27 +452,63 @@ export function BookingWidget({ house }: { house: House }) {
                         </p>
                       ) : (
                         <>
-                          <select
-                            value={companionId}
-                            onChange={(event) => setCompanionId(event.target.value)}
+                          <div
+                            role="group"
                             aria-label="함께 예약할 친구 선택"
                             style={{
-                              width: "100%",
-                              padding: "9px 12px",
-                              fontSize: 13.5,
+                              display: "grid",
+                              gap: 7,
+                              maxHeight: 210,
+                              overflowY: "auto",
+                              padding: 8,
                               border: "1px solid var(--border)",
                               borderRadius: "var(--r-sm)",
+                              background: "var(--bg-2)",
                             }}
                           >
-                            <option value="">친구를 선택하세요</option>
-                            {friends.map((friend) => (
-                              <option key={friend.userId} value={friend.userId}>
-                                {friend.name}
-                              </option>
-                            ))}
-                          </select>
+                            {friends.map((friend) => {
+                              const checked = selectedCompanionIds.includes(friend.userId);
+                              const maxFriends = Math.max(0, reservedSpots - 1);
+                              const disabled = !checked && selectedCompanionIds.length >= maxFriends;
+                              return (
+                                <label
+                                  key={friend.userId}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 9,
+                                    padding: "8px 9px",
+                                    borderRadius: 10,
+                                    background: checked ? "var(--primary-soft)" : "var(--surface)",
+                                    cursor: disabled ? "not-allowed" : "pointer",
+                                    opacity: disabled ? 0.55 : 1,
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onChange={() =>
+                                      setSelectedCompanionIds((ids) =>
+                                        checked
+                                          ? ids.filter((id) => id !== friend.userId)
+                                          : [...ids, friend.userId],
+                                      )
+                                    }
+                                  />
+                                  <span style={{ minWidth: 0 }}>
+                                    <strong style={{ display: "block", fontSize: 13.5 }}>{friend.name}</strong>
+                                    <span style={{ display: "block", fontSize: 11.5, color: "var(--text-2)", marginTop: 1 }}>
+                                      {friend.job ?? friend.tierLabel}
+                                    </span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
                           <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6, lineHeight: 1.6 }}>
-                            대표 예약자가 전액 결제하고 친구에게는 참여 수락 요청이 전달됩니다.
+                            최대 {Math.max(0, reservedSpots - 1)}명 · 현재 {selectedCompanionIds.length}명 선택.
+                            대표 예약자가 {reservedSpots}자리 전체 금액을 결제하고 선택한 친구에게 참여 요청이 전달됩니다.
                           </p>
                         </>
                       )}
@@ -654,10 +725,19 @@ function BookingChoice({
         border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
         borderRadius: "var(--r-sm)",
         background: active ? "var(--primary-soft)" : "#fff",
+        color: active ? "var(--text)" : "#17171a",
       }}
     >
       <strong style={{ display: "block", fontSize: 13.5 }}>{title}</strong>
-      <span style={{ display: "block", marginTop: 3, fontSize: 12, color: "var(--text-2)", lineHeight: 1.5 }}>
+      <span
+        style={{
+          display: "block",
+          marginTop: 3,
+          fontSize: 12,
+          color: active ? "var(--text-2)" : "#5f6368",
+          lineHeight: 1.5,
+        }}
+      >
         {description}
       </span>
     </button>

@@ -27,7 +27,7 @@ import { USE_REAL_API } from "@/lib/api/config";
 import { getAmenityLabel } from "@/lib/amenities";
 
 const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
-const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "house"];
+const BUILDING_TYPES: BuildingType[] = ["house", "apartment", "officetel", "studio"];
 const SHARED_FACILITIES: SharedFacility[] = [
   "bathroom",
   "kitchen",
@@ -50,7 +50,7 @@ const listingSchema = z.object({
   detailAddress: z.string(),
   zipCode: z.string(),
   rentalUnit: z.enum(["whole", "private_room", "bed"]),
-  buildingType: z.enum(["studio", "apartment", "house"]),
+  buildingType: z.enum(["studio", "apartment", "officetel", "house"]),
   sharedFacilities: z.array(z.enum(["bathroom", "kitchen", "living_room", "laundry_room", "entrance"])),
   gender: z.enum(["any", "female_only", "male_only"]),
   monthlyRent: z.coerce.number().min(100000, "월세는 10만원 이상이어야 합니다."),
@@ -59,8 +59,16 @@ const listingSchema = z.object({
   maintenanceFee: z.coerce.number().min(0),
   minStay: z.coerce.number().min(1).max(12),
   availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
-  // 신규 숙소는 전체 숙소도 포함해 최대 수용 인원을 받는다.
-  capacity: z.coerce.number().int().min(1).max(20),
+  // 공유형 다인실만 침대·자리 수를 입력받는다.
+  capacity: z.preprocess(
+    (value) => (value === "" || value == null ? undefined : value),
+    z.coerce
+      .number()
+      .int()
+      .min(2, "다인실 수용 인원은 2명 이상이어야 합니다.")
+      .max(20)
+      .optional(),
+  ),
   // 침실 개수 — 선택 항목이라 비워도 등록된다.
   bedrooms: z.preprocess(
     (value) => (value === "" || value == null ? undefined : value),
@@ -82,6 +90,13 @@ const listingSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["sharedFacilities"],
       message: "다른 입주자와 함께 사용하는 시설을 하나 이상 선택하세요.",
+    });
+  }
+  if (data.rentalUnit === "bed" && data.capacity == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["capacity"],
+      message: "다인실 수용 인원을 입력하세요.",
     });
   }
 });
@@ -120,7 +135,7 @@ export default function NewListing() {
     resolver: zodResolver(listingSchema),
     mode: "onChange",
     defaultValues: {
-      name: "", city: "", district: "", neighborhood: "", legalDongCode: "", roadAddress: "", jibunAddress: "", detailAddress: "", zipCode: "", rentalUnit: "whole", buildingType: "studio", sharedFacilities: [], gender: "any", capacity: 1,
+      name: "", city: "", district: "", neighborhood: "", legalDongCode: "", roadAddress: "", jibunAddress: "", detailAddress: "", zipCode: "", rentalUnit: "whole", buildingType: "studio", sharedFacilities: [], gender: "any", capacity: 2,
       monthlyRent: 700000, deposit: 3000000, cleaningFee: 70000, maintenanceFee: 50000, minStay: 3,
       availableFrom: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
       verifiedByHost: false as unknown as true,
@@ -194,7 +209,7 @@ export default function NewListing() {
           cleaningFee: Number(form.cleaningFee),
           maintenanceFee: Number(form.maintenanceFee),
           minStayMonths: Number(form.minStay),
-          capacity: Number(form.capacity),
+          capacity: form.rentalUnit === "bed" ? Number(form.capacity) : null,
           bedrooms: form.bedrooms ? Number(form.bedrooms) : null,
           availableFrom: form.availableFrom,
           address: {
@@ -445,6 +460,9 @@ export default function NewListing() {
                 if (rentalUnit === "whole") {
                   setValue("sharedFacilities", [], { shouldValidate: true, shouldDirty: true });
                 }
+                if (rentalUnit === "bed" && Number(v.capacity ?? 0) < 2) {
+                  setValue("capacity", 2, { shouldValidate: true, shouldDirty: true });
+                }
               }}
               style={{ width: "100%" }}
             >
@@ -462,15 +480,28 @@ export default function NewListing() {
           </Field>
 
           <Field label="건물 유형" error={errors.buildingType?.message}>
-            <select
-              value={v.buildingType}
-              onChange={(event) => setValue("buildingType", event.target.value as BuildingType, { shouldValidate: true, shouldDirty: true })}
-              style={{ width: "100%" }}
-            >
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {BUILDING_TYPES.map((type) => (
-                <option key={type} value={type}>{BUILDING_TYPE_LABELS[type]}</option>
+                <button
+                  key={type}
+                  type="button"
+                  className="chip press"
+                  data-active={v.buildingType === type}
+                  onClick={() =>
+                    setValue("buildingType", type, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                  }
+                  style={{ minWidth: 88, justifyContent: "center" }}
+                >
+                  {BUILDING_TYPE_LABELS[type]}
+                </button>
               ))}
-            </select>
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>
+              검색 결과에서 사용자가 바로 구분할 수 있도록 실제 건물 형태를 선택해주세요.
+            </p>
           </Field>
 
           {v.rentalUnit !== "whole" && (
@@ -491,15 +522,17 @@ export default function NewListing() {
             </Field>
           )}
 
-          <Field label="최대 수용 인원 (명)" error={errors.capacity?.message}>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              placeholder="예: 3"
-              {...register("capacity")}
-            />
-          </Field>
+          {v.rentalUnit === "bed" && (
+            <Field label="최대 수용 인원 (명)" error={errors.capacity?.message}>
+              <input
+                type="number"
+                min={2}
+                max={20}
+                placeholder="예: 4"
+                {...register("capacity")}
+              />
+            </Field>
+          )}
 
           <Field label="성별 조건">
             <div style={{ display: "flex", gap: 8 }}>
@@ -522,6 +555,25 @@ export default function NewListing() {
             reg={register("monthlyRent")}
             step={10000}
           />
+          {v.rentalUnit === "bed" && (
+            <div
+              role="note"
+              style={{
+                padding: "12px 14px",
+                border: "1px solid #f3c36b",
+                borderRadius: "var(--r-sm)",
+                background: "#fff8e8",
+                color: "#7a4d00",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            >
+              <strong>공유형 {Number(v.capacity) || 2}인실은 1인·침대 1자리 기준 월세를 입력하세요.</strong>
+              <br />
+              예: 방 전체 월세가 아니라 <strong>1인당 700,000원</strong>처럼 입력합니다.
+              여러 자리를 예약하면 선택한 자리 수만큼 자동 계산됩니다.
+            </div>
+          )}
           <PriceField label="보증금" reg={register("deposit")} step={100000} />
           <PriceField label="청소비 (1회)" reg={register("cleaningFee")} step={10000} />
           <PriceField label="관리비 (월)" reg={register("maintenanceFee")} step={10000} />

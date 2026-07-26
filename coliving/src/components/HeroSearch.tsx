@@ -7,10 +7,10 @@ import { WORKPLACE_PRESETS } from "@/lib/seoul";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const HOUSING_OPTIONS: { label: string; value: "" | RentalUnit }[] = [
-  { label: "전체", value: "" },
-  { label: "전체 숙소", value: "whole" },
-  { label: "개인실", value: "private_room" },
-  { label: "다인실·침대", value: "bed" },
+  { label: "모든 숙소", value: "" },
+  { label: "단독형 숙소", value: "whole" },
+  { label: "공유형 · 개인실", value: "private_room" },
+  { label: "공유형 · 다인실", value: "bed" },
 ];
 
 function startOfDay(d: Date): Date {
@@ -118,8 +118,8 @@ export function HeroSearch() {
         <label style={{ borderLeft: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, padding: "8px 16px" }}>
           <span aria-hidden="true" style={{ fontSize: 19 }}></span>
           <span style={{ minWidth: 0, flex: 1 }}>
-            <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>예약 공간</span>
-            <select value={rentalUnit} onChange={(e) => setRentalUnit(e.target.value as "" | RentalUnit)} aria-label="예약 공간" style={{ width: "100%", border: 0, outline: 0, background: "transparent", padding: "4px 0 0", fontSize: 14, cursor: "pointer" }}>
+            <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>숙소 유형</span>
+            <select value={rentalUnit} onChange={(e) => setRentalUnit(e.target.value as "" | RentalUnit)} aria-label="숙소 유형" style={{ width: "100%", border: 0, outline: 0, background: "transparent", padding: "4px 0 0", fontSize: 14, cursor: "pointer" }}>
               {HOUSING_OPTIONS.map((option) => <option key={option.value || "all"} value={option.value}>{option.label}</option>)}
             </select>
           </span>
@@ -129,7 +129,7 @@ export function HeroSearch() {
       </div>
 
       {openPanel === "location" && (
-        <div className="card" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, width: "min(470px, 92vw)", padding: 18, borderRadius: 18, boxShadow: "var(--shadow-lg)", zIndex: 300 }}>
+        <div className="card hero-floating-panel" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, width: "min(470px, 92vw)", padding: 18, borderRadius: 18, boxShadow: "var(--shadow-lg)", zIndex: 300 }}>
           <strong style={{ fontSize: 14 }}>주요 업무 지역</strong>
           <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 4 }}>자주 찾는 출근 목적지를 빠르게 선택하세요.</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
@@ -145,13 +145,13 @@ export function HeroSearch() {
       )}
 
       {openPanel === "date" && (
-        <div className="card" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, padding: 20, width: "min(620px, 94vw)", borderRadius: 18, boxShadow: "var(--shadow-lg)", zIndex: 300 }}>
+        <div className="card hero-floating-panel hero-date-panel" style={{ position: "absolute", top: "calc(100% + 10px)", left: 0, padding: 20, width: "min(620px, 94vw)", borderRadius: 18, boxShadow: "var(--shadow-lg)", zIndex: 300 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <button type="button" onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))} aria-label="이전 달" style={{ fontSize: 22 }}>‹</button>
             <strong style={{ fontSize: 14 }}>입주일과 퇴실일을 선택하세요</strong>
             <button type="button" onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))} aria-label="다음 달" style={{ fontSize: 22 }}>›</button>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+          <div className="hero-date-months" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
             {months.map((m) => (
               <div key={m.getTime()}>
                 <div style={{ textAlign: "center", fontWeight: 700, fontSize: 13, marginBottom: 10 }}>{m.getFullYear()}년 {m.getMonth() + 1}월</div>

@@ -71,6 +71,10 @@ export interface CouponRecord {
 }
 
 // Repository port
+export type CreateHoldData = Omit<ReservationRecord, "id" | "createdAt"> & {
+  companionIds?: string[];
+};
+
 export interface ReservationRepo {
   findRoom(roomId: string): Promise<RoomRecord | null>;
   findCouponByCode(code: string): Promise<CouponRecord | null>;
@@ -81,9 +85,7 @@ export interface ReservationRepo {
     checkOut: Date,
   ): Promise<ReservationRecord[]>;
   /** Insert inside a serializable transaction; the impl re-checks overlap under lock. */
-  createHold(
-    data: Omit<ReservationRecord, "id" | "createdAt">,
-  ): Promise<ReservationRecord>;
+  createHold(data: CreateHoldData): Promise<ReservationRecord>;
   findById(id: string): Promise<ReservationRecord | null>;
   /** All reservations for a guest, newest first, with room name + first image. */
   listByGuest(guestId: string): Promise<ReservationWithRoom[]>;
@@ -101,9 +103,14 @@ export interface ReservationRepo {
     id: string,
     status: ReservationStatus,
   ): Promise<ReservationRecord>;
+  /** 후보 중 실제 친구 관계인 사용자 ID만 반환한다. */
+  findFriendIds(userId: string, candidateIds: string[]): Promise<string[]>;
+  /** 예약에서 해당 사용자의 초대 상태를 찾는다. */
+  findCompanionStatus(id: string, userId: string): Promise<CompanionStatus | null>;
   /** 동반자 초대 응답 (수락/거절) 기록. */
   updateCompanionStatus(
     id: string,
+    userId: string,
     status: CompanionStatus,
   ): Promise<ReservationRecord>;
   /** 내가 동반자로 초대된 예약들 — 마이페이지에서 수락/거절하도록. */

@@ -34,6 +34,7 @@ enum RentalUnit {
 enum BuildingType {
   STUDIO
   APARTMENT
+  OFFICETEL
   HOUSE
 }
 
@@ -130,6 +131,7 @@ model User {
   reservations          Reservation[]
   // 내가 동반자로 초대된 예약들
   companionReservations Reservation[]            @relation("ReservationCompanion")
+  reservationCompanions ReservationCompanionMember[]
   reviews               Review[]
   messages              Message[]
   sessions              RefreshToken[]
@@ -372,6 +374,7 @@ model Reservation {
   // 게스트가 요청한 연장 개월 수 (승인 대기 중에만 값이 있음)
   extensionMonths      Int?
   tenantReview         TenantReview?
+  companions           ReservationCompanionMember[]
   createdAt            DateTime          @default(now())
 
   // 기간 중복과 다인실 잔여 자리는 예약 서비스가 숙소 행 잠금 및
@@ -379,6 +382,20 @@ model Reservation {
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@index([companionId])
+}
+
+model ReservationCompanionMember {
+  id            String          @id @default(cuid())
+  reservationId String
+  reservation   Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        CompanionStatus @default(PENDING)
+  respondedAt   DateTime?
+  createdAt     DateTime        @default(now())
+
+  @@unique([reservationId, userId])
+  @@index([userId, status])
 }
 
 model Payment {

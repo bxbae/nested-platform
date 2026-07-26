@@ -63,7 +63,7 @@ export interface CreateRoomInput {
   minStayMonths: number;
   availableFrom: string; // ISO date
   images: string[];
-  /** 함께 지낼 최대 인원. 신규 숙소는 전체 숙소도 필수로 보낸다. */
+  /** 공유형 다인실의 침대·자리 수. 단독형·개인실은 null. */
   capacity?: number | null;
   /** 침실 개수 (선택) */
   bedrooms?: number | null;

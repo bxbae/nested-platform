@@ -67,7 +67,7 @@ function deriveLegacyRoomType(
   if (!rentalUnit || !buildingType) return undefined;
   if (rentalUnit !== "WHOLE") return "SHARE_ROOM";
   if (buildingType === "STUDIO") return "ONE_ROOM";
-  if (buildingType === "APARTMENT") return "APARTMENT";
+  if (buildingType === "APARTMENT" || buildingType === "OFFICETEL") return "APARTMENT";
   return "WHOLE_HOUSE";
 }
 
@@ -532,10 +532,18 @@ export class RoomsService {
       throw new BadRequestException("숙소 분류를 확인해주세요.");
     }
 
+    const normalizedCapacity =
+      rest.rentalUnit == null
+        ? rest.capacity
+        : rest.rentalUnit === "BED"
+          ? rest.capacity
+          : null;
+
     const result = await this.prisma.$transaction(async (tx) => {
       const room = await tx.room.create({
         data: {
           ...rest,
+          capacity: normalizedCapacity,
           roomType: legacyRoomType,
           classificationReviewRequired: false,
           hostId,
@@ -616,8 +624,13 @@ export class RoomsService {
       if (!nextRentalUnit || !nextBuildingType) {
         throw new BadRequestException("예약 공간과 건물 유형을 모두 선택해주세요.");
       }
-      if (nextCapacity == null || nextCapacity < 1) {
-        throw new BadRequestException("최대 수용 인원을 입력해주세요.");
+      if (
+        nextRentalUnit === "BED" &&
+        (nextCapacity == null || nextCapacity < 2)
+      ) {
+        throw new BadRequestException(
+          "다인실 수용 인원은 2명 이상이어야 합니다.",
+        );
       }
       if (nextRentalUnit === "WHOLE" && nextSharedFacilities.length > 0) {
         throw new BadRequestException("전체 숙소는 공유 시설을 선택하지 않습니다.");
@@ -626,6 +639,9 @@ export class RoomsService {
         throw new BadRequestException("공유 시설을 하나 이상 선택해주세요.");
       }
       rest.roomType = deriveLegacyRoomType(nextRentalUnit, nextBuildingType);
+      if (nextRentalUnit !== "BED") {
+        rest.capacity = null;
+      }
       // 분류 세 축이 유효하게 저장된 경우에만 검토 필요 상태를 해제한다.
       rest.classificationReviewRequired = false;
     } else if (rest.classificationReviewRequired === false) {
