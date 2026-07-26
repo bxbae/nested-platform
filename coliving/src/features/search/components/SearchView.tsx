@@ -11,6 +11,7 @@ import {
   SHARED_FACILITY_LABELS,
 } from "@/lib/types";
 import { regionLabel } from "@/lib/seoul";
+import { formatStayDuration } from "@/lib/stay-dates";
 
 import { useSearchProperties } from "../api/useSearchProperties";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
@@ -178,7 +179,7 @@ export function SearchView() {
             <input
               key={filters.q ?? ""}
               defaultValue={filters.q ?? ""}
-              placeholder="지역, 숙소명으로 검색"
+              placeholder="회사명, 역, 업무지구 또는 숙소명 검색"
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   setQuery((event.target as HTMLInputElement).value);
@@ -428,7 +429,7 @@ export function SearchView() {
                   })
                 }
               >
-                입주 {filters.checkIn} · 퇴실 {filters.checkOut} ×
+                {filters.checkIn} ~ {filters.checkOut} · {formatStayDuration(filters.checkIn, filters.checkOut)} ×
               </button>
             )}
           </div>
@@ -467,6 +468,8 @@ export function SearchView() {
                   house={house}
                   onHover={setHover}
                   active={hover === house.id}
+                  checkIn={filters.checkIn}
+                  checkOut={filters.checkOut}
                 />
               ))}
 

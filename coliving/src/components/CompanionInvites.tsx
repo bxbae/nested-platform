@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { won } from "@/lib/format";
+import { formatStayDuration } from "@/lib/stay-dates";
 import {
   listCompanionInvites,
   respondToInvite,
@@ -76,7 +77,7 @@ export function CompanionInvites() {
                   <strong style={{ fontSize: 15.5 }}>{i.room.name.trim()}</strong>
                 </Link>
                 <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
-                  {i.room.region} · {fmt(i.checkIn)} 입주 · {i.months}개월
+                  {i.room.region} · {fmt(i.checkIn)} ~ {fmt(i.checkOut)} · {formatStayDuration(i.checkIn, i.checkOut)}
                 </div>
                 <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 2 }}>
                   입주 시 결제 {won(i.totalDueNow)} (예약자 부담)
@@ -111,7 +112,7 @@ export function CompanionInvites() {
               <div>
                 <strong style={{ fontSize: 14.5 }}>{i.room.name.trim()}</strong>
                 <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
-                  {fmt(i.checkIn)} 입주 · {i.months}개월
+                  {fmt(i.checkIn)} ~ {fmt(i.checkOut)} · {formatStayDuration(i.checkIn, i.checkOut)}
                 </div>
               </div>
               <span

@@ -15,6 +15,44 @@ export type ReservationStatus =
   | "EARLY_CHECKOUT_APPROVED"
   | "EXTENSION_REQUESTED";
 
+
+export type ContractChangeType = "EARLY_CHECKOUT" | "EXTENSION";
+export type ContractChangeStatus =
+  | "HOST_REVIEW"
+  | "PAYMENT_PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "EXPIRED"
+  | "COMPLETED";
+
+export interface ContractChangeRequestRecord {
+  id: string;
+  reservationId: string;
+  requesterId: string;
+  type: ContractChangeType;
+  status: ContractChangeStatus;
+  originalCheckOut: Date;
+  requestedCheckOut: Date;
+  additionalRent: number;
+  additionalMaintenance: number;
+  additionalServiceFee: number;
+  additionalAmount: number;
+  estimatedRefund: number;
+  depositDeduction: number;
+  finalRefund: number | null;
+  rejectReason: string | null;
+  paymentProvider: string | null;
+  paymentTxnId: string | null;
+  paymentDeadline: Date | null;
+  reviewedAt: Date | null;
+  paidAt: Date | null;
+  appliedAt: Date | null;
+  actualCheckOut: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface RoomRecord {
   id: string;
   name: string;
@@ -41,6 +79,8 @@ export interface ReservationRecord {
   companionRespondedAt: Date | null;
   checkIn: Date;
   checkOut: Date;
+  originalCheckOut?: Date | null;
+  actualCheckOut?: Date | null;
   months: number;
   status: ReservationStatus;
   bookingMode: BookingMode;
@@ -55,6 +95,7 @@ export interface ReservationRecord {
   createdAt: Date;
   // 연장 요청 시 게스트가 원한 개월 수 (대기 중에만 값 존재)
   extensionMonths?: number | null;
+  contractChanges?: ContractChangeRequestRecord[];
 }
 
 export interface CouponRecord {
@@ -84,6 +125,12 @@ export interface ReservationRepo {
     checkIn: Date,
     checkOut: Date,
   ): Promise<ReservationRecord[]>;
+  /** Host-blocked calendar days inside [checkIn, checkOut). */
+  findBlockedDates(
+    roomId: string,
+    checkIn: Date,
+    checkOut: Date,
+  ): Promise<Date[]>;
   /** Insert inside a serializable transaction; the impl re-checks overlap under lock. */
   createHold(data: CreateHoldData): Promise<ReservationRecord>;
   findById(id: string): Promise<ReservationRecord | null>;
@@ -102,6 +149,11 @@ export interface ReservationRepo {
   updateStatus(
     id: string,
     status: ReservationStatus,
+  ): Promise<ReservationRecord>;
+  /** 조기 퇴실 승인 시 실제 퇴실 시각과 상태를 함께 반영한다. */
+  approveEarlyCheckout(
+    id: string,
+    checkOut: Date,
   ): Promise<ReservationRecord>;
   /** 후보 중 실제 친구 관계인 사용자 ID만 반환한다. */
   findFriendIds(userId: string, candidateIds: string[]): Promise<string[]>;
@@ -133,8 +185,19 @@ export interface ReservationWithRoom extends ReservationRecord {
 // Reservation joined with room + guest context, for the host's "received
 // reservations" inbox. The host needs to know which listing and which guest.
 export interface ReservationForHost extends ReservationRecord {
-  room: { id: string; name: string; region: string; image: string | null };
+  room: {
+    id: string;
+    name: string;
+    region: string;
+    image: string | null;
+    rentalUnit: RentalUnit | null;
+    capacity: number | null;
+  };
   guest: { id: string; name: string; avatarColor: string };
+  companions?: {
+    status: CompanionStatus;
+    user: { id: string; name: string; avatarColor: string };
+  }[];
 }
 
 // Payment gateway port — one method: verify a payment really happened for `amount`.

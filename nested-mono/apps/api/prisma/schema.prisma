@@ -85,6 +85,22 @@ enum ReservationStatus {
   EXTENSION_REQUESTED
 }
 
+
+enum ContractChangeType {
+  EARLY_CHECKOUT
+  EXTENSION
+}
+
+enum ContractChangeStatus {
+  HOST_REVIEW
+  PAYMENT_PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  COMPLETED
+}
+
 enum PaymentStatus {
   PENDING
   PAID
@@ -357,6 +373,10 @@ model Reservation {
   companionRespondedAt DateTime?
   checkIn              DateTime
   checkOut             DateTime
+  // 최초 계약 종료일은 연장·조기 퇴실 후에도 변경 이력을 비교할 수 있도록 보존한다.
+  originalCheckOut     DateTime?
+  // 실제 퇴실 처리가 끝난 날짜. 계약 종료 예정일(checkOut)과 구분한다.
+  actualCheckOut       DateTime?
   months               Int
   status               ReservationStatus @default(PENDING_PAYMENT)
   // 대표 결제자가 확보한 예약 단위와 자리 수. 기존 예약은 UNIT/1로 안전하게 유지된다.
@@ -375,6 +395,7 @@ model Reservation {
   extensionMonths      Int?
   tenantReview         TenantReview?
   companions           ReservationCompanionMember[]
+  contractChanges      ContractChangeRequest[]
   createdAt            DateTime          @default(now())
 
   // 기간 중복과 다인실 잔여 자리는 예약 서비스가 숙소 행 잠금 및
@@ -382,6 +403,39 @@ model Reservation {
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@index([companionId])
+}
+
+
+model ContractChangeRequest {
+  id                    String               @id @default(cuid())
+  reservationId         String
+  reservation           Reservation          @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  requesterId           String
+  type                  ContractChangeType
+  status                ContractChangeStatus @default(HOST_REVIEW)
+  originalCheckOut      DateTime
+  requestedCheckOut     DateTime
+  additionalRent        Int                  @default(0)
+  additionalMaintenance Int                  @default(0)
+  additionalServiceFee  Int                  @default(0)
+  additionalAmount      Int                  @default(0)
+  estimatedRefund       Int                  @default(0)
+  depositDeduction      Int                  @default(0)
+  finalRefund           Int?
+  rejectReason          String?
+  paymentProvider       String?
+  paymentTxnId          String?
+  paymentDeadline       DateTime?
+  reviewedAt            DateTime?
+  paidAt                DateTime?
+  appliedAt             DateTime?
+  actualCheckOut        DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([reservationId, createdAt])
+  @@index([reservationId, status])
+  @@index([status, paymentDeadline])
 }
 
 model ReservationCompanionMember {
