@@ -276,6 +276,17 @@ export default function HostListings() {
                         승인 대기
                       </span>
                     )}
+                    <span
+                      className="chip"
+                      style={{
+                        fontSize: 11,
+                        background: getReservationBadge(h).color,
+                        color: "#fff",
+                        border: "none",
+                      }}
+                    >
+                      {getReservationBadge(h).label}
+                    </span>
                   </div>
                   <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
                     {h.region} · ★ {h.rating} · 후기 {h.reviews}
@@ -467,7 +478,7 @@ export default function HostListings() {
                         />
                       </label>
                       <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-                        최소 계약 개월
+                        최소 계약 기간 (개월)
                         <input
                           type="number"
                           min={1}
@@ -476,16 +487,40 @@ export default function HostListings() {
                           onChange={(e) => setDraft({ ...draft, minStayMonths: Number(e.target.value) })}
                           style={{ width: "100%", marginTop: 3 }}
                         />
+                        <span style={{ display: "block", marginTop: 4, lineHeight: 1.5 }}>
+                          게스트는 이 기간 이상이면 1개월 16일처럼 정확한 퇴실일을 선택할 수 있습니다.
+                        </span>
                       </label>
                       <p style={{ fontSize: 12, color: "var(--text-2)" }}>
                         주소·소개글은 등록 화면에서만 수정할 수 있어요.
                       </p>
                     </div>
                   ) : (
-                    <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 13, color: "var(--text-2)", flexWrap: "wrap" }}>
-                      <span>월세 {won(h.monthlyRent)}</span>
-                      <span>보증금 {won(h.deposit)}</span>
-                      <span>예약 {h.reservationCount}건</span>
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ display: "flex", gap: 16, fontSize: 13, color: "var(--text-2)", flexWrap: "wrap" }}>
+                        <span>월세 {won(h.monthlyRent)}{h.rentalUnit === "bed" ? " / 1자리" : ""}</span>
+                        <span>보증금 {won(h.deposit)}</span>
+                        <span>누적 예약 {h.reservationCount}건</span>
+                      </div>
+                      <div style={{ marginTop: 9, fontSize: 13.5, lineHeight: 1.65 }}>
+                        <strong>{getInventorySummary(h)}</strong>
+                        {getGuestSummary(h) && (
+                          <span style={{ display: "block", color: "var(--text-2)", fontSize: 12.5 }}>
+                            {getGuestSummary(h)}
+                          </span>
+                        )}
+                        {getScheduleSummary(h) && (
+                          <span style={{ display: "block", color: "var(--text-2)", fontSize: 12.5 }}>
+                            {getScheduleSummary(h)}
+                          </span>
+                        )}
+                        <Link
+                          href={`/host/calendar?roomId=${encodeURIComponent(h.id)}`}
+                          style={{ display: "inline-block", marginTop: 5, color: "var(--secondary)", fontSize: 12.5, fontWeight: 700 }}
+                        >
+                          예약 현황 보기 →
+                        </Link>
+                      </div>
                     </div>
                   )}
                   {!h.published && (
@@ -543,4 +578,49 @@ export default function HostListings() {
       )}
     </div>
   );
+}
+
+function getReservationBadge(h: HostListing): { label: string; color: string } {
+  const inventory = h.currentInventory;
+  if (!inventory) return { label: "예약 확인 중", color: "var(--text-2)" };
+  if (inventory.blocked) return { label: "예약 불가", color: "var(--warning)" };
+  if (inventory.fullyBooked) return { label: "예약 마감", color: "#4b4b52" };
+  if (h.rentalUnit === "bed" && inventory.remainingSpots != null) {
+    return { label: `잔여 ${inventory.remainingSpots}자리`, color: "var(--secondary)" };
+  }
+  if (inventory.reservationCount > 0) {
+    return { label: "예약 중", color: "var(--secondary)" };
+  }
+  if (inventory.nextCheckIn) {
+    return { label: "다음 예약 예정", color: "var(--warning)" };
+  }
+  return { label: "예약 가능", color: "var(--secondary)" };
+}
+
+function getInventorySummary(h: HostListing): string {
+  const inventory = h.currentInventory;
+  if (!inventory) return "현재 예약 현황을 확인 중입니다.";
+  if (inventory.blocked) return "오늘은 호스트 지정 예약 불가";
+  if (h.rentalUnit === "bed") {
+    const capacity = Math.max(2, h.capacity ?? 2);
+    const remaining = inventory.remainingSpots ?? Math.max(0, capacity - inventory.reservedSpots);
+    return `현재 ${inventory.reservedSpots}/${capacity}자리 예약${remaining > 0 ? ` · 잔여 ${remaining}자리` : " · 예약 마감"}`;
+  }
+  return inventory.reservationCount > 0 ? "현재 예약 중" : "현재 예약 가능";
+}
+
+function getGuestSummary(h: HostListing): string {
+  const inventory = h.currentInventory;
+  if (!inventory?.representativeGuestName) return "";
+  return `${inventory.representativeGuestName}${inventory.additionalGuestCount > 0 ? ` 외 ${inventory.additionalGuestCount}명` : ""}`;
+}
+
+function getScheduleSummary(h: HostListing): string {
+  const inventory = h.currentInventory;
+  if (!inventory) return "";
+  if (inventory.reservationCount > 0 && inventory.nextCheckOut) {
+    return `다음 퇴실 예정 ${inventory.nextCheckOut}`;
+  }
+  if (inventory.nextCheckIn) return `다음 입주 예정 ${inventory.nextCheckIn}`;
+  return "다음 예약 없음";
 }

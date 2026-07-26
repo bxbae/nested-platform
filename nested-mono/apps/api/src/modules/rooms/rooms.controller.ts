@@ -264,6 +264,20 @@ export class RoomsController {
     return this.rooms.getAgeGroupRooms(req.user.id);
   }
 
+  @Get(":id/availability")
+  availabilityMonth(
+    @Param("id") id: string,
+    @Query("year") yearValue: string,
+    @Query("month") monthValue: string,
+    @Query("requestedSpots") requestedSpotsValue?: string,
+  ) {
+    const now = new Date();
+    const year = finiteNumber(yearValue, { positive: true, integer: true }) ?? now.getFullYear();
+    const month = finiteNumber(monthValue, { positive: true, integer: true }) ?? now.getMonth() + 1;
+    const requestedSpots = finiteNumber(requestedSpotsValue, { positive: true, integer: true }) ?? 1;
+    return this.rooms.availabilityMonth(id, year, Math.min(12, Math.max(1, month)), requestedSpots);
+  }
+
   @Get(":id/similar")
   findSimilar(@Param("id") id: string) {
     return this.rooms.findSimilar(id);

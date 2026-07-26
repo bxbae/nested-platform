@@ -1,23 +1,23 @@
-// 배치 위치: src/modules/rooms/__tests__/rooms.service.availability.spec.ts
-//
-// 날짜 기반 검색(checkIn/checkOut) 검증.
-// prisma / redis / geocoding 을 mock 으로 주입하고, 서비스가 Prisma 에 넘기는
-// `where` 조건을 확인한다 — 실제 DB 없이 필터 조립 로직만 격리 테스트.
-
+import { BadRequestException } from "@nestjs/common";
 import { RoomsService } from "../rooms.service";
 
-describe("RoomsService — 날짜 기반 가용성 필터", () => {
-  function makeService() {
-    // 서비스가 findMany 에 넘긴 인자를 캡처해 검증에 사용한다.
+describe("RoomsService — 날짜 기반 가용성 검색", () => {
+  function makeService(
+    roomRows: any[] = [],
+    reservationRows: any[] = [],
+    blockRows: any[] = [],
+  ) {
     const calls: any[] = [];
     const prisma: any = {
       room: {
         findMany: jest.fn(async (args: any) => {
           calls.push(args);
-          return [];
+          return roomRows;
         }),
-        count: jest.fn(async () => 0),
+        count: jest.fn(async () => roomRows.length),
       },
+      reservation: { findMany: jest.fn(async () => reservationRows) },
+      calendarBlock: { findMany: jest.fn(async () => blockRows) },
     };
     const redis: any = {
       get: jest.fn(async () => null),
@@ -27,81 +27,113 @@ describe("RoomsService — 날짜 기반 가용성 필터", () => {
       cacheSet: jest.fn(async () => undefined),
     };
     const geocoding: any = { geocode: jest.fn(async () => null) };
-    return { svc: new RoomsService(prisma, redis, geocoding), calls };
+    return { svc: new RoomsService(prisma, redis, geocoding), calls, prisma };
   }
 
-  it("checkIn/checkOut 이 있으면 겹치는 예약이 없는 방만 조회한다", async () => {
-    const { svc, calls } = makeService();
-    await svc.search({ checkIn: "2026-08-01", checkOut: "2026-11-01" });
+  const baseRoom = {
+    hostId: "host-1",
+    capacity: null,
+    avgRating: 0,
+    images: [],
+  };
 
-    const where = calls[0]?.where;
-    expect(where).toBeDefined();
+  it("선택한 전체 기간에 예약 가능한 숙소만 반환한다", async () => {
+    const rooms = [
+      { ...baseRoom, id: "open-room", rentalUnit: "WHOLE" },
+      { ...baseRoom, id: "closed-room", rentalUnit: "PRIVATE_ROOM" },
+    ];
+    const reservations = [
+      {
+        roomId: "closed-room",
+        checkIn: new Date("2026-08-04T00:00:00.000Z"),
+        checkOut: new Date("2026-10-01T00:00:00.000Z"),
+        bookingMode: "UNIT",
+        reservedSpots: 1,
+        companionId: null,
+        companionStatus: null,
+      },
+    ];
 
-    // 신규 분류 구조에서는 날짜 가용성 조건이 AND 안의 OR 분기로 들어간다.
-    // 다인실(BED)은 일부 침대 예약이 있어도 남은 자리를 판매할 수 있으므로
-    // UNIT/WHOLE_ROOM 예약이 겹칠 때만 방 전체를 제외한다.
-    const availabilityClause = where.AND?.find(
-      (clause: any) => Array.isArray(clause.OR),
+    const { svc, calls } = makeService(rooms, reservations);
+    const result = await svc.search({
+      checkIn: "2026-08-04",
+      checkOut: "2026-09-20",
+    });
+
+    expect(result.items.map((room: any) => room.id)).toEqual(["open-room"]);
+    expect(result.total).toBe(1);
+    expect(calls[0]?.where.availableFrom.lte).toEqual(
+      new Date("2026-08-04"),
     );
-    expect(availabilityClause).toBeDefined();
-
-    const bedBranch = availabilityClause.OR.find(
-      (branch: any) => branch.rentalUnit === "BED",
-    );
-    expect(bedBranch).toBeDefined();
-    expect(bedBranch.reservations.none.bookingMode.in).toEqual([
-      "UNIT",
-      "WHOLE_ROOM",
-    ]);
-
-    const wholeOrPrivateBranch = availabilityClause.OR.find(
-      (branch: any) => Array.isArray(branch.rentalUnit?.in),
-    );
-    expect(wholeOrPrivateBranch.rentalUnit.in).toEqual([
-      "WHOLE",
-      "PRIVATE_ROOM",
-    ]);
-    expect(wholeOrPrivateBranch.reservations.none.status.in).toEqual([
-      "PENDING_PAYMENT",
-      "CONFIRMED",
-      "EARLY_CHECKOUT_REQUESTED",
-      "EARLY_CHECKOUT_APPROVED",
-      "EXTENSION_REQUESTED",
-    ]);
-
-    // overlap 규칙: existing.checkIn < 요청종료 AND existing.checkOut > 요청시작
-    expect(wholeOrPrivateBranch.reservations.none.checkIn.lt).toEqual(
-      new Date("2026-11-01"),
-    );
-    expect(wholeOrPrivateBranch.reservations.none.checkOut.gt).toEqual(
-      new Date("2026-08-01"),
-    );
-
-    // 입주 가능일도 요청 시작일 이전이어야 한다.
-    expect(where.availableFrom.lte).toEqual(new Date("2026-08-01"));
+    expect(calls[0]?.where.minStayMonths.lte).toBe(1);
   });
 
-  it("날짜가 없으면 예약 겹침 필터를 걸지 않는다", async () => {
+  it("다인실은 선택 기간에 잔여 자리가 있으면 유지한다", async () => {
+    const rooms = [
+      {
+        ...baseRoom,
+        id: "bed-room",
+        rentalUnit: "BED",
+        capacity: 3,
+      },
+    ];
+    const reservations = [
+      {
+        roomId: "bed-room",
+        checkIn: new Date("2026-08-01T00:00:00.000Z"),
+        checkOut: new Date("2026-10-01T00:00:00.000Z"),
+        bookingMode: "BED",
+        reservedSpots: 2,
+        companionId: null,
+        companionStatus: null,
+      },
+    ];
+
+    const { svc } = makeService(rooms, reservations);
+    const result = await svc.search({
+      checkIn: "2026-08-04",
+      checkOut: "2026-09-20",
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.inventory.remainingSpots).toBe(1);
+    expect(result.items[0]?.inventory.fullyBooked).toBe(false);
+  });
+
+  it("호스트가 막은 날짜가 포함되면 날짜 검색 결과에서 제외한다", async () => {
+    const rooms = [{ ...baseRoom, id: "blocked-room", rentalUnit: "WHOLE" }];
+    const blocks = [
+      { roomId: "blocked-room", date: new Date("2026-08-20T00:00:00.000Z") },
+    ];
+    const { svc } = makeService(rooms, [], blocks);
+
+    const result = await svc.search({
+      checkIn: "2026-08-04",
+      checkOut: "2026-09-20",
+    });
+
+    expect(result.items).toHaveLength(0);
+    expect(result.total).toBe(0);
+  });
+
+  it("플랫폼 최소 1개월보다 짧은 검색은 거부한다", async () => {
+    const { svc } = makeService();
+    await expect(
+      svc.search({ checkIn: "2026-08-05", checkOut: "2026-08-19" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("입주일 또는 퇴실일만 전달하면 거부한다", async () => {
+    const { svc } = makeService();
+    await expect(
+      svc.search({ checkIn: "2026-08-05" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("날짜가 없으면 입주 가능 시작일과 최소 계약 기간을 제한하지 않는다", async () => {
     const { svc, calls } = makeService();
     await svc.search({});
-    expect(calls[0]?.where.reservations).toBeUndefined();
-  });
-
-  it("checkIn 만 있으면(종료일 없음) 겹침 필터를 걸지 않는다", async () => {
-    const { svc, calls } = makeService();
-    await svc.search({ checkIn: "2026-08-01" });
-    expect(calls[0]?.where.reservations).toBeUndefined();
-  });
-
-  it("종료일이 시작일보다 빠르면 무시한다", async () => {
-    const { svc, calls } = makeService();
-    await svc.search({ checkIn: "2026-11-01", checkOut: "2026-08-01" });
-    expect(calls[0]?.where.reservations).toBeUndefined();
-  });
-
-  it("잘못된 날짜 형식은 무시한다", async () => {
-    const { svc, calls } = makeService();
-    await svc.search({ checkIn: "not-a-date", checkOut: "2026-11-01" });
-    expect(calls[0]?.where.reservations).toBeUndefined();
+    expect(calls[0]?.where.availableFrom).toBeUndefined();
+    expect(calls[0]?.where.minStayMonths).toBeUndefined();
   });
 });

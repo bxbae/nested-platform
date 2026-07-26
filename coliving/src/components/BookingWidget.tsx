@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getPriceUnitLabel, type BookingMode, type House } from "@/lib/types";
 import { won } from "@/lib/format";
-import { computePrice, addMonths, toISODate } from "@/lib/pricing";
+import { computePrice, toISODate } from "@/lib/pricing";
 import {
   checkAvailability as checkAvailabilityApi,
   type QuotedPrice,
@@ -13,6 +13,13 @@ import {
 } from "@/lib/api/reservations";
 import { listFriends, type FriendProfile } from "@/lib/api/friends";
 import { useAuth } from "@/lib/api/useAuth"; // 로그인한 사용자 정보 가져오기
+import { BookingAvailabilityCalendar } from "@/components/BookingAvailabilityCalendar";
+import {
+  addCalendarMonthsISO,
+  formatStayDuration,
+  isStayAtLeastMonths,
+  minimumCheckOutISO,
+} from "@/lib/stay-dates";
 
 type Step = "config" | "pay" | "done";
 
@@ -27,7 +34,15 @@ interface Availability {
   couponError?: boolean;
 }
 
-export function BookingWidget({ house }: { house: House }) {
+export function BookingWidget({
+  house,
+  initialCheckIn,
+  initialCheckOut,
+}: {
+  house: House;
+  initialCheckIn?: string;
+  initialCheckOut?: string;
+}) {
   const router = useRouter();
   const { user } = useAuth(); // 로그인한 사용자 정보
 
@@ -35,11 +50,29 @@ export function BookingWidget({ house }: { house: House }) {
   const isOwnListing = !!user && !!house.host?.id && user.id === house.host.id;
 
   const todayISO = toISODate(new Date());
-  const initialCheckIn =
+  const minimumCheckIn =
     house.availableFrom > todayISO ? house.availableFrom : todayISO;
+  const requestedInitialCheckIn =
+    initialCheckIn && /^\d{4}-\d{2}-\d{2}$/.test(initialCheckIn)
+      ? initialCheckIn
+      : minimumCheckIn;
+  // 검색에서 전달된 날짜는 그대로 보여준다. 숙소의 입주 가능 시작일이나
+  // 최소 계약 기간을 충족하지 않더라도 날짜를 조용히 다른 날로 바꾸지 않고,
+  // 아래 가용성 검사에서 정확한 불가 사유를 보여준다.
+  const normalizedInitialCheckIn = requestedInitialCheckIn;
+  const minimumInitialCheckOut = minimumCheckOutISO(
+    normalizedInitialCheckIn,
+    house.minStayMonths,
+  );
+  const normalizedInitialCheckOut =
+    initialCheckOut &&
+    /^\d{4}-\d{2}-\d{2}$/.test(initialCheckOut) &&
+    initialCheckOut > normalizedInitialCheckIn
+      ? initialCheckOut
+      : minimumInitialCheckOut;
 
-  const [checkIn, setCheckIn] = useState(initialCheckIn);
-  const [months, setMonths] = useState(house.minStayMonths);
+  const [checkIn, setCheckIn] = useState(normalizedInitialCheckIn);
+  const [checkOut, setCheckOut] = useState(normalizedInitialCheckOut);
   const [name, setName] = useState("");
   const [step, setStep] = useState<Step>("config");
   const [busy, setBusy] = useState(false);
@@ -62,8 +95,13 @@ export function BookingWidget({ house }: { house: House }) {
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [selectedCompanionIds, setSelectedCompanionIds] = useState<string[]>([]);
 
-  // check-out is derived from check-in + months (월 단위 예약)
-  const checkOut = toISODate(addMonths(new Date(checkIn), months));
+  const minimumCheckOut = minimumCheckOutISO(checkIn, house.minStayMonths);
+  const stayDuration = formatStayDuration(checkIn, checkOut);
+  const validStay = isStayAtLeastMonths(
+    checkIn,
+    checkOut,
+    house.minStayMonths,
+  );
 
   // Local estimate, used only until the server quote arrives (and in demo mode).
   // The server is authoritative for money — coupon validity lives there — so
@@ -74,7 +112,8 @@ export function BookingWidget({ house }: { house: House }) {
     deposit: house.deposit * priceUnits,
     cleaningFee: house.cleaningFee * priceUnits,
     maintenanceFee: house.maintenanceFee * priceUnits,
-    months,
+    checkIn,
+    checkOut,
   });
   const price = avail.price ?? localPrice;
 
@@ -85,7 +124,7 @@ export function BookingWidget({ house }: { house: House }) {
       const data = await checkAvailabilityApi({
         houseId: house.id,
         checkIn,
-        months,
+        checkOut,
         couponCode: appliedCoupon || undefined,
         bookingMode,
         reservedSpots,
@@ -101,12 +140,27 @@ export function BookingWidget({ house }: { house: House }) {
     } catch {
       setAvail({ loading: false, available: null, reason: "확인 중 오류가 발생했습니다." });
     }
-  }, [house.id, checkIn, months, appliedCoupon, bookingMode, reservedSpots]);
+  }, [house.id, checkIn, checkOut, appliedCoupon, bookingMode, reservedSpots]);
 
   useEffect(() => {
     const t = setTimeout(checkAvailability, 250);
     return () => clearTimeout(t);
   }, [checkAvailability]);
+
+  function updateCheckIn(nextCheckIn: string) {
+    const nextMinimum = minimumCheckOutISO(nextCheckIn, house.minStayMonths);
+    setCheckIn(nextCheckIn);
+    setCheckOut((current) => (current >= nextMinimum ? current : nextMinimum));
+  }
+
+  function updateStayRange(range: { checkIn: string; checkOut: string }) {
+    setCheckIn(range.checkIn);
+    setCheckOut(range.checkOut);
+  }
+
+  function applyQuickStay(months: number) {
+    setCheckOut(addCalendarMonthsISO(checkIn, months));
+  }
 
   // ── 예약 요청 → hold ──
   async function toggleFriendInvite(on: boolean) {
@@ -147,7 +201,7 @@ export function BookingWidget({ house }: { house: House }) {
         houseId: house.id,
         guestName: name || "게스트",
         moveIn: checkIn,
-        months,
+        checkOut,
         bookingMode,
         reservedSpots,
         companionIds: inviteFriend ? selectedCompanionIds : undefined,
@@ -222,9 +276,11 @@ export function BookingWidget({ house }: { house: House }) {
   }
 
   const canRequest =
+    validStay &&
     avail.available === true &&
     !avail.loading &&
     (!inviteFriend || selectedCompanionIds.length > 0);
+  const reservationClosed = avail.available === false && !avail.couponError;
 
   // 본인이 등록한 숙소면 예약 위젯 대신 숙소 관리로 이동하는 버튼을 표시
   if (isOwnListing) {
@@ -290,56 +346,76 @@ export function BookingWidget({ house }: { house: House }) {
             }}
           >
             <label style={{ padding: "10px 12px", borderRight: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-2)" }}>체크인</div>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-2)" }}>
+                입주일
+              </span>
               <input
                 type="date"
                 value={checkIn}
-                min={todayISO}
-                onChange={(e) => setCheckIn(e.target.value)}
-                style={{ border: "none", outline: "none", fontSize: 14, marginTop: 2, width: "100%" }}
+                min={minimumCheckIn}
+                max={checkOut}
+                onChange={(event) => updateCheckIn(event.target.value)}
+                style={{ width: "100%", border: 0, background: "transparent", marginTop: 4 }}
               />
             </label>
-            <div style={{ padding: "10px 12px" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-2)" }}>체크아웃</div>
-              <div style={{ fontSize: 14, marginTop: 4 }}>{checkOut}</div>
-            </div>
+            <label style={{ padding: "10px 12px" }}>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-2)" }}>
+                퇴실일
+              </span>
+              <input
+                type="date"
+                value={checkOut}
+                min={minimumCheckOut}
+                onChange={(event) => setCheckOut(event.target.value)}
+                style={{ width: "100%", border: 0, background: "transparent", marginTop: 4 }}
+              />
+            </label>
           </div>
 
-          {/* 월 단위 예약 (기간 stepper) */}
+          <BookingAvailabilityCalendar
+            roomId={house.id}
+            checkIn={checkIn}
+            checkOut={checkOut}
+            minStayMonths={house.minStayMonths}
+            requestedSpots={priceUnits}
+            onChange={updateStayRange}
+          />
+
           <div
             style={{
               marginTop: 10,
               padding: "10px 12px",
               border: "1px solid var(--border)",
               borderRadius: "var(--r-sm)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
             }}
           >
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-2)" }}>계약 기간</div>
-              <div style={{ fontSize: 14, marginTop: 2 }}>
-                {months}개월 <span style={{ color: "var(--text-2)", fontSize: 12 }}>(최소 {house.minStayMonths})</span>
-              </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-2)" }}>
+              계약 기간
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <Stepper
-                label="기간 줄이기"
-                disabled={months <= house.minStayMonths}
-                onClick={() => setMonths((m) => Math.max(house.minStayMonths, m - 1))}
-              >
-                −
-              </Stepper>
-              <span style={{ minWidth: 20, textAlign: "center", fontWeight: 600 }}>{months}</span>
-              <Stepper
-                label="기간 늘리기"
-                disabled={months >= 24}
-                onClick={() => setMonths((m) => Math.min(24, m + 1))}
-              >
-                +
-              </Stepper>
+            <div style={{ fontSize: 14, marginTop: 3 }}>
+              {stayDuration || "날짜를 선택해주세요"}
+              <span style={{ color: "var(--text-2)", fontSize: 12 }}>
+                {` · 최소 ${house.minStayMonths}개월`}
+              </span>
             </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 9 }}>
+              {[house.minStayMonths, 3, 6, 12]
+                .filter((value, index, values) => value >= house.minStayMonths && values.indexOf(value) === index)
+                .map((monthCount) => (
+                  <button
+                    key={monthCount}
+                    type="button"
+                    className="chip press"
+                    onClick={() => applyQuickStay(monthCount)}
+                  >
+                    {monthCount === house.minStayMonths ? `최소 ${monthCount}개월` : `${monthCount}개월`}
+                  </button>
+                ))}
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: 8, lineHeight: 1.5 }}>
+              최소 기간 이후에는 1개월 16일처럼 퇴실일을 날짜 단위로 조정할 수 있습니다.
+              마지막 부분 월의 월세와 관리비는 일할 계산됩니다.
+            </p>
           </div>
 
           {/* 예약 가능 여부 */}
@@ -593,11 +669,11 @@ export function BookingWidget({ house }: { house: House }) {
             disabled={!canRequest || busy}
             onClick={requestBooking}
           >
-            {busy ? "처리 중…" : "예약 요청하기"}
+            {busy ? "처리 중…" : reservationClosed ? "예약 마감" : "예약 요청하기"}
           </button>
           {error && <p style={{ color: "var(--primary)", fontSize: 13, marginTop: 10, textAlign: "center" }}>{error}</p>}
           <p style={{ fontSize: 12, color: "var(--text-2)", textAlign: "center", marginTop: 10 }}>
-            {priceUnits > 1 ? `${priceUnits}자리 · ` : ""}{months}개월 총 계약금액 {won(price.contractTotal)} · 아직 결제되지 않습니다
+            {priceUnits > 1 ? `${priceUnits}자리 · ` : ""}{stayDuration} 총 계약금액 {won(price.contractTotal)} · 아직 결제되지 않습니다
           </p>
         </>
       )}
@@ -606,7 +682,7 @@ export function BookingWidget({ house }: { house: House }) {
         <div style={{ marginTop: 18 }}>
           <strong style={{ fontSize: 15 }}>결제하기</strong>
           <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
-            {checkIn} ~ {checkOut} · {months}개월{priceUnits > 1 ? ` · ${priceUnits}자리` : ""}
+            {checkIn} ~ {checkOut} · {stayDuration}{priceUnits > 1 ? ` · ${priceUnits}자리` : ""}
           </div>
 
           <div style={{ display: "grid", gap: 12, marginTop: 14 }}>

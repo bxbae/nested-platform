@@ -13,10 +13,13 @@ export interface JobHub {
 export const jobHubs: JobHub[] = [
   { id: "gangnam", name: "강남", label: "테헤란로 · IT·대기업", lat: 37.4979, lng: 127.0276 },
   { id: "yeouido", name: "여의도", label: "금융·방송", lat: 37.5219, lng: 126.9245 },
-  { id: "pangyo", name: "판교", label: "판교테크노밸리 · 테크", lat: 37.3948, lng: 127.1112 },
+  { id: "pangyo", name: "판교·분당", label: "판교테크노밸리 · 테크", lat: 37.3948, lng: 127.1112 },
   { id: "jongno", name: "종로·광화문", label: "광화문·시청 · 대기업 본사", lat: 37.5729, lng: 126.9794 },
-  { id: "guro", name: "구로·가산", label: "구로·가산 디지털단지", lat: 37.4827, lng: 126.8967 },
-  { id: "seongsu", name: "성수", label: "성수 · 스타트업·크리에이티브", lat: 37.5446, lng: 127.0559 },
+  { id: "guro", name: "구로·가산", label: "디지털단지 · IT·제조", lat: 37.4827, lng: 126.8967 },
+  { id: "seongsu", name: "성수", label: "스타트업·크리에이티브", lat: 37.5446, lng: 127.0559 },
+  { id: "magok", name: "마곡", label: "R&D·바이오·대기업", lat: 37.5602, lng: 126.8252 },
+  { id: "songdo", name: "송도", label: "바이오·국제업무지구", lat: 37.3827, lng: 126.6439 },
+  { id: "gwanggyo", name: "수원·광교", label: "R&D·공공기관·테크", lat: 37.2864, lng: 127.0576 },
 ];
 
 // Haversine distance in km.

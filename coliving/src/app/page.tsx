@@ -54,7 +54,7 @@ export default async function Home() {
         <div className="wrap home-hero-inner">
           <div style={{ width: "100%" }}>
             <div className="home-hero-copy" style={{ maxWidth: 760 }}>
-              <span className="eyebrow">서울의 공유주거</span>
+              <span className="eyebrow">서울·근교 직장인 공유주거</span>
 
               <h1
                 className="display home-hero-title"
@@ -81,8 +81,8 @@ export default async function Home() {
                   maxWidth: 540,
                 }}
               >
-                출근 시간과 생활 성향을 기준으로 나에게 맞는 공유주거를
-                찾아보세요.
+                회사·역·업무지구까지의 통근시간과 생활 성향을 기준으로
+                나에게 맞는 집을 찾아보세요.
               </p>
             </div>
 

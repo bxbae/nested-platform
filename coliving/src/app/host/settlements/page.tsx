@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { won } from "@/lib/format";
+import { formatStayDuration } from "@/lib/stay-dates";
 import { getHostSettlements, type SettlementSummary } from "@/lib/api/host";
 
 export default function HostSettlements() {
@@ -35,12 +36,9 @@ export default function HostSettlements() {
         <SummaryCard label="지급 완료" value={loading ? "…" : won(data?.paidNet ?? 0)} muted />
       </div>
 
-      {/* occupancy / deposits held — current stays only */}
       <div className="stat-row" style={{ marginBottom: 24 }}>
-        <SummaryCard label="현재 입주 인원" value={loading ? "…" : `${data?.totalOccupants ?? 0}명`} />
+        <SummaryCard label="총 실수령액" value={loading ? "…" : won(data?.totalNet ?? 0)} />
         <SummaryCard label="보유 보증금" value={loading ? "…" : won(data?.totalDeposit ?? 0)} muted />
-        <SummaryCard label="진행 중 계약" value={loading ? "…" : `${rows.filter((r) => r.status === "SCHEDULED").length}건`} />
-        <SummaryCard label="종료된 계약" value={loading ? "…" : `${rows.filter((r) => r.status === "PAID").length}건`} muted />
       </div>
 
       {loading && <div style={{ color: "var(--text-2)" }}>불러오는 중…</div>}
@@ -59,8 +57,11 @@ export default function HostSettlements() {
                 <tr style={{ background: "var(--surface-2, #f7f7f7)", textAlign: "left" }}>
                   <Th>숙소</Th>
                   <Th>입주자</Th>
-                  <Th center>인원</Th>
+                  <Th>예약 유형</Th>
+                  <Th center>예약 자리</Th>
+                  <Th center>입주 인원</Th>
                   <Th>계약 기간</Th>
+                  <Th>계약 변경</Th>
                   <Th right>월세</Th>
                   <Th right>보증금</Th>
                   <Th right>거래액</Th>
@@ -74,10 +75,26 @@ export default function HostSettlements() {
                   <tr key={r.reservationId} style={{ borderTop: "1px solid var(--border)" }}>
                     <Td>{r.roomName}</Td>
                     <Td>{r.guestName}</Td>
+                    <Td>{bookingModeLabel(r.bookingMode)}</Td>
+                    <Td center>{r.reservedSpots}자리</Td>
                     <Td center>{r.occupants}명</Td>
                     <Td>
                       {r.checkIn} ~ {r.checkOut}
-                      <span style={{ color: "var(--text-2)" }}> ({r.months}개월)</span>
+                      <span style={{ color: "var(--text-2)" }}> ({formatStayDuration(r.checkIn, r.checkOut)})</span>
+                    </Td>
+                    <Td>
+                      {r.changeType ? (
+                        <span style={{ lineHeight: 1.6 }}>
+                          {r.changeType === "EXTENSION" ? "계약 연장" : "조기 퇴실"}
+                          {r.changeStatus ? ` · ${r.changeStatus}` : ""}
+                          {r.extensionPaid > 0 ? <><br />연장 결제 {won(r.extensionPaid)}</> : null}
+                          {r.estimatedRefund > 0 ? <><br />예상 환불 {won(r.estimatedRefund)}</> : null}
+                          {r.depositDeduction > 0 ? <><br />보증금 공제 {won(r.depositDeduction)}</> : null}
+                          {r.finalRefund != null ? <><br />최종 반환 {won(r.finalRefund)}</> : null}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--text-2)" }}>없음</span>
+                      )}
                     </Td>
                     <Td right>{won(r.monthlyRent)}</Td>
                     <Td right muted>{won(r.deposit)}</Td>
@@ -106,6 +123,12 @@ export default function HostSettlements() {
       )}
     </div>
   );
+}
+
+function bookingModeLabel(mode: SettlementSummary["rows"][number]["bookingMode"]): string {
+  if (mode === "BED") return "다인실 자리";
+  if (mode === "WHOLE_ROOM") return "다인실 전체";
+  return "숙소 단위";
 }
 
 function SummaryCard({ label, value, accent, muted }: { label: string; value: string; accent?: boolean; muted?: boolean }) {

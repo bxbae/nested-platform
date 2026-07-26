@@ -180,6 +180,15 @@ export interface ApiRoom {
   description?: string;
   blurb?: string;
   color?: string;
+  inventory?: {
+    reservedSpots: number;
+    remainingSpots: number | null;
+    fullyBooked: boolean;
+    blocked: boolean;
+    scope: "SELECTED_DATES" | "CURRENT";
+    checkIn?: string | null;
+    checkOut?: string | null;
+  };
 }
 
 // ── Prisma Room → House (flatten + enum decode) ──
@@ -197,6 +206,7 @@ export function apiRoomToHouse(r: ApiRoom): House {
     isMine: (r as { isMine?: boolean }).isMine ?? false,
     availableAgainFrom:
       (r as { availableAgainFrom?: string | null }).availableAgainFrom ?? null,
+    inventory: r.inventory,
     city: r.city ?? "",
     neighborhood: r.neighborhood ?? r.region,
     region: r.region,

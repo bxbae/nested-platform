@@ -53,7 +53,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const house = await loadHouse(id);
   if (!house) return { title: "숙소를 찾을 수 없습니다" };
   const title = `${house.name.trim()} · ${house.region}`;
-  const description = `${house.region}의 ${getAccommodationLabel(house)} · 월 ${won(house.monthlyRent)} · ★ ${house.rating}. Nested에서 월 단위로 예약하세요.`;
+  const description = `${house.region}의 ${getAccommodationLabel(house)} · 월 ${won(house.monthlyRent)} · ★ ${house.rating}. Nested에서 최소 한 달부터 원하는 날짜까지 예약하세요.`;
   return {
     title,
     description,
@@ -81,10 +81,10 @@ export default async function HomeDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ hub?: string }>;
+  searchParams: Promise<{ hub?: string; checkIn?: string; checkOut?: string }>;
 }) {
   const { id } = await params;
-  const { hub: hubId } = await searchParams;
+  const { hub: hubId, checkIn, checkOut } = await searchParams;
   const base = await loadHouse(id);
   if (!base) notFound();
   const house = enrichHouse(base);
@@ -354,7 +354,7 @@ export default async function HomeDetail({
 
         {/* Right: booking card */}
         <div>
-          <BookingWidget house={house} />
+          <BookingWidget house={house} initialCheckIn={checkIn} initialCheckOut={checkOut} />
         </div>
       </div>
     </div>

@@ -10,14 +10,11 @@ import type {
   CreateHoldData,
   CompanionStatus,
 } from "./ports";
-
-const INVENTORY_HOLDING_STATUSES: ReservationStatus[] = [
-  "PENDING_PAYMENT",
-  "CONFIRMED",
-  "EARLY_CHECKOUT_REQUESTED",
-  "EARLY_CHECKOUT_APPROVED",
-  "EXTENSION_REQUESTED",
-];
+import {
+  INVENTORY_HOLDING_STATUSES,
+  atUtcDayStart,
+  calculateInventory,
+} from "./reservation-inventory.util";
 
 // Prisma-backed implementation of the ReservationRepo port.
 //
@@ -76,6 +73,22 @@ export class PrismaReservationRepo implements ReservationRepo {
     });
   }
 
+  async findBlockedDates(
+    roomId: string,
+    checkIn: Date,
+    checkOut: Date,
+  ): Promise<Date[]> {
+    const rows = await this.prisma.calendarBlock.findMany({
+      where: {
+        roomId,
+        blocked: true,
+        date: { gte: atUtcDayStart(checkIn), lt: atUtcDayStart(checkOut) },
+      },
+      select: { date: true },
+    });
+    return rows.map((row) => row.date);
+  }
+
   async createHold(data: CreateHoldData): Promise<ReservationRecord> {
     const { companionIds = [], ...reservationData } = data;
     // 같은 숙소 행을 먼저 잠가서, 다인실의 남은 자리 계산과 예약 생성이
@@ -99,15 +112,31 @@ export class PrismaReservationRepo implements ReservationRepo {
           });
         }
 
-        const overlaps = await tx.reservation.findMany({
-          where: {
-            roomId: reservationData.roomId,
-            status: { in: INVENTORY_HOLDING_STATUSES },
-            checkIn: { lt: reservationData.checkOut },
-            checkOut: { gt: reservationData.checkIn },
-          },
-          select: { bookingMode: true, reservedSpots: true },
-        });
+        const [overlaps, blocks] = await Promise.all([
+          tx.reservation.findMany({
+            where: {
+              roomId: reservationData.roomId,
+              status: { in: INVENTORY_HOLDING_STATUSES },
+              checkIn: { lt: reservationData.checkOut },
+              checkOut: { gt: reservationData.checkIn },
+            },
+            select: { bookingMode: true, reservedSpots: true },
+          }),
+          tx.calendarBlock.findMany({
+            where: {
+              roomId: reservationData.roomId,
+              blocked: true,
+              date: {
+                gte: atUtcDayStart(reservationData.checkIn),
+                lt: atUtcDayStart(reservationData.checkOut),
+              },
+            },
+            select: { id: true },
+            take: 1,
+          }),
+        ]);
+
+        if (blocks.length > 0) throwHostBlocked();
 
         assertInventoryAvailable(
           room.rentalUnit,
@@ -165,6 +194,9 @@ export class PrismaReservationRepo implements ReservationRepo {
             createdAt: true,
           },
         },
+        contractChanges: {
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
     return rows.map((r: (typeof rows)[number]) => ({
@@ -191,6 +223,8 @@ export class PrismaReservationRepo implements ReservationRepo {
             id: true,
             name: true,
             region: true,
+            rentalUnit: true,
+            capacity: true,
             images: {
               orderBy: { order: "asc" },
               take: 1,
@@ -199,6 +233,16 @@ export class PrismaReservationRepo implements ReservationRepo {
           },
         },
         guest: { select: { id: true, name: true, avatarColor: true } },
+        companions: {
+          select: {
+            status: true,
+            user: { select: { id: true, name: true, avatarColor: true } },
+          },
+        },
+        contractChanges: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
       },
     });
     return rows.map((r: (typeof rows)[number]) => ({
@@ -208,6 +252,8 @@ export class PrismaReservationRepo implements ReservationRepo {
         name: r.room.name,
         region: r.room.region,
         image: r.room.images[0]?.url ?? null,
+        rentalUnit: r.room.rentalUnit,
+        capacity: r.room.capacity,
       },
       guest: {
         id: r.guest.id,
@@ -372,6 +418,16 @@ export class PrismaReservationRepo implements ReservationRepo {
     return this.prisma.reservation.update({ where: { id }, data: { status } });
   }
 
+  async approveEarlyCheckout(
+    id: string,
+    checkOut: Date,
+  ): Promise<ReservationRecord> {
+    return this.prisma.reservation.update({
+      where: { id },
+      data: { status: "EARLY_CHECKOUT_APPROVED", checkOut },
+    });
+  }
+
   // ── 계약 연장 ──
   // Record the guest's requested months and park the reservation in
   // EXTENSION_REQUESTED until the host decides.
@@ -385,22 +441,78 @@ export class PrismaReservationRepo implements ReservationRepo {
   // Approve: push checkOut out by `months`, grow the contract length, clear the
   // pending request and go back to CONFIRMED.
   async applyExtension(id: string, months: number): Promise<ReservationRecord> {
-    const current = await this.prisma.reservation.findUnique({
-      where: { id },
-      select: { checkOut: true, months: true },
-    });
-    if (!current) throw new Error("RESERVATION_NOT_FOUND");
-    const newCheckOut = new Date(current.checkOut);
-    newCheckOut.setMonth(newCheckOut.getMonth() + months);
-    return this.prisma.reservation.update({
-      where: { id },
-      data: {
-        checkOut: newCheckOut,
-        months: current.months + months,
-        status: "CONFIRMED",
-        extensionMonths: null,
+    return this.prisma.$transaction(
+      async (tx: any) => {
+        const current = await tx.reservation.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            roomId: true,
+            checkOut: true,
+            months: true,
+            bookingMode: true,
+            reservedSpots: true,
+          },
+        });
+        if (!current) throw new Error("RESERVATION_NOT_FOUND");
+
+        await tx.$queryRawUnsafe(
+          'SELECT "id" FROM "Room" WHERE "id" = $1 FOR UPDATE',
+          current.roomId,
+        );
+        const room = await tx.room.findUnique({
+          where: { id: current.roomId },
+          select: { rentalUnit: true, capacity: true },
+        });
+        if (!room) throw new Error("ROOM_NOT_FOUND");
+
+        const newCheckOut = new Date(current.checkOut);
+        newCheckOut.setMonth(newCheckOut.getMonth() + months);
+        const [overlaps, blocks] = await Promise.all([
+          tx.reservation.findMany({
+            where: {
+              id: { not: id },
+              roomId: current.roomId,
+              status: { in: INVENTORY_HOLDING_STATUSES },
+              checkIn: { lt: newCheckOut },
+              checkOut: { gt: current.checkOut },
+            },
+            select: { bookingMode: true, reservedSpots: true },
+          }),
+          tx.calendarBlock.findMany({
+            where: {
+              roomId: current.roomId,
+              blocked: true,
+              date: {
+                gte: atUtcDayStart(current.checkOut),
+                lt: atUtcDayStart(newCheckOut),
+              },
+            },
+            select: { id: true },
+            take: 1,
+          }),
+        ]);
+        if (blocks.length > 0) throwHostBlocked();
+        assertInventoryAvailable(
+          room.rentalUnit,
+          room.capacity,
+          overlaps,
+          current.bookingMode,
+          current.reservedSpots,
+        );
+
+        return tx.reservation.update({
+          where: { id },
+          data: {
+            checkOut: newCheckOut,
+            months: current.months + months,
+            status: "CONFIRMED",
+            extensionMonths: null,
+          },
+        });
       },
-    });
+      { isolationLevel: "Serializable" },
+    );
   }
 
   // Reject / cancel a pending request.
@@ -427,35 +539,41 @@ function assertInventoryAvailable(
   requestedMode: BookingMode,
   requestedSpots: number,
 ): void {
+  const inventory = calculateInventory(
+    rentalUnit,
+    capacityValue,
+    overlaps,
+  );
+
   if (rentalUnit !== "BED") {
-    if (overlaps.length > 0) throwUnavailable();
+    if (inventory.fullyBooked) throwUnavailable();
     return;
   }
 
-  const capacity = Math.max(1, capacityValue ?? 1);
   if (requestedMode === "WHOLE_ROOM") {
-    if (overlaps.length > 0) throwUnavailable();
+    if (inventory.reservedSpots > 0) throwUnavailable();
     return;
   }
 
-  const occupied = overlaps.reduce((sum, reservation) => {
-    // UNIT은 신규 BED 도입 전 생성된 예약일 수 있으므로, 기존 예약을
-    // 한 자리로 축소 해석하지 않고 방 전체 점유로 보수적으로 처리한다.
-    if (reservation.bookingMode !== "BED") return capacity;
-    return sum + Math.max(1, reservation.reservedSpots);
-  }, 0);
-
-  if (occupied + requestedSpots > capacity) {
+  const remaining = inventory.remainingSpots ?? 0;
+  if (requestedSpots > remaining) {
     throw new ConflictException({
       code: "NOT_ENOUGH_SPOTS",
-      message: `선택한 기간에 남은 자리가 ${Math.max(0, capacity - occupied)}개뿐입니다.`,
+      message: `선택한 기간에 남은 자리가 ${remaining}개뿐입니다.`,
     });
   }
+}
+
+function throwHostBlocked(): never {
+  throw new ConflictException({
+    code: "HOST_BLOCKED_DATES",
+    message: "선택한 기간에 호스트가 예약 불가로 설정한 날짜가 있습니다. 다른 기간을 선택해주세요.",
+  });
 }
 
 function throwUnavailable(): never {
   throw new ConflictException({
     code: "DATES_UNAVAILABLE",
-    message: "선택한 기간은 이미 예약되었습니다.",
+    message: "선택한 기간은 예약이 마감되었습니다. 다른 날짜를 선택해주세요.",
   });
 }

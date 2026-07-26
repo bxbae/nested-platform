@@ -11,6 +11,7 @@ import type { Response } from "express";
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
 import { ReservationStatus } from "@prisma/client";
+import { proratedMonthlyAmount } from "../reservations/pricing";
 
 const EARNING: ReservationStatus[] = [ReservationStatus.CONFIRMED, ReservationStatus.COMPLETED];
 
@@ -57,16 +58,16 @@ export class HostExportService {
       orderBy: { createdAt: "desc" },
     });
 
-    const headers = ["예약일", "숙소", "지역", "입주자", "입주일", "개월수", "월세", "총액", "상태"];
+    const headers = ["예약일", "숙소", "지역", "입주자", "입주일", "퇴실일", "월세", "총액", "상태"];
     const data = rows.map((r) => [
       ymd(r.createdAt),
       r.room.name.trim(),
       r.room.region,
       r.guest?.name ?? "",
       ymd(r.checkIn),
-      r.months,
+      ymd(r.checkOut),
       r.monthlyRent,
-      r.monthlyRent * r.months,
+      proratedMonthlyAmount(r.monthlyRent, r.checkIn, r.checkOut),
       STATUS_LABEL[r.status] ?? r.status,
     ]);
     return toCsv(headers, data);
@@ -83,7 +84,7 @@ export class HostExportService {
       orderBy: { checkIn: "desc" },
     });
 
-    const headers = ["입주자", "이메일", "숙소", "지역", "입주일", "퇴실일", "개월수", "상태"];
+    const headers = ["입주자", "이메일", "숙소", "지역", "입주일", "퇴실일", "상태"];
     const data = rows.map((r) => [
       r.guest?.name ?? "",
       r.guest?.email ?? "",
@@ -91,7 +92,6 @@ export class HostExportService {
       r.room.region,
       ymd(r.checkIn),
       ymd(r.checkOut),
-      r.months,
       STATUS_LABEL[r.status] ?? r.status,
     ]);
     return toCsv(headers, data);

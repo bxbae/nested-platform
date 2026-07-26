@@ -58,7 +58,7 @@ const listingSchema = z.object({
   cleaningFee: z.coerce.number().min(0),
   maintenanceFee: z.coerce.number().min(0),
   minStay: z.coerce.number().min(1).max(12),
-  availableFrom: z.string().min(1, "입주 가능일을 선택하세요."),
+  availableFrom: z.string().min(1, "입주 가능 시작일을 선택하세요."),
   // 공유형 다인실만 침대·자리 수를 입력받는다.
   capacity: z.preprocess(
     (value) => (value === "" || value == null ? undefined : value),
@@ -448,8 +448,11 @@ export default function NewListing() {
               공개되지 않습니다.
             </p>
           </Field>
-          <Field label="입주 가능일" error={errors.availableFrom?.message}>
+          <Field label="입주 가능 시작일" error={errors.availableFrom?.message}>
             <input type="date" {...register("availableFrom")} />
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>
+              이 날짜 이후는 기본적으로 예약 가능하며, 예약 캘린더에서 특정 기간을 별도로 차단할 수 있습니다.
+            </p>
           </Field>
           <Field label="예약 공간" error={errors.rentalUnit?.message}>
             <select
@@ -579,6 +582,9 @@ export default function NewListing() {
           <PriceField label="관리비 (월)" reg={register("maintenanceFee")} step={10000} />
           <Field label={`최소 계약 기간 · ${v.minStay}개월`}>
             <input type="range" min={1} max={12} {...register("minStay")} />
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>
+              게스트는 이 기간 이상이면 1개월 16일처럼 정확한 퇴실일을 선택할 수 있습니다.
+            </p>
           </Field>
         </div>
 
