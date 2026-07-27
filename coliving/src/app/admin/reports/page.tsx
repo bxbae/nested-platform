@@ -62,6 +62,13 @@ export default function AdminReports() {
   const [chatTarget, setChatTarget] = useState<ReportContext["chat"]>(null);
   const [reviewTarget, setReviewTarget] = useState<ReportContext["review"]>(null);
   const [notifyBusyKey, setNotifyBusyKey] = useState<string | null>(null);
+  // 알림 전송 팝업 — target/accountName은 화면 문구용, report는 실제 전송할 대상.
+  const [notifyModal, setNotifyModal] = useState<{
+    report: AdminReport;
+    target: "REPORTER" | "REPORTED";
+    accountName: string;
+  } | null>(null);
+  const [notifyMessage, setNotifyMessage] = useState("");
 
   const load = useCallback(async (status: ReportStatus | "ALL") => {
     setLoading(true);
@@ -144,20 +151,28 @@ export default function AdminReports() {
     }
   }
 
-  async function notify(r: AdminReport, target: "REPORTER" | "REPORTED") {
+  // 버튼 클릭 시엔 대상 계정만 확인하고 팝업을 연다 — 실제 전송은
+  // sendNotify()에서, 팝업의 "전송" 버튼을 눌렀을 때 일어난다.
+  async function openNotifyModal(r: AdminReport, target: "REPORTER" | "REPORTED") {
     const ctx = await ensureContext(r);
     const account = target === "REPORTER" ? ctx?.reporter : ctx?.reported;
     if (!ctx || !account) {
       setError("알림을 받을 계정을 확인할 수 없어요.");
       return;
     }
-    if (!confirm(`${account.name}님에게 신고 처리 알림을 보낼까요?`)) return;
+    setNotifyMessage("");
+    setNotifyModal({ report: r, target, accountName: account.name });
+  }
 
+  async function sendNotify() {
+    if (!notifyModal) return;
+    const { report: r, target } = notifyModal;
     const key = `${r.id}:${target}`;
     setNotifyBusyKey(key);
     setError(null);
     try {
-      await notifyReportParty(r.id, target);
+      await notifyReportParty(r.id, target, notifyMessage.trim() || undefined);
+      setNotifyModal(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "알림을 보내지 못했어요.");
     } finally {
@@ -285,7 +300,7 @@ export default function AdminReports() {
                 <button
                   className="chip"
                   style={{ fontSize: 12, cursor: "pointer" }}
-                  onClick={() => void notify(r, "REPORTER")}
+                  onClick={() => void openNotifyModal(r, "REPORTER")}
                   disabled={contextBusyId === r.id || notifyBusyKey === `${r.id}:REPORTER`}
                 >
                   {notifyBusyKey === `${r.id}:REPORTER` ? "전송 중…" : "신고자에게 처리 알림"}
@@ -293,7 +308,7 @@ export default function AdminReports() {
                 <button
                   className="chip"
                   style={{ fontSize: 12, cursor: "pointer" }}
-                  onClick={() => void notify(r, "REPORTED")}
+                  onClick={() => void openNotifyModal(r, "REPORTED")}
                   disabled={contextBusyId === r.id || notifyBusyKey === `${r.id}:REPORTED`}
                 >
                   {notifyBusyKey === `${r.id}:REPORTED` ? "전송 중…" : "피신고자에게 처리 알림"}
@@ -306,6 +321,81 @@ export default function AdminReports() {
 
       <ReportChatModal chat={chatTarget} onClose={() => setChatTarget(null)} />
       <ReportReviewModal review={reviewTarget} onClose={() => setReviewTarget(null)} />
+
+      {notifyModal && (
+        <div
+          role="presentation"
+          onMouseDown={() => !notifyBusyKey && setNotifyModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            padding: 24,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(20, 24, 32, 0.44)",
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label="신고 처리 알림 보내기"
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              width: "min(380px, 100%)",
+              padding: 24,
+              borderRadius: 20,
+              border: "1px solid var(--border)",
+              background: "var(--surface)",
+              boxShadow: "0 24px 70px rgba(0, 0, 0, 0.18)",
+            }}
+          >
+            <h2 style={{ fontSize: 16, marginBottom: 4 }}>
+              {notifyModal.target === "REPORTER" ? "신고자" : "피신고자"}에게 처리 알림
+            </h2>
+            <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 14 }}>
+              {notifyModal.accountName}님에게 보낼 한 줄 메시지를 입력해주세요. 비워두면
+              기본 안내 문구만 전송돼요.
+            </p>
+            <input
+              autoFocus
+              value={notifyMessage}
+              onChange={(e) => setNotifyMessage(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendNotify()}
+              placeholder="예: 확인 결과 해당 게시물은 삭제 처리되었습니다."
+              maxLength={500}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                fontSize: 14,
+              }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-ghost press"
+                onClick={() => setNotifyModal(null)}
+                disabled={!!notifyBusyKey}
+                style={{ flex: 1 }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary press"
+                onClick={() => void sendNotify()}
+                disabled={!!notifyBusyKey}
+                style={{ flex: 1 }}
+              >
+                {notifyBusyKey ? "전송 중…" : "전송"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
