@@ -47,10 +47,19 @@ export class RedisService implements OnModuleDestroy {
   providers: [
     {
       provide: REDIS_CLIENT,
-      useFactory: () =>
-        new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
+      useFactory: () => {
+        const client = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
           maxRetriesPerRequest: null,
-        }),
+        });
+        // ioredis emits 'error' on connection/command failures (e.g. Upstash
+        // quota exceeded). An unhandled 'error' event on a Node EventEmitter
+        // is fatal and can crash the process, so we must always listen.
+        client.on("error", (err) => {
+          // eslint-disable-next-line no-console
+          console.error(`[RedisService] client error: ${err.message}`);
+        });
+        return client;
+      },
     },
     RedisService,
   ],
