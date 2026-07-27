@@ -164,18 +164,143 @@ export class RoomsService {
     const take = Math.min(Math.max(Math.trunc(query.take ?? 20), 1), 50);
     const requestedWindow = this.parseRequestedWindow(query);
     const where: any = { published: true };
+    // NESTED_METRO_LOCATION_FILTER_V5
+    const appendLocationClause = (condition: any) => {
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        condition,
+      ];
+    };
+
+    const locationFieldsFor = (term: string) => [
+      { city: { contains: term, mode: "insensitive" } },
+      { district: { contains: term, mode: "insensitive" } },
+      { neighborhood: { contains: term, mode: "insensitive" } },
+      { region: { contains: term, mode: "insensitive" } },
+      { roadAddress: { contains: term, mode: "insensitive" } },
+      { jibunAddress: { contains: term, mode: "insensitive" } },
+      { address: { contains: term, mode: "insensitive" } },
+    ];
+
+    const metroAreaTerms: Record<string, string[]> = {
+      // 경기
+      분당구: ["성남시", "분당구", "판교", "분당"],
+      영통구: ["수원시", "영통구", "광교", "수원"],
+      수지구: ["용인시", "수지구", "수지", "용인"],
+      일산동구: [
+        "고양시",
+        "일산동구",
+        "일산서구",
+        "일산",
+        "고양",
+      ],
+      광명시: ["광명시", "광명"],
+      동안구: ["안양시", "동안구", "만안구", "안양"],
+      하남시: ["하남시", "하남"],
+      부천시: [
+        "부천시",
+        "부천",
+        "원미구",
+        "소사구",
+        "오정구",
+        "소사본동",
+      ],
+
+      // 인천
+      연수구: ["연수구", "송도", "연수"],
+      부평구: ["부평구", "부평"],
+      남동구: ["남동구", "구월동", "남동"],
+      계양구: ["계양구", "계양"],
+      미추홀구: ["미추홀구", "미추홀"],
+      서구: ["인천 서구", "서구", "청라"],
+    };
+
+    const seoulDistrictAliases: Record<string, string[]> = {
+      강남구: ["강남구", "Gangnam-gu", "Yeoksam-dong", "역삼동"],
+      서초구: ["서초구", "Seocho-gu"],
+      송파구: ["송파구", "Songpa-gu"],
+      마포구: [
+        "마포구",
+        "Mapo-gu",
+        "Mangwon-dong",
+        "Seogyo-dong",
+        "Yeonnam-dong",
+        "Hongdae",
+      ],
+      성동구: ["성동구", "Seongdong-gu", "Seongsu-dong"],
+      용산구: ["용산구", "Yongsan-gu", "Itaewon"],
+      영등포구: ["영등포구", "Yeongdeungpo-gu", "Yeouido"],
+      종로구: ["종로구", "Jongno-gu", "Hyehwa-dong"],
+      관악구: [
+        "관악구",
+        "Gwanak-gu",
+        "Sillim",
+        "Bongcheon-dong",
+      ],
+      구로구: ["구로구", "Guro-gu", "Gasan-dong"],
+      강서구: ["강서구", "Gangseo-gu", "Magok-dong"],
+    };
+
     if (query.legalDongCode) {
       where.legalDongCode = query.legalDongCode;
-    } else if (query.district && query.region) {
-      where.district = query.district;
-      where.region = query.region;
     } else if (query.district) {
-      where.district = query.district;
-    } else if (query.region) {
-      where.region = query.region;
-    }
+      const metroTerms = metroAreaTerms[query.district];
 
-    if (query.verifiedByHost) where.verifiedByHost = true;
+      if (metroTerms) {
+        const clauses = metroTerms.flatMap(locationFieldsFor);
+
+        // 인천의 "서구"가 서울 서구와 혼동되는 상황을 막기 위해
+        // 인천 생활권은 인천 주소 조건까지 함께 적용합니다.
+        const isIncheonDistrict = [
+          "연수구",
+          "부평구",
+          "남동구",
+          "계양구",
+          "미추홀구",
+          "서구",
+        ].includes(query.district);
+
+        if (isIncheonDistrict) {
+          appendLocationClause({
+            AND: [
+              {
+                OR: [
+                  ...locationFieldsFor("인천"),
+                  ...locationFieldsFor("인천광역시"),
+                ],
+              },
+              { OR: clauses },
+            ],
+          });
+        } else {
+          appendLocationClause({ OR: clauses });
+        }
+      } else {
+        // 서울은 기존 구 필터와 영문 별칭을 함께 유지합니다.
+        const aliases = seoulDistrictAliases[query.district] ?? [
+          query.district,
+        ];
+
+        appendLocationClause({
+          OR: aliases.flatMap(locationFieldsFor),
+        });
+
+        if (query.region) {
+          const term = query.region.split("-")[0] || query.region;
+
+          appendLocationClause({
+            OR: locationFieldsFor(term),
+          });
+        }
+      }
+    } else if (query.region) {
+      const term = query.region.split("-")[0] || query.region;
+
+      appendLocationClause({
+        OR: locationFieldsFor(term),
+      });
+    }
+if (query.verifiedByHost) where.verifiedByHost = true;
 
     // roomType (single) or roomTypes (multi-select) → Prisma `in`
     const types = query.roomTypes?.length
