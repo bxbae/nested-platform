@@ -91,7 +91,7 @@ export class ReservationsService {
 
     const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
     const pricingInput = this.scaledPricing(room, units);
-    const discount = await this.resolveDiscount(
+    const coupon = await this.resolveCoupon(
       dto.couponCode,
       pricingInput.monthlyRent,
     );
@@ -99,7 +99,7 @@ export class ReservationsService {
       ...pricingInput,
       checkIn: dto.checkIn,
       checkOut,
-      discount,
+      discount: coupon.discount,
     });
     return {
       ...breakdown,
@@ -194,15 +194,16 @@ export class ReservationsService {
 
     const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
     const pricingInput = this.scaledPricing(room, units);
-    const discount = await this.resolveDiscount(
+    const coupon = await this.resolveCoupon(
       dto.couponCode,
       pricingInput.monthlyRent,
+      guestId,
     );
     const price = computePrice({
       ...pricingInput,
       checkIn: dto.checkIn,
       checkOut,
-      discount,
+      discount: coupon.discount,
     });
 
     try {
@@ -229,6 +230,7 @@ export class ReservationsService {
         serviceFee: price.serviceFee,
         discount: price.discount,
         totalDueNow: price.dueNow,
+        couponId: coupon.couponId,
       });
     } catch (e) {
       if (
@@ -304,9 +306,9 @@ export class ReservationsService {
       });
     }
 
-    const confirmedReservation = await this.repo.updateStatus(
-      reservation.id,
-      "CONFIRMED",
+    const confirmedReservation = await this.confirmReservationAfterPayment(
+      reservation,
+      guestId,
     );
 
     if (room.hostId !== guestId && this.prisma && this.notificationsGateway) {
@@ -1536,19 +1538,127 @@ export class ReservationsService {
     };
   }
 
-  private async resolveDiscount(
+  private async resolveCoupon(
     code: string | undefined,
-    spend: number,
-  ): Promise<number> {
-    if (!code) return 0;
+    monthlyRent: number,
+    userId?: string,
+  ): Promise<{ couponId: string | null; discount: number }> {
+    if (!code) return { couponId: null, discount: 0 };
+
     const coupon = await this.repo.findCouponByCode(code);
-    if (!coupon)
+    if (!coupon) {
       throw new UnprocessableEntityException({
         code: "COUPON_INVALID",
         message: "쿠폰이 유효하지 않습니다.",
       });
+    }
+
     assertCouponUsable(coupon);
-    return couponDiscount(coupon, spend);
+
+    if (monthlyRent < coupon.minSpend) {
+      throw new UnprocessableEntityException({
+        code: "COUPON_MIN_SPEND",
+        message: `첫 달 월세가 ${coupon.minSpend.toLocaleString()}원 이상일 때 사용할 수 있습니다.`,
+      });
+    }
+
+    if (userId && coupon.ownerId && coupon.ownerId !== userId) {
+      throw new ForbiddenException({
+        code: "COUPON_NOT_OWNER",
+        message: "본인에게 발급된 쿠폰만 사용할 수 있습니다.",
+      });
+    }
+
+    if (userId && this.prisma) {
+      const used = await this.prisma.reservation.findFirst({
+        where: {
+          guestId: userId,
+          couponId: coupon.id,
+          status: { not: "PENDING_PAYMENT" },
+        },
+        select: { id: true },
+      });
+
+      if (used) {
+        throw new UnprocessableEntityException({
+          code: "COUPON_ALREADY_USED",
+          message: "이미 사용한 쿠폰입니다.",
+        });
+      }
+    }
+
+    return {
+      couponId: coupon.id,
+      // 보증금·청소비·관리비가 아닌 첫 달 월세만 할인 기준으로 전달한다.
+      discount: couponDiscount(coupon, monthlyRent),
+    };
+  }
+
+  private async confirmReservationAfterPayment(
+    reservation: ReservationRecord,
+    guestId: string,
+  ): Promise<ReservationRecord> {
+    if (!reservation.couponId || !this.prisma) {
+      return this.repo.updateStatus(reservation.id, "CONFIRMED");
+    }
+
+    const prisma = this.prisma;
+    return prisma.$transaction(
+      async (tx: any) => {
+        await tx.$queryRawUnsafe(
+          'SELECT "id" FROM "Coupon" WHERE "id" = $1 FOR UPDATE',
+          reservation.couponId,
+        );
+
+        const coupon = await tx.coupon.findUnique({
+          where: { id: reservation.couponId },
+        });
+
+        if (!coupon) {
+          throw new UnprocessableEntityException({
+            code: "COUPON_INVALID",
+            message: "쿠폰을 찾을 수 없습니다.",
+          });
+        }
+
+        assertCouponUsable(coupon);
+
+        if (coupon.ownerId && coupon.ownerId !== guestId) {
+          throw new ForbiddenException({
+            code: "COUPON_NOT_OWNER",
+            message: "본인에게 발급된 쿠폰만 사용할 수 있습니다.",
+          });
+        }
+
+        const alreadyUsed = await tx.reservation.findFirst({
+          where: {
+            id: { not: reservation.id },
+            guestId,
+            couponId: coupon.id,
+            status: { not: "PENDING_PAYMENT" },
+          },
+          select: { id: true },
+        });
+
+        if (alreadyUsed) {
+          throw new UnprocessableEntityException({
+            code: "COUPON_ALREADY_USED",
+            message: "이미 사용한 쿠폰입니다.",
+          });
+        }
+
+        await tx.coupon.update({
+          where: { id: coupon.id },
+          data: { usedCount: { increment: 1 } },
+        });
+
+        return tx.reservation.update({
+          where: { id: reservation.id },
+          data: { status: "CONFIRMED" },
+        });
+      },
+      { isolationLevel: "Serializable" },
+    ) as Promise<ReservationRecord>;
   }
 }
 

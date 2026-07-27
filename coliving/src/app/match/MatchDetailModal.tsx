@@ -4,7 +4,11 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { addFriend, getFriendStatus } from "@/lib/api/friends";
 import { openDirectConversation } from "@/lib/api/messages";
-import { getMatchDetail, type MatchDetail } from "@/lib/api/match";
+import {
+  genderLabel,
+  getMatchDetail,
+  type MatchDetail,
+} from "@/lib/api/match";
 
 interface MatchDetailModalProps {
   userId: string | null;
@@ -157,9 +161,13 @@ function ProfileSection({ detail }: { detail: MatchDetail }) {
         </h2>
 
         <p style={metaTextStyle}>
-          {[detail.ageGroup ? `${detail.ageGroup}대` : null, detail.job]
+          {[
+            genderLabel(detail.gender),
+            detail.ageGroup ? `${detail.ageGroup}대` : null,
+            detail.job,
+          ]
             .filter(Boolean)
-            .join(" · ") || "정보 없음"}
+            .join(" · ")}
         </p>
 
         <p style={metaTextStyle}>{detail.joinedYear}년 가입</p>

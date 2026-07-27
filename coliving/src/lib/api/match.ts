@@ -10,6 +10,7 @@ export interface MatchCandidate {
   name: string;
   // 서버가 생년월일에서 계산한 연령대(20/30/40). 정확한 생일은 내려오지 않는다.
   ageGroup: number | null;
+  gender: "MALE" | "FEMALE" | "OTHER";
   job: string | null;
   avatarColor: string;
   avatarUrl: string | null;
@@ -20,6 +21,14 @@ export interface MatchCandidate {
   verified: boolean;
   tier: "SEED" | "REGULAR" | "TRUSTED";
   tierLabel: string;
+}
+
+export function genderLabel(
+  gender: MatchCandidate["gender"],
+): string {
+  if (gender === "MALE") return "남성";
+  if (gender === "FEMALE") return "여성";
+  return "성별 미설정";
 }
 
 export interface MatchDetail extends MatchCandidate {

@@ -12,6 +12,11 @@ import {
   confirmBooking as confirmBookingApi,
 } from "@/lib/api/reservations";
 import { listFriends, type FriendProfile } from "@/lib/api/friends";
+import {
+  couponStatusLabel,
+  listMyCoupons,
+  type MyCoupon,
+} from "@/lib/api/coupons";
 import { useAuth } from "@/lib/api/useAuth"; // 로그인한 사용자 정보 가져오기
 import { BookingAvailabilityCalendar } from "@/components/BookingAvailabilityCalendar";
 import {
@@ -78,10 +83,10 @@ export function BookingWidget({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [avail, setAvail] = useState<Availability>({ loading: true, available: null });
-  // Coupon code the guest typed. `appliedCoupon` is the one currently sent to
-  // the server — we only apply on click so every keystroke doesn't re-quote.
-  const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState("");
+  const [couponPickerOpen, setCouponPickerOpen] = useState(false);
+  const [coupons, setCoupons] = useState<MyCoupon[]>([]);
+  const [couponLoading, setCouponLoading] = useState(false);
   const isBedBooking = house.rentalUnit === "bed";
   const roomCapacity = Math.max(1, house.capacity ?? 1);
   const [bookingMode, setBookingMode] = useState<BookingMode>(
@@ -116,6 +121,32 @@ export function BookingWidget({
     checkOut,
   });
   const price = avail.price ?? localPrice;
+  const selectedCoupon = coupons.find((coupon) => coupon.code === appliedCoupon) ?? null;
+  const effectiveCouponPercent =
+    price.monthlyRent > 0 && price.discount > 0
+      ? Number(((price.discount / price.monthlyRent) * 100).toFixed(1))
+      : 0;
+
+  const loadCoupons = useCallback(async () => {
+    if (!user) {
+      setError("로그인 후 보유 쿠폰을 확인할 수 있습니다.");
+      return;
+    }
+    setCouponLoading(true);
+    try {
+      setCoupons(await listMyCoupons(house.monthlyRent * priceUnits));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "쿠폰을 불러오지 못했어요.");
+      setCoupons([]);
+    } finally {
+      setCouponLoading(false);
+    }
+  }, [user, house.monthlyRent, priceUnits]);
+
+  useEffect(() => {
+    if (!couponPickerOpen) return;
+    void loadCoupons();
+  }, [couponPickerOpen, loadCoupons]);
 
   // ── 예약 가능 여부 ── re-check whenever dates change (debounced)
   const checkAvailability = useCallback(async () => {
@@ -601,49 +632,107 @@ export function BookingWidget({
             </div>
           )}
 
-          {/* 쿠폰 (할인 계산은 서버가 수행) */}
+          {/* 보유 쿠폰 선택 — 할인 기준은 첫 달 월세만 */}
           <div style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                value={couponInput}
-                onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === "Enter" && setAppliedCoupon(couponInput.trim())}
-                placeholder="쿠폰 코드"
-                aria-label="쿠폰 코드"
-                style={{
-                  flex: 1, padding: "9px 12px", border: "1px solid var(--border)",
-                  borderRadius: "var(--r-sm)", fontSize: 13.5, textTransform: "uppercase",
-                }}
-              />
-              {appliedCoupon ? (
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-ghost press"
+                style={{ flex: 1, justifyContent: "space-between", fontSize: 13.5 }}
+                onClick={() => setCouponPickerOpen((open) => !open)}
+              >
+                <span>{appliedCoupon ? `${selectedCoupon?.code ?? appliedCoupon} 적용 중` : "사용할 쿠폰 선택"}</span>
+                <span aria-hidden="true">{couponPickerOpen ? "▴" : "▾"}</span>
+              </button>
+              {appliedCoupon && (
                 <button
+                  type="button"
                   className="btn btn-ghost press"
                   style={{ fontSize: 13, padding: "9px 14px" }}
-                  onClick={() => {
-                    setAppliedCoupon("");
-                    setCouponInput("");
-                  }}
+                  onClick={() => setAppliedCoupon("")}
                 >
                   해제
                 </button>
-              ) : (
-                <button
-                  className="btn btn-ghost press"
-                  style={{ fontSize: 13, padding: "9px 14px" }}
-                  onClick={() => setAppliedCoupon(couponInput.trim())}
-                  disabled={!couponInput.trim()}
-                >
-                  적용
-                </button>
               )}
             </div>
+
+            {couponPickerOpen && (
+              <div
+                className="card"
+                style={{
+                  marginTop: 8,
+                  padding: 10,
+                  display: "grid",
+                  gap: 8,
+                  maxHeight: 260,
+                  overflowY: "auto",
+                  background: "var(--surface)",
+                }}
+              >
+                {couponLoading ? (
+                  <p style={{ fontSize: 12.5, color: "var(--text-2)", padding: 8 }}>
+                    보유 쿠폰을 불러오는 중…
+                  </p>
+                ) : coupons.length === 0 ? (
+                  <p style={{ fontSize: 12.5, color: "var(--text-2)", padding: 8 }}>
+                    사용할 수 있는 쿠폰이 없습니다. 내 정보의 내 쿠폰에서 기간을 확인할 수 있습니다.
+                  </p>
+                ) : (
+                  coupons.map((coupon) => {
+                    const usable = coupon.status === "AVAILABLE";
+                    const benefit =
+                      coupon.discountAmount != null && coupon.effectivePercent != null
+                        ? `${coupon.effectivePercent}% · -${won(coupon.discountAmount)}`
+                        : coupon.type === "PERCENT"
+                          ? `${coupon.value}%`
+                          : `-${won(coupon.value)}`;
+                    return (
+                      <button
+                        key={coupon.id}
+                        type="button"
+                        className="press"
+                        disabled={!usable}
+                        onClick={() => {
+                          setAppliedCoupon(coupon.code);
+                          setCouponPickerOpen(false);
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "11px 12px",
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--r-sm)",
+                          background: appliedCoupon === coupon.code ? "var(--primary-soft)" : "var(--surface)",
+                          color: "var(--text)",
+                          textAlign: "left",
+                          opacity: usable ? 1 : 0.55,
+                        }}
+                      >
+                        <span style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                          <strong>{coupon.kind === "BIRTHDAY" ? "생일 축하 쿠폰" : coupon.code}</strong>
+                          <strong style={{ color: usable ? "var(--secondary)" : "var(--text-2)" }}>{benefit}</strong>
+                        </span>
+                        <span style={{ display: "block", fontSize: 11.5, color: "var(--text-2)", marginTop: 4 }}>
+                          첫 달 월세에만 적용 · {couponStatusLabel(coupon.status)} · {coupon.validTo.slice(0, 10)}까지
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
             {avail.couponError && avail.reason && (
               <p style={{ fontSize: 12.5, color: "var(--primary)", marginTop: 6 }}>{avail.reason}</p>
             )}
             {appliedCoupon && !avail.couponError && price.discount > 0 && (
-              <p style={{ fontSize: 12.5, color: "var(--secondary)", marginTop: 6 }}>
-                쿠폰 {appliedCoupon} 적용됨
-              </p>
+              <div style={{ marginTop: 7, padding: "9px 11px", borderRadius: "var(--r-sm)", background: "var(--secondary-soft)" }}>
+                <strong style={{ display: "block", fontSize: 12.5, color: "var(--secondary)" }}>
+                  첫 달 월세 {effectiveCouponPercent}% 할인 · -{won(price.discount)}
+                </strong>
+                <span style={{ display: "block", fontSize: 11.5, color: "var(--text-2)", marginTop: 3 }}>
+                  보증금·청소비·관리비·서비스 수수료에는 할인이 적용되지 않습니다.
+                </span>
+              </div>
             )}
           </div>
 
@@ -656,7 +745,7 @@ export function BookingWidget({
               ["관리비 (월)", won(price.maintenanceFee)],
               ["서비스 수수료 (5%)", won(price.serviceFee)],
               ...(price.discount > 0
-                ? ([["쿠폰 할인", `-${won(price.discount)}`]] as [string, string][])
+                ? ([[`쿠폰 할인 (첫 달 월세 ${price.discountPercent}%)`, `-${won(price.discount)}`]] as [string, string][])
                 : []),
             ]}
             total={["입주 시 결제 금액", won(price.dueNow)]}

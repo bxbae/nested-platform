@@ -1077,6 +1077,7 @@ export class AdminService {
   // remaining usage rather than a stored flag.
   async listCoupons() {
     const rows = await this.prisma.coupon.findMany({
+      where: { kind: "GENERAL", ownerId: null },
       orderBy: { validTo: "desc" },
     });
     const now = new Date();
@@ -1110,6 +1111,8 @@ export class AdminService {
         validFrom: new Date(data.validFrom),
         validTo: new Date(data.validTo),
         usageLimit: data.usageLimit ?? null,
+        kind: "GENERAL",
+        ownerId: null,
       },
     });
   }

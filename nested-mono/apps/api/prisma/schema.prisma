@@ -175,6 +175,7 @@ model User {
   directConversationsA DirectConversation[] @relation("DirectParticipantA")
   directConversationsB DirectConversation[] @relation("DirectParticipantB")
   directMessages       DirectMessage[]      @relation("DirectMessageSender")
+  ownedCoupons        Coupon[]             @relation("CouponOwner")
 
   @@index([provider, providerId])
 }
@@ -389,6 +390,9 @@ model Reservation {
   serviceFee           Int
   discount             Int               @default(0)
   totalDueNow          Int
+  // 선택한 쿠폰. 할인은 첫 달 월세에만 적용되고, 결제 확정 시 사용 처리된다.
+  couponId             String?
+  coupon               Coupon?            @relation(fields: [couponId], references: [id], onDelete: SetNull)
   payment              Payment?
   settlement           Settlement?
   // 게스트가 요청한 연장 개월 수 (승인 대기 중에만 값이 있음)
@@ -403,6 +407,7 @@ model Reservation {
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@index([companionId])
+  @@index([couponId])
 }
 
 
@@ -537,16 +542,25 @@ model DirectMessage {
 }
 
 model Coupon {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  type        String // FIXED | PERCENT
-  value       Int
-  maxDiscount Int?
-  minSpend    Int      @default(0)
-  validFrom   DateTime
-  validTo     DateTime
-  usageLimit  Int?
-  usedCount   Int      @default(0)
+  id           String        @id @default(cuid())
+  code         String        @unique
+  type         String // FIXED | PERCENT
+  value        Int
+  maxDiscount  Int?
+  // 최소 사용 금액도 보증금·청소비가 아닌 첫 달 월세를 기준으로 판단한다.
+  minSpend     Int           @default(0)
+  validFrom    DateTime
+  validTo      DateTime
+  usageLimit   Int?
+  usedCount    Int           @default(0)
+  // GENERAL: 관리자 공용 쿠폰, BIRTHDAY: 사용자 전용 생일 쿠폰
+  kind         String        @default("GENERAL")
+  ownerId      String?
+  owner        User?         @relation("CouponOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  reservations Reservation[]
+
+  @@index([ownerId])
+  @@index([kind, validTo])
 }
 
 // ── Notifications ──────────────────────────────────────────────────

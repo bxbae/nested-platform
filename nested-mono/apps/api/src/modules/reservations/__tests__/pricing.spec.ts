@@ -51,9 +51,11 @@ describe("computePrice", () => {
     expect(stayCharge(50_000, start, end).amount).toBe(10_000);
   });
 
-  it("applies a discount to dueNow but never below one free month", () => {
+  it("applies a coupon only to the first month rent", () => {
     const p = computePrice({ ...base, discount: 200_000 });
     expect(p.discount).toBe(200_000);
+    expect(p.discountPercent).toBe(25);
+    // 보증금·청소비·관리비·서비스 수수료는 그대로이고 월세에서만 차감된다.
     expect(p.dueNow).toBe(3_790_000);
   });
 

@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { listHostReviews, replyToReview, type HostReview } from "@/lib/api/reviews";
 import { listMyRooms, type HostListing } from "@/lib/api/rooms";
 import { ReviewReportButton } from "@/components/ReviewReportButton";
+import { UserAvatar } from "@/components/UserAvatar";
 
 export default function HostReviews() {
   const [reviews, setReviews] = useState<HostReview[]>([]);
@@ -68,7 +70,7 @@ export default function HostReviews() {
           value={roomId}
           onChange={(e) => setRoomId(e.target.value)}
           aria-label="숙소 선택"
-          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", fontSize: 14, minWidth: 220, background: "#fff" }}
+          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", fontSize: 14, minWidth: 220, background: "var(--surface)" }}
         >
           <option value="">전체 숙소</option>
           {rooms.map((r) => (
@@ -103,18 +105,44 @@ export default function HostReviews() {
             <div key={r.id} className="card" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <span
-                    aria-hidden="true"
-                    style={{ width: 40, height: 40, borderRadius: 99, background: r.avatarColor, display: "grid", placeItems: "center", color: "#fff", fontWeight: 700 }}
-                  >
-                    {r.author[0]}
-                  </span>
-                  <div>
-                    <strong style={{ fontSize: 14.5 }}>{r.author}</strong>
-                    <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-                      {r.houseName} · {r.date}
-                    </div>
-                  </div>
+                  {r.authorId ? (
+                    <Link
+                      href={`/users/${encodeURIComponent(r.authorId)}`}
+                      aria-label={`${r.author} 공개 프로필 보기`}
+                      style={{ display: "flex", gap: 12, alignItems: "center" }}
+                    >
+                      <UserAvatar
+                        name={r.author}
+                        avatarUrl={r.avatarUrl}
+                        avatarColor={r.avatarColor}
+                        size={40}
+                      />
+                      <div>
+                        <strong style={{ fontSize: 14.5 }}>{r.author}</strong>
+                        <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                          {r.houseName} · {r.date}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: "var(--secondary)", marginTop: 2 }}>
+                          공개 프로필 보기
+                        </div>
+                      </div>
+                    </Link>
+                  ) : (
+                    <>
+                      <UserAvatar
+                        name={r.author}
+                        avatarUrl={r.avatarUrl}
+                        avatarColor={r.avatarColor}
+                        size={40}
+                      />
+                      <div>
+                        <strong style={{ fontSize: 14.5 }}>{r.author}</strong>
+                        <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                          {r.houseName} · {r.date}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                 <div style={{ fontSize: 13, color: "var(--warning)" }}>

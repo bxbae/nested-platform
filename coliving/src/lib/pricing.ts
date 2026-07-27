@@ -29,6 +29,7 @@ export interface PriceBreakdown {
   maintenanceSubtotal: number;
   serviceFee: number;
   discount: number;
+  discountPercent: number;
   dueNow: number;
   contractTotal: number;
 }
@@ -94,6 +95,10 @@ export function computePrice(input: PricingInput): PriceBreakdown {
       };
 
   const serviceFee = Math.round(monthlyRent * SERVICE_FEE_RATE);
+  const discountPercent =
+    monthlyRent > 0
+      ? Number(((discount / monthlyRent) * 100).toFixed(1))
+      : 0;
   const dueNow =
     deposit + monthlyRent + cleaningFee + maintenanceFee + serviceFee - discount;
   const contractTotal =
@@ -111,6 +116,7 @@ export function computePrice(input: PricingInput): PriceBreakdown {
     maintenanceSubtotal: maintenance.amount,
     serviceFee,
     discount,
+    discountPercent,
     dueNow,
     contractTotal,
   };

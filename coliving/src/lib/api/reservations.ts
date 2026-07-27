@@ -36,6 +36,7 @@ export interface QuotedPrice {
   maintenanceFee: number;
   serviceFee: number;
   discount: number;
+  discountPercent: number;
   dueNow: number;
   contractTotal: number;
   bookingMode?: "UNIT" | "BED" | "WHOLE_ROOM";
@@ -94,7 +95,12 @@ export async function checkAvailability(input: {
         ? (e.body as { code?: string }).code
         : undefined;
     const couponError =
-      code === "COUPON_INVALID" || code === "COUPON_EXPIRED" || code === "COUPON_EXHAUSTED";
+      code === "COUPON_INVALID" ||
+      code === "COUPON_EXPIRED" ||
+      code === "COUPON_EXHAUSTED" ||
+      code === "COUPON_MIN_SPEND" ||
+      code === "COUPON_ALREADY_USED" ||
+      code === "COUPON_NOT_OWNER";
     return { available: false, reason, couponError };
   }
 }
