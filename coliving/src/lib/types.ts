@@ -3,7 +3,7 @@
 // Aligns with ARCHITECTURE.md RoomType enum
 export type RoomType = "one_room" | "share_room" | "whole_house" | "apartment";
 export type RentalUnit = "whole" | "private_room" | "bed";
-export type BuildingType = "studio" | "apartment" | "house";
+export type BuildingType = "studio" | "apartment" | "officetel" | "house";
 export type SharedFacility =
   | "bathroom"
   | "kitchen"
@@ -22,14 +22,15 @@ export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
 };
 
 export const RENTAL_UNIT_LABELS: Record<RentalUnit, string> = {
-  whole: "전체 숙소",
-  private_room: "개인실",
-  bed: "다인실·침대",
+  whole: "단독형 숙소",
+  private_room: "공유형 · 개인실",
+  bed: "공유형 · 다인실",
 };
 
 export const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {
   studio: "원룸",
   apartment: "아파트",
+  officetel: "오피스텔",
   house: "주택",
 };
 
@@ -107,6 +108,16 @@ export interface House {
   availableAgainFrom?: string | null;
   /** 로그인한 사용자 본인이 등록한 숙소인지 (비로그인/타인 숙소면 false) */
   isMine?: boolean;
+  /** 검색 기간 또는 오늘 기준 예약 재고 상태 */
+  inventory?: {
+    reservedSpots: number;
+    remainingSpots: number | null;
+    fullyBooked: boolean;
+    blocked: boolean;
+    scope: "SELECTED_DATES" | "CURRENT";
+    checkIn?: string | null;
+    checkOut?: string | null;
+  };
   color: string; // accent used in the card ring
   photo?: string; // primary thumbnail image url
   gallery?: string[]; // additional gallery images
@@ -183,6 +194,39 @@ export interface Post {
   pinned: boolean;
 }
 
+
+export type ContractChangeType = "EARLY_CHECKOUT" | "EXTENSION";
+export type ContractChangeStatus =
+  | "HOST_REVIEW"
+  | "PAYMENT_PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "EXPIRED"
+  | "COMPLETED";
+
+export interface ContractChangeRequest {
+  id: string;
+  type: ContractChangeType;
+  status: ContractChangeStatus;
+  originalCheckOut: string;
+  requestedCheckOut: string;
+  additionalRent: number;
+  additionalMaintenance: number;
+  additionalServiceFee: number;
+  additionalAmount: number;
+  estimatedRefund: number;
+  depositDeduction: number;
+  finalRefund: number | null;
+  rejectReason: string | null;
+  paymentProvider: string | null;
+  paymentDeadline: string | null;
+  paidAt: string | null;
+  appliedAt: string | null;
+  actualCheckOut: string | null;
+  createdAt: string;
+}
+
 export interface Booking {
   id: string;
   houseId: string;
@@ -203,6 +247,7 @@ export interface Booking {
   rawStatus?: string; // original server status, for states the 3-way map collapses
   checkOut?: string;  // YYYY-MM-DD — used for the contract D-day countdown
   extensionMonths?: number | null; // pending extension request, if any
+  latestContractChange?: ContractChangeRequest | null;
   createdAt: string;
 }
 

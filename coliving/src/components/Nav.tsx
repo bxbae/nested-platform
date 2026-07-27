@@ -33,25 +33,21 @@ export function Nav() {
 
   const roomLinks = [
     {
-      icon: "⌂",
       label: t.allHomes,
       description: t.allHomesDescription,
       href: "/search",
     },
     {
-      icon: "▣",
       label: t.rentalWhole,
       description: t.rentalWholeDescription,
       href: "/search?rentalUnits=whole",
     },
     {
-      icon: "♟",
       label: t.rentalPrivateRoom,
       description: t.rentalPrivateRoomDescription,
       href: "/search?rentalUnits=private_room",
     },
     {
-      icon: "◇",
       label: t.rentalBed,
       description: t.rentalBedDescription,
       href: "/search?rentalUnits=bed",
@@ -196,17 +192,18 @@ export function Nav() {
                     <div
                       className="card nav-search-menu-card"
                       style={{
-                        width: 560,
-                        padding: 16,
+                        width: 680,
+                        padding: 18,
                         borderRadius: 18,
                         boxShadow: "0 18px 48px rgba(0,0,0,.14)",
                         display: "grid",
-                        gridTemplateColumns: "1.45fr .9fr",
-                        gap: 16,
+                        gridTemplateColumns: "minmax(0, 1.35fr) minmax(240px, .85fr)",
+                        alignItems: "stretch",
+                        gap: 18,
                         background: "var(--surface)",
                       }}
                     >
-                      <div style={{ minWidth: 0 }}>
+                      <div className="nav-search-section nav-search-room-section" style={{ minWidth: 0 }}>
                         <div
                           style={{
                             fontSize: 12,
@@ -233,31 +230,17 @@ export function Nav() {
                               onClick={() => setSearchOpen(false)}
                               className="hover-card nav-search-room-link"
                               style={{
-                                display: "grid",
-                                gridTemplateColumns: "30px minmax(0, 1fr)",
-                                gap: 9,
-                                padding: 10,
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "center",
+                                padding: "13px 14px",
                                 borderRadius: 12,
                                 border: "1px solid var(--border)",
                                 minWidth: 0,
+                                minHeight: 88,
                                 background: "var(--surface)",
                               }}
                             >
-                              <span
-                                aria-hidden="true"
-                                style={{
-                                  width: 30,
-                                  height: 30,
-                                  borderRadius: 999,
-                                  background: "var(--bg-2)",
-                                  display: "grid",
-                                  placeItems: "center",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {item.icon}
-                              </span>
-
                               <span style={{ minWidth: 0 }}>
                                 <strong
                                   style={{
@@ -288,10 +271,10 @@ export function Nav() {
                       </div>
 
                       <div
-                        className="nav-search-feature-section"
+                        className="nav-search-section nav-search-feature-section"
                         style={{
                           borderLeft: "1px solid var(--border)",
-                          paddingLeft: 16,
+                          paddingLeft: 18,
                           minWidth: 0,
                         }}
                       >
@@ -306,7 +289,7 @@ export function Nav() {
                           {t.findByPurpose}
                         </div>
 
-                        <div style={{ display: "grid", gap: 8 }}>
+                        <div className="nav-search-feature-list" style={{ display: "grid", gap: 8 }}>
                           {featureLinks.map((item) => (
                             <Link
                               key={item.href}
@@ -314,11 +297,15 @@ export function Nav() {
                               onClick={() => setSearchOpen(false)}
                               className="hover-card nav-search-feature-link"
                               style={{
-                                padding: 11,
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "center",
+                                padding: "13px 14px",
                                 borderRadius: 12,
                                 background: "var(--surface)",
                                 border: "1px solid var(--border)",
                                 minWidth: 0,
+                                minHeight: 88,
                               }}
                             >
                               <strong

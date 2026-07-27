@@ -22,6 +22,7 @@ export interface ApiChatRoom {
   guestId: string;
   hostId: string;
   createdAt: string;
+  unreadCount?: number;
 
   room: {
     name: string;
@@ -100,6 +101,7 @@ export interface ApiDirectConversation {
   id: string;
   createdAt: string;
   updatedAt: string;
+  unreadCount?: number;
   other?: {
     id: string;
     name: string;
@@ -117,6 +119,7 @@ export interface ApiDirectMessage {
   imageUrl: string | null;
   readBy: string[];
   createdAt: string;
+  unreadCount: number;
 }
 
 export async function listDirectConversations(): Promise<
@@ -192,4 +195,20 @@ export async function markAllMessagesRead(): Promise<void> {
   }
 
   await api.post("/messages/read-all");
+}
+
+export async function hideChatRoomConversation(
+  chatRoomId: string,
+): Promise<void> {
+  if (!USE_REAL_API) return;
+
+  await api.delete(`/messages/rooms/${encodeURIComponent(chatRoomId)}`);
+}
+
+export async function hideDirectConversation(
+  conversationId: string,
+): Promise<void> {
+  if (!USE_REAL_API) return;
+
+  await api.delete(`/messages/direct/${encodeURIComponent(conversationId)}`);
 }

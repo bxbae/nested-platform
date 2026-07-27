@@ -34,6 +34,7 @@ enum RentalUnit {
 enum BuildingType {
   STUDIO
   APARTMENT
+  OFFICETEL
   HOUSE
 }
 
@@ -84,6 +85,22 @@ enum ReservationStatus {
   EXTENSION_REQUESTED
 }
 
+
+enum ContractChangeType {
+  EARLY_CHECKOUT
+  EXTENSION
+}
+
+enum ContractChangeStatus {
+  HOST_REVIEW
+  PAYMENT_PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  COMPLETED
+}
+
 enum PaymentStatus {
   PENDING
   PAID
@@ -130,6 +147,7 @@ model User {
   reservations          Reservation[]
   // 내가 동반자로 초대된 예약들
   companionReservations Reservation[]            @relation("ReservationCompanion")
+  reservationCompanions ReservationCompanionMember[]
   reviews               Review[]
   messages              Message[]
   sessions              RefreshToken[]
@@ -355,6 +373,10 @@ model Reservation {
   companionRespondedAt DateTime?
   checkIn              DateTime
   checkOut             DateTime
+  // 최초 계약 종료일은 연장·조기 퇴실 후에도 변경 이력을 비교할 수 있도록 보존한다.
+  originalCheckOut     DateTime?
+  // 실제 퇴실 처리가 끝난 날짜. 계약 종료 예정일(checkOut)과 구분한다.
+  actualCheckOut       DateTime?
   months               Int
   status               ReservationStatus @default(PENDING_PAYMENT)
   // 대표 결제자가 확보한 예약 단위와 자리 수. 기존 예약은 UNIT/1로 안전하게 유지된다.
@@ -372,6 +394,8 @@ model Reservation {
   // 게스트가 요청한 연장 개월 수 (승인 대기 중에만 값이 있음)
   extensionMonths      Int?
   tenantReview         TenantReview?
+  companions           ReservationCompanionMember[]
+  contractChanges      ContractChangeRequest[]
   createdAt            DateTime          @default(now())
 
   // 기간 중복과 다인실 잔여 자리는 예약 서비스가 숙소 행 잠금 및
@@ -379,6 +403,53 @@ model Reservation {
   @@index([roomId, checkIn, checkOut])
   @@index([guestId])
   @@index([companionId])
+}
+
+
+model ContractChangeRequest {
+  id                    String               @id @default(cuid())
+  reservationId         String
+  reservation           Reservation          @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  requesterId           String
+  type                  ContractChangeType
+  status                ContractChangeStatus @default(HOST_REVIEW)
+  originalCheckOut      DateTime
+  requestedCheckOut     DateTime
+  additionalRent        Int                  @default(0)
+  additionalMaintenance Int                  @default(0)
+  additionalServiceFee  Int                  @default(0)
+  additionalAmount      Int                  @default(0)
+  estimatedRefund       Int                  @default(0)
+  depositDeduction      Int                  @default(0)
+  finalRefund           Int?
+  rejectReason          String?
+  paymentProvider       String?
+  paymentTxnId          String?
+  paymentDeadline       DateTime?
+  reviewedAt            DateTime?
+  paidAt                DateTime?
+  appliedAt             DateTime?
+  actualCheckOut        DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([reservationId, createdAt])
+  @@index([reservationId, status])
+  @@index([status, paymentDeadline])
+}
+
+model ReservationCompanionMember {
+  id            String          @id @default(cuid())
+  reservationId String
+  reservation   Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        CompanionStatus @default(PENDING)
+  respondedAt   DateTime?
+  createdAt     DateTime        @default(now())
+
+  @@unique([reservationId, userId])
+  @@index([userId, status])
 }
 
 model Payment {
@@ -441,6 +512,7 @@ model DirectConversation {
   participantA   User            @relation("DirectParticipantA", fields: [participantAId], references: [id], onDelete: Cascade)
   participantB   User            @relation("DirectParticipantB", fields: [participantBId], references: [id], onDelete: Cascade)
   messages       DirectMessage[]
+  hiddenBy       String[]        @default([])
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -646,6 +718,7 @@ model ChatRoom {
   hostId    String
   host      User      @relation("HostChatRooms", fields: [hostId], references: [id])
   messages  Message[]
+  hiddenBy  String[]  @default([])
   createdAt DateTime  @default(now())
 
   @@unique([roomId, guestId])
@@ -724,10 +797,10 @@ model Post {
   sharedLifestyleFields String[]     @default([])
 
   // 관리자 소프트 삭제. 값이 있으면 목록/상세에서 제외되지만 데이터는 남는다.
-  deletedAt             DateTime?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
-  comments              Comment[]
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  comments  Comment[]
 
   @@index([roomId, createdAt])
   @@index([category, status])

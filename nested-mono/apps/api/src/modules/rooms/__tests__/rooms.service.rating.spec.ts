@@ -31,6 +31,12 @@ describe("RoomsService — rating 정렬", () => {
           }),
         count: jest.fn(),
       },
+      reservation: {
+        findMany: jest.fn(async () => []),
+      },
+      calendarBlock: {
+        findMany: jest.fn(async () => []),
+      },
       // $queryRaw: 필터된 id 교집합을 rankedOrder 순서로 반환
       $queryRaw: jest.fn(async () =>
         rankedOrder.filter((id) => filteredIds.includes(id)).map((id) => ({ id }))

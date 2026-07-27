@@ -15,7 +15,7 @@
 import { USE_REAL_API } from "./config";
 import { api, ApiError } from "./client";
 import { toISODate, addMonths } from "@/lib/pricing";
-import type { BookingMode } from "@/lib/types";
+import type { BookingMode, ContractChangeRequest } from "@/lib/types";
 
 export interface AvailabilityResult {
   available: boolean;
@@ -53,7 +53,7 @@ export interface CreatedBooking {
 export async function checkAvailability(input: {
   houseId: string;
   checkIn: string;
-  months: number;
+  checkOut: string;
   couponCode?: string;
   bookingMode?: BookingMode;
   reservedSpots?: number;
@@ -62,7 +62,7 @@ export async function checkAvailability(input: {
     const params = new URLSearchParams({
       houseId: input.houseId,
       checkIn: input.checkIn,
-      months: String(input.months),
+      checkOut: input.checkOut,
       ...(input.bookingMode ? { bookingMode: input.bookingMode } : {}),
       ...(input.reservedSpots ? { reservedSpots: String(input.reservedSpots) } : {}),
     });
@@ -76,7 +76,7 @@ export async function checkAvailability(input: {
       {
         roomId: input.houseId,
         checkIn: input.checkIn,
-        months: input.months,
+        checkOut: input.checkOut,
         ...(input.bookingMode ? { bookingMode: input.bookingMode.toUpperCase() } : {}),
         ...(input.reservedSpots ? { reservedSpots: input.reservedSpots } : {}),
         ...(input.couponCode ? { couponCode: input.couponCode } : {}),
@@ -84,7 +84,7 @@ export async function checkAvailability(input: {
     );
     return {
       available: true,
-      checkOut: quote.checkOut ?? toISODate(addMonths(new Date(input.checkIn), input.months)),
+      checkOut: quote.checkOut ?? input.checkOut,
       price: quote,
     };
   } catch (e) {
@@ -104,10 +104,12 @@ export async function requestBooking(input: {
   houseId: string;
   guestName: string;
   moveIn: string;
-  months: number;
+  checkOut: string;
   couponCode?: string;
-  /** 함께 살 룸메이트. 지정하면 상대에게 수락 대기 초대가 걸린다. */
+  /** 기존 단일 동반자 필드. 이전 클라이언트 호환용. */
   companionId?: string;
+  /** 함께 입주할 친구들. 친구 목록에서 선택한 고유 ID만 보낸다. */
+  companionIds?: string[];
   bookingMode?: BookingMode;
   reservedSpots?: number;
 }): Promise<CreatedBooking> {
@@ -120,9 +122,10 @@ export async function requestBooking(input: {
         houseId: input.houseId,
         guestName: input.guestName,
         moveIn: input.moveIn,
-        months: input.months,
+        checkOut: input.checkOut,
         bookingMode: input.bookingMode,
         reservedSpots: input.reservedSpots,
+        companionIds: input.companionIds,
       }),
     });
     if (!res.ok) {
@@ -138,11 +141,12 @@ export async function requestBooking(input: {
     {
       roomId: input.houseId,
       checkIn: input.moveIn,
-      months: input.months,
+      checkOut: input.checkOut,
       ...(input.bookingMode ? { bookingMode: input.bookingMode.toUpperCase() } : {}),
       ...(input.reservedSpots ? { reservedSpots: input.reservedSpots } : {}),
       ...(input.couponCode ? { couponCode: input.couponCode } : {}),
       ...(input.companionId ? { companionId: input.companionId } : {}),
+      ...(input.companionIds?.length ? { companionIds: input.companionIds } : {}),
     }
   );
   return { id: r.id, status: r.status, totalDueNow: r.totalDueNow };
@@ -228,12 +232,61 @@ export async function cancelBooking(reservationId: string): Promise<void> {
 // the TripsList UI expects. Demo mode reads the in-repo /api/bookings route.
 import type { Booking } from "@/lib/types";
 
+interface ApiContractChange {
+  id: string;
+  type: "EARLY_CHECKOUT" | "EXTENSION";
+  status:
+    | "HOST_REVIEW"
+    | "PAYMENT_PENDING"
+    | "APPROVED"
+    | "REJECTED"
+    | "CANCELLED"
+    | "EXPIRED"
+    | "COMPLETED";
+  originalCheckOut: string;
+  requestedCheckOut: string;
+  additionalRent: number;
+  additionalMaintenance: number;
+  additionalServiceFee: number;
+  additionalAmount: number;
+  estimatedRefund: number;
+  depositDeduction: number;
+  finalRefund: number | null;
+  rejectReason: string | null;
+  paymentProvider: string | null;
+  paymentDeadline: string | null;
+  paidAt: string | null;
+  appliedAt: string | null;
+  actualCheckOut: string | null;
+  createdAt: string;
+}
+
+function mapContractChange(
+  change?: ApiContractChange | null,
+): ContractChangeRequest | null {
+  if (!change) return null;
+  return {
+    ...change,
+    originalCheckOut: change.originalCheckOut.slice(0, 10),
+    requestedCheckOut: change.requestedCheckOut.slice(0, 10),
+    paymentDeadline: change.paymentDeadline ?? null,
+    paidAt: change.paidAt ?? null,
+    appliedAt: change.appliedAt ?? null,
+    actualCheckOut: change.actualCheckOut
+      ? change.actualCheckOut.slice(0, 10)
+      : null,
+  };
+}
+
 interface ApiReservation {
   id: string;
   months: number;
   checkIn: string;
   checkOut?: string;
   extensionMonths?: number | null;
+  originalCheckOut?: string | null;
+  actualCheckOut?: string | null;
+  contractChanges?: ApiContractChange[];
   monthlyRent: number;
   deposit: number;
   cleaningFee: number;
@@ -244,13 +297,34 @@ interface ApiReservation {
   bookingMode?: "UNIT" | "BED" | "WHOLE_ROOM";
   reservedSpots?: number;
   createdAt: string;
-  room: { id: string; name: string; region: string; image: string | null };
+  room: {
+    id: string;
+    name: string;
+    region: string;
+    image: string | null;
+    rentalUnit?: "WHOLE" | "PRIVATE_ROOM" | "BED" | null;
+    capacity?: number | null;
+  };
+  companions?: {
+    status: CompanionStatus;
+    user: { id: string; name: string; avatarColor: string };
+  }[];
   payment: { id: string; provider: string; amount: number; status: string; createdAt: string } | null;
 }
 
 function mapStatus(s: string): Booking["status"] {
-  if (s === "CONFIRMED") return "paid";
   if (s === "PENDING_PAYMENT") return "hold";
+  if (
+    [
+      "CONFIRMED",
+      "EARLY_CHECKOUT_REQUESTED",
+      "EARLY_CHECKOUT_APPROVED",
+      "EXTENSION_REQUESTED",
+      "COMPLETED",
+    ].includes(s)
+  ) {
+    return "paid";
+  }
   return "cancelled";
 }
 
@@ -290,16 +364,66 @@ export async function listMyPayments(): Promise<PaymentRecord[]> {
 
   try {
     const rows = await api.get<ApiReservation[]>("/reservations");
-    return rows
-      .filter((r) => r.payment) // only reservations that actually reached payment
-      .map((r) => ({
-        id: r.payment!.id,
-        houseName: r.room.name,
-        amount: r.payment!.amount,
-        method: PROVIDER_LABELS[r.payment!.provider] ?? r.payment!.provider,
-        date: r.payment!.createdAt.slice(0, 10).replace(/-/g, "."),
-        status: r.payment!.status === "COMPLETED" ? "완료" : "환불",
-      }));
+    const records: PaymentRecord[] = [];
+
+    for (const reservation of rows) {
+      if (reservation.payment) {
+        records.push({
+          id: reservation.payment.id,
+          houseName: reservation.room.name,
+          amount: reservation.payment.amount,
+          method:
+            PROVIDER_LABELS[reservation.payment.provider] ??
+            reservation.payment.provider,
+          date: reservation.payment.createdAt
+            .slice(0, 10)
+            .replace(/-/g, "."),
+          status:
+            reservation.payment.status === "REFUNDED"
+              ? "환불"
+              : "완료",
+        });
+      }
+
+      for (const change of reservation.contractChanges ?? []) {
+        if (
+          change.type === "EXTENSION" &&
+          change.paidAt &&
+          change.additionalAmount > 0
+        ) {
+          records.push({
+            id: `extension-${change.id}`,
+            houseName: `${reservation.room.name} · 계약 연장`,
+            amount: change.additionalAmount,
+            method:
+              PROVIDER_LABELS[change.paymentProvider ?? ""] ??
+              change.paymentProvider ??
+              "추가 결제",
+            date: change.paidAt.slice(0, 10).replace(/-/g, "."),
+            status: "완료",
+          });
+        }
+
+        if (
+          change.type === "EARLY_CHECKOUT" &&
+          change.status === "COMPLETED" &&
+          (change.finalRefund ?? 0) > 0
+        ) {
+          records.push({
+            id: `refund-${change.id}`,
+            houseName: `${reservation.room.name} · 조기 퇴실 반환`,
+            amount: change.finalRefund ?? 0,
+            method: "환불·보증금 반환",
+            date: (change.actualCheckOut ?? change.createdAt)
+              .slice(0, 10)
+              .replace(/-/g, "."),
+            status: "환불",
+          });
+        }
+      }
+    }
+
+    return records.sort((a, b) => b.date.localeCompare(a.date));
   } catch {
     return [];
   }
@@ -328,12 +452,17 @@ export interface HostReservation {
   guestName: string;
   guestAvatarColor: string;
   moveIn: string; // YYYY-MM-DD
+  checkOut: string; // YYYY-MM-DD
   months: number;
   monthlyRent: number;
   totalDueNow: number;
   status: HostReservationStatus;
   bookingMode?: BookingMode;
   reservedSpots?: number;
+  rentalUnit?: "whole" | "private_room" | "bed" | null;
+  capacity?: number | null;
+  companions: { name: string; status: CompanionStatus }[];
+  latestContractChange?: ContractChangeRequest | null;
   createdAt: string;
 }
 
@@ -359,11 +488,23 @@ export async function listHostReservations(): Promise<HostReservation[]> {
         guestName: b.guestName || "게스트",
         guestAvatarColor: "#FF5A5F",
         moveIn: b.moveIn,
+        checkOut: b.checkOut ?? toISODate(addMonths(new Date(b.moveIn), b.months)),
         months: b.months,
         monthlyRent: b.monthlyRent,
         totalDueNow: b.totalDueNow,
         status:
           b.status === "paid" ? "CONFIRMED" : b.status === "cancelled" ? "CANCELLED_BY_HOST" : "PENDING_PAYMENT",
+        bookingMode: b.bookingMode,
+        reservedSpots: b.reservedSpots ?? 1,
+        rentalUnit:
+          b.bookingMode === "bed"
+            ? "bed"
+            : b.bookingMode === "whole_room"
+              ? "whole"
+              : "private_room",
+        capacity: null,
+        companions: [],
+        latestContractChange: b.latestContractChange ?? null,
         createdAt: b.createdAt,
       }));
     } catch {
@@ -381,12 +522,20 @@ export async function listHostReservations(): Promise<HostReservation[]> {
       guestName: r.guest?.name ?? "게스트",
       guestAvatarColor: r.guest?.avatarColor ?? "#FF5A5F",
       moveIn: r.checkIn.slice(0, 10),
+      checkOut: (r.checkOut ?? r.checkIn).slice(0, 10),
       months: r.months,
       monthlyRent: r.monthlyRent,
       totalDueNow: r.totalDueNow,
       status: r.status as HostReservationStatus,
       bookingMode: r.bookingMode?.toLowerCase() as BookingMode | undefined,
       reservedSpots: r.reservedSpots ?? 1,
+      rentalUnit: r.room.rentalUnit?.toLowerCase() as HostReservation["rentalUnit"],
+      capacity: r.room.capacity ?? null,
+      companions: (r.companions ?? []).map((companion) => ({
+        name: companion.user.name,
+        status: companion.status,
+      })),
+      latestContractChange: mapContractChange(r.contractChanges?.[0]),
       createdAt: r.createdAt,
     }));
   } catch {
@@ -438,7 +587,8 @@ export async function listMyBookings(): Promise<Booking[]> {
       bookingMode: r.bookingMode?.toLowerCase() as BookingMode | undefined,
       reservedSpots: r.reservedSpots ?? 1,
       checkOut: r.checkOut?.slice(0, 10),
-      extensionMonths: (r as { extensionMonths?: number | null }).extensionMonths ?? null,
+      extensionMonths: r.extensionMonths ?? null,
+      latestContractChange: mapContractChange(r.contractChanges?.[0]),
       createdAt: r.createdAt,
     }));
   } catch {
@@ -454,34 +604,124 @@ export async function sendOverdueNotice(reservationId: string, message?: string)
   await api.post(`/host/overdue/${reservationId}`, message ? { message } : {});
 }
 
-// PATCH /reservations/:id/early-checkout — guest requests an early checkout on
-// a confirmed reservation (waits for host approval).
-export async function requestEarlyCheckout(reservationId: string): Promise<void> {
-  if (!USE_REAL_API) return;
-  await api.patch(`/reservations/${reservationId}/early-checkout`);
+export interface ContractChangeQuote {
+  type: "EARLY_CHECKOUT" | "EXTENSION";
+  originalCheckOut: string;
+  requestedCheckOut: string;
+  changedDays: number;
+  minimumContractEnd: string | null;
+  minimumStaySatisfied: boolean;
+  additionalRent: number;
+  additionalMaintenance: number;
+  additionalServiceFee: number;
+  additionalAmount: number;
+  estimatedRefund: number;
 }
 
-// PATCH /reservations/:id/early-checkout/decision — host approves or rejects.
+export async function quoteContractChange(
+  reservationId: string,
+  type: "EARLY_CHECKOUT" | "EXTENSION",
+  requestedCheckOut: string,
+): Promise<ContractChangeQuote> {
+  if (!USE_REAL_API) {
+    throw new Error("데모 모드에서는 계약 변경 견적을 지원하지 않습니다.");
+  }
+  const result = await api.post<
+    Omit<
+      ContractChangeQuote,
+      "originalCheckOut" | "requestedCheckOut" | "minimumContractEnd"
+    > & {
+      originalCheckOut: string;
+      requestedCheckOut: string;
+      minimumContractEnd: string | null;
+    }
+  >(`/reservations/${reservationId}/contract-change/quote`, {
+    type,
+    requestedCheckOut,
+  });
+
+  return {
+    ...result,
+    originalCheckOut: result.originalCheckOut.slice(0, 10),
+    requestedCheckOut: result.requestedCheckOut.slice(0, 10),
+    minimumContractEnd: result.minimumContractEnd
+      ? result.minimumContractEnd.slice(0, 10)
+      : null,
+  };
+}
+
+export async function requestEarlyCheckout(
+  reservationId: string,
+  requestedCheckOut: string,
+): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.patch(`/reservations/${reservationId}/early-checkout`, {
+    requestedCheckOut,
+  });
+}
+
+export async function requestExtension(
+  reservationId: string,
+  requestedCheckOut: string,
+): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.patch(`/reservations/${reservationId}/extension`, {
+    requestedCheckOut,
+  });
+}
+
+export async function cancelContractChange(
+  reservationId: string,
+): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.patch(`/reservations/${reservationId}/contract-change/cancel`);
+}
+
 export async function decideEarlyCheckout(
   reservationId: string,
-  decision: "approve" | "reject"
+  decision: "approve" | "reject",
+  reason?: string,
 ): Promise<void> {
   if (!USE_REAL_API) return;
-  await api.patch(`/reservations/${reservationId}/early-checkout/decision`, { decision });
+  await api.patch(`/reservations/${reservationId}/early-checkout/decision`, {
+    decision,
+    ...(reason ? { reason } : {}),
+  });
 }
 
-// ── 계약 연장 ──
-// PATCH /reservations/:id/extension — guest asks to stay N more months.
-export async function requestExtension(reservationId: string, months: number): Promise<void> {
-  if (!USE_REAL_API) return;
-  await api.patch(`/reservations/${reservationId}/extension`, { months });
-}
-
-// PATCH /reservations/:id/extension/decision — host approves or rejects.
 export async function decideExtension(
   reservationId: string,
-  decision: "approve" | "reject"
+  decision: "approve" | "reject",
+  reason?: string,
 ): Promise<void> {
   if (!USE_REAL_API) return;
-  await api.patch(`/reservations/${reservationId}/extension/decision`, { decision });
+  await api.patch(`/reservations/${reservationId}/extension/decision`, {
+    decision,
+    ...(reason ? { reason } : {}),
+  });
+}
+
+export async function confirmExtensionPayment(input: {
+  reservationId: string;
+  amount: number;
+  provider?: "TOSS" | "PORTONE" | "STRIPE";
+  paymentKey?: string;
+}): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.post(`/reservations/${input.reservationId}/extension/payment`, {
+    provider: input.provider ?? "TOSS",
+    paymentKey: input.paymentKey ?? `extension_demo_${Date.now()}`,
+    amount: input.amount,
+  });
+}
+
+export async function completeEarlyCheckout(
+  reservationId: string,
+  depositDeduction: number,
+): Promise<{ finalRefund: number }> {
+  if (!USE_REAL_API) return { finalRefund: 0 };
+  return api.patch<{ finalRefund: number }>(
+    `/reservations/${reservationId}/checkout-complete`,
+    { depositDeduction },
+  );
 }

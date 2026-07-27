@@ -48,7 +48,7 @@ const createRoomSchema = z
       "APARTMENT",
     ]).optional(),
     rentalUnit: z.enum(["WHOLE", "PRIVATE_ROOM", "BED"]).optional(),
-    buildingType: z.enum(["STUDIO", "APARTMENT", "HOUSE"]).optional(),
+    buildingType: z.enum(["STUDIO", "APARTMENT", "OFFICETEL", "HOUSE"]).optional(),
     sharedFacilities: z.array(z.enum([
       "BATHROOM",
       "KITCHEN",
@@ -76,8 +76,15 @@ const createRoomSchema = z
       if (!data.buildingType) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["buildingType"], message: "건물 유형을 선택해주세요." });
       }
-      if (data.capacity == null) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["capacity"], message: "최대 수용 인원을 입력해주세요." });
+      if (
+        data.rentalUnit === "BED" &&
+        (data.capacity == null || data.capacity < 2)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["capacity"],
+          message: "다인실 수용 인원은 2명 이상이어야 합니다.",
+        });
       }
       if (data.rentalUnit === "WHOLE" && data.sharedFacilities.length > 0) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sharedFacilities"], message: "전체 숙소는 공유 시설을 선택하지 않습니다." });
@@ -99,7 +106,7 @@ const createRoomSchema = z
 
 const ROOM_TYPE_VALUES = ["ONE_ROOM", "SHARE_ROOM", "WHOLE_HOUSE", "APARTMENT"] as const;
 const RENTAL_UNIT_VALUES = ["WHOLE", "PRIVATE_ROOM", "BED"] as const;
-const BUILDING_TYPE_VALUES = ["STUDIO", "APARTMENT", "HOUSE"] as const;
+const BUILDING_TYPE_VALUES = ["STUDIO", "APARTMENT", "OFFICETEL", "HOUSE"] as const;
 const SHARED_FACILITY_VALUES = [
   "BATHROOM",
   "KITCHEN",
@@ -159,7 +166,7 @@ const updateRoomSchema = z.object({
   capacity: z.number().int().min(1).max(20).nullable().optional(),
   bedrooms: z.number().int().min(1).max(10).nullable().optional(),
   rentalUnit: z.enum(["WHOLE", "PRIVATE_ROOM", "BED"]).optional(),
-  buildingType: z.enum(["STUDIO", "APARTMENT", "HOUSE"]).optional(),
+  buildingType: z.enum(["STUDIO", "APARTMENT", "OFFICETEL", "HOUSE"]).optional(),
   sharedFacilities: z.array(z.enum([
     "BATHROOM",
     "KITCHEN",
@@ -255,6 +262,20 @@ export class RoomsController {
   @UseGuards(JwtAuthGuard)
   getAgeGroup(@Req() req: any) {
     return this.rooms.getAgeGroupRooms(req.user.id);
+  }
+
+  @Get(":id/availability")
+  availabilityMonth(
+    @Param("id") id: string,
+    @Query("year") yearValue: string,
+    @Query("month") monthValue: string,
+    @Query("requestedSpots") requestedSpotsValue?: string,
+  ) {
+    const now = new Date();
+    const year = finiteNumber(yearValue, { positive: true, integer: true }) ?? now.getFullYear();
+    const month = finiteNumber(monthValue, { positive: true, integer: true }) ?? now.getMonth() + 1;
+    const requestedSpots = finiteNumber(requestedSpotsValue, { positive: true, integer: true }) ?? 1;
+    return this.rooms.availabilityMonth(id, year, Math.min(12, Math.max(1, month)), requestedSpots);
   }
 
   @Get(":id/similar")

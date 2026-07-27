@@ -15,13 +15,20 @@ import {
   SHARED_FACILITY_LABELS,
 } from "@/lib/types";
 import { won } from "@/lib/format";
-import { DISTRICT_OPTIONS } from "@/lib/seoul";
+import { AREA_OPTIONS, DISTRICT_OPTIONS, DISTRICTS_BY_AREA, WORKPLACE_PRESETS, type ServiceArea } from "@/lib/seoul";
 import { getLegalNeighborhoods, type LegalRegionOption } from "@/lib/api/regions";
 import { DEFAULT_FILTERS, RENT_MAX, RENT_MIN } from "../schema";
+import {
+  addCalendarMonthsISO,
+  formatStayDuration,
+  isStayAtLeastMonths,
+  minimumCheckOutISO,
+  PLATFORM_MIN_STAY_MONTHS,
+} from "@/lib/stay-dates";
 
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
 const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
-const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "house"];
+const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "officetel", "house"];
 const SHARED_FACILITIES: SharedFacility[] = [
   "bathroom",
   "kitchen",
@@ -42,6 +49,10 @@ export function FilterSheet({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<SearchParams>(initial);
+  const [selectedArea, setSelectedArea] = useState<ServiceArea>(
+    DISTRICT_OPTIONS.find((item) => item.value === initial.district)?.area ??
+      "서울",
+  );
   const [neighborhoods, setNeighborhoods] = useState<LegalRegionOption[]>([]);
   const [regionsLoading, setRegionsLoading] = useState(false);
   const [regionsError, setRegionsError] = useState<string | null>(null);
@@ -49,6 +60,10 @@ export function FilterSheet({
   useEffect(() => {
     if (open) {
       setDraft(initial);
+      setSelectedArea(
+        DISTRICT_OPTIONS.find((item) => item.value === initial.district)?.area ??
+          "서울",
+      );
     }
   }, [open, initial]);
 
@@ -59,11 +74,18 @@ export function FilterSheet({
       return;
     }
 
+    const selectedDistrictOption = DISTRICT_OPTIONS.find(
+      (item) => item.value === draft.district,
+    );
+
     let cancelled = false;
     setRegionsLoading(true);
     setRegionsError(null);
 
-    getLegalNeighborhoods(draft.district)
+    getLegalNeighborhoods(
+      draft.district,
+      selectedDistrictOption?.city ?? "서울",
+    )
       .then((items) => {
         if (!cancelled) setNeighborhoods(items);
       })
@@ -97,6 +119,26 @@ export function FilterSheet({
     }));
   };
 
+  const hasPartialStayRange = Boolean(draft.checkIn) !== Boolean(draft.checkOut);
+  const hasInvalidStayRange = Boolean(
+    draft.checkIn && draft.checkOut && draft.checkOut <= draft.checkIn,
+  );
+  const hasTooShortStay = Boolean(
+    draft.checkIn &&
+      draft.checkOut &&
+      !isStayAtLeastMonths(
+        draft.checkIn,
+        draft.checkOut,
+        PLATFORM_MIN_STAY_MONTHS,
+      ),
+  );
+  const stayDuration =
+    draft.checkIn && draft.checkOut
+      ? formatStayDuration(draft.checkIn, draft.checkOut)
+      : "";
+  const minimumCheckOut = draft.checkIn
+    ? minimumCheckOutISO(draft.checkIn, PLATFORM_MIN_STAY_MONTHS)
+    : "";
 
   return (
     <>
@@ -155,22 +197,118 @@ export function FilterSheet({
             gap: 26,
           }}
         >
-          <Section title="지역(구)">
+          <Section title="직장 또는 목적지">
             <p
               style={{
                 fontSize: 12.5,
                 color: "var(--text-2)",
                 marginBottom: 12,
+                lineHeight: 1.55,
               }}
             >
-              구를 선택하면 해당 지역의 세부 동을 선택할 수 있습니다.
+              회사명, 역, 업무지구를 입력하거나 자주 찾는 목적지를 선택하세요.
             </p>
+
+            <div className="filter-destination-control">
+              <input
+                className="filter-destination-input"
+                value={draft.q ?? ""}
+                onChange={(event) =>
+                  set({
+                    q: event.target.value,
+                  })
+                }
+                placeholder="예: 판교역, 송도, 강남역"
+                aria-label="직장 또는 목적지"
+              />
+
+              {draft.q && (
+                <button
+                  type="button"
+                  className="filter-destination-clear press"
+                  onClick={() =>
+                    set({
+                      q: "",
+                    })
+                  }
+                >
+                  지우기
+                </button>
+              )}
+            </div>
 
             <div
               style={{
                 display: "flex",
                 gap: 8,
                 flexWrap: "wrap",
+                marginTop: 10,
+              }}
+            >
+              {WORKPLACE_PRESETS.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  className="chip press"
+                  data-active={
+                    draft.q === item.query &&
+                    draft.district === item.district
+                  }
+                  onClick={() => {
+                    setSelectedArea(item.area);
+                    set({
+                      q: item.query,
+                      district: item.district,
+                      region: item.region,
+                      legalDongCode: "",
+                    });
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          <Section title="지역">
+            <p
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-2)",
+                marginBottom: 12,
+                lineHeight: 1.55,
+              }}
+            >
+              서울뿐 아니라 경기와 인천의 주요 출근 생활권까지 선택할 수 있습니다.
+            </p>
+
+            <div className="filter-area-tabs" role="tablist" aria-label="광역 지역">
+              {AREA_OPTIONS.map((area) => (
+                <button
+                  key={area}
+                  type="button"
+                  className="chip press"
+                  data-active={selectedArea === area}
+                  onClick={() => {
+                    setSelectedArea(area);
+                    set({
+                      district: "",
+                      region: "",
+                      legalDongCode: "",
+                    });
+                  }}
+                >
+                  {area}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginTop: 10,
               }}
             >
               <button
@@ -185,15 +323,15 @@ export function FilterSheet({
                   })
                 }
               >
-                전체
+                {selectedArea} 전체
               </button>
 
-              {DISTRICT_OPTIONS.map((item) => {
+              {(DISTRICTS_BY_AREA[selectedArea] ?? []).map((item) => {
                 const active = draft.district === item.value;
 
                 return (
                   <button
-                    key={item.value}
+                    key={`${item.area}-${item.value}`}
                     type="button"
                     className="chip"
                     data-active={active}
@@ -406,31 +544,93 @@ export function FilterSheet({
             </div>
           </Section>
 
-          <Section title="입주 가능일">
-            <input
-              type="date"
-              value={draft.availableFrom ?? ""}
-              onChange={(event) =>
-                set({
-                  availableFrom: event.target.value,
-                })
-              }
-              style={{
-                padding: "11px 14px",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--r-sm)",
-                width: "100%",
-              }}
-            />
+          <Section title="입주 기간">
+            <div className="filter-stay-dates">
+              <label className="filter-date-field">
+                <span>입주일</span>
+                <input
+                  type="date"
+                  value={draft.checkIn ?? ""}
+                  max={draft.checkOut || undefined}
+                  onChange={(event) => {
+                    const checkIn = event.target.value;
+                    const earliestCheckOut = checkIn
+                      ? minimumCheckOutISO(checkIn, PLATFORM_MIN_STAY_MONTHS)
+                      : "";
+                    set({
+                      checkIn,
+                      checkOut:
+                        draft.checkOut && earliestCheckOut && draft.checkOut < earliestCheckOut
+                          ? ""
+                          : draft.checkOut,
+                      availableFrom: "",
+                    });
+                  }}
+                />
+              </label>
 
-            <p
+              <label className="filter-date-field">
+                <span>퇴실일</span>
+                <input
+                  type="date"
+                  value={draft.checkOut ?? ""}
+                  min={minimumCheckOut || undefined}
+                  disabled={!draft.checkIn}
+                  onChange={(event) =>
+                    set({
+                      checkOut: event.target.value,
+                      availableFrom: "",
+                    })
+                  }
+                />
+              </label>
+            </div>
+
+            <div
               style={{
-                fontSize: 12.5,
-                color: "var(--text-2)",
-                marginTop: 6,
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginTop: 12,
               }}
             >
-              선택한 날짜에 입주 가능한 숙소만 표시됩니다.
+              {[1, 3, 6, 12].map((months) => (
+                <button
+                  key={months}
+                  type="button"
+                  className="chip press"
+                  disabled={!draft.checkIn}
+                  onClick={() =>
+                    set({
+                      checkOut: draft.checkIn
+                        ? addCalendarMonthsISO(draft.checkIn, months)
+                        : "",
+                      availableFrom: "",
+                    })
+                  }
+                >
+                  {months}개월
+                </button>
+              ))}
+            </div>
+
+            <p
+              className="filter-helper-text"
+              data-error={
+                hasPartialStayRange || hasInvalidStayRange || hasTooShortStay
+              }
+            >
+              {hasPartialStayRange
+                ? draft.checkIn
+                  ? `최소 거주 기간은 1개월입니다. 퇴실일을 ${minimumCheckOut} 이후로 선택해주세요.`
+                  : "입주일과 퇴실일을 모두 선택해야 기간 필터가 적용됩니다."
+                : hasInvalidStayRange
+                  ? "퇴실일은 입주일보다 뒤여야 합니다."
+                  : hasTooShortStay
+                    ? `최소 거주 기간은 1개월입니다. 퇴실일을 ${minimumCheckOut} 이후로 선택해주세요.`
+                    : stayDuration
+                      ? `선택한 거주 기간 · ${stayDuration}`
+                      : "최소 1개월부터 선택할 수 있으며, 1개월 16일처럼 날짜 단위로 조정할 수 있습니다."}
             </p>
           </Section>
 
@@ -593,6 +793,7 @@ export function FilterSheet({
               justifyContent: "center",
             }}
             onClick={() => onApply(draft)}
+            disabled={hasPartialStayRange || hasInvalidStayRange || hasTooShortStay}
           >
             적용하기
           </button>
@@ -624,45 +825,23 @@ function MultiSelectDropdown<T extends string>({
 
   return (
     <details
-      style={{
-        border: "1px solid var(--border)",
-        borderRadius: "var(--r-sm)",
-        background: "var(--surface)",
-      }}
+      className="filter-multi-select"
+      data-active={values.length > 0}
     >
-      <summary
-        style={{
-          cursor: "pointer",
-          listStyle: "none",
-          padding: "12px 14px",
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <span style={{ fontWeight: 700, fontSize: 13 }}>{label}</span>
-        <span
-          style={{
-            minWidth: 0,
-            color: values.length ? "var(--text)" : "var(--text-2)",
-            fontSize: 13,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {summary}
+      <summary className="filter-multi-select-summary">
+        <span className="filter-multi-select-label">{label}</span>
+        <span className="filter-multi-select-value">
+          {values.length > 0 && (
+            <span className="filter-multi-select-check" aria-hidden="true">✓</span>
+          )}
+          <span>{summary}</span>
         </span>
       </summary>
-      <div
-        style={{
-          padding: "0 14px 12px",
-          display: "grid",
-          gap: 8,
-          borderTop: "1px solid var(--border)",
-        }}
-      >
-        <label style={{ display: "flex", gap: 8, alignItems: "center", paddingTop: 10, fontSize: 13 }}>
+      <div className="filter-multi-select-options">
+        <label
+          className="filter-multi-select-option"
+          data-active={values.length === 0}
+        >
           <input
             type="checkbox"
             checked={values.length === 0}
@@ -670,22 +849,29 @@ function MultiSelectDropdown<T extends string>({
           />
           전체
         </label>
-        {options.map((option) => (
-          <label key={option} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={values.includes(option)}
-              onChange={() =>
-                onChange(
-                  values.includes(option)
-                    ? values.filter((value) => value !== option)
-                    : [...values, option],
-                )
-              }
-            />
-            {labels[option]}
-          </label>
-        ))}
+        {options.map((option) => {
+          const active = values.includes(option);
+          return (
+            <label
+              key={option}
+              className="filter-multi-select-option"
+              data-active={active}
+            >
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={() =>
+                  onChange(
+                    active
+                      ? values.filter((value) => value !== option)
+                      : [...values, option],
+                  )
+                }
+              />
+              {labels[option]}
+            </label>
+          );
+        })}
       </div>
     </details>
   );

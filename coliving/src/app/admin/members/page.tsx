@@ -149,8 +149,8 @@ export default function AdminMembers() {
       )}
 
       <div className="card" style={{ overflow: "hidden" }}>
-        <div className="admin-table-head" style={{ gridTemplateColumns: "1.5fr auto auto auto auto auto 1fr" }}>
-          <span>회원</span><span>역할</span><span>가입일</span><span>상태</span><span>평균 별점</span><span>신고</span><span></span>
+      <div className="admin-table-head" style={{ gridTemplateColumns: "minmax(160px, 1.8fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(70px, 0.7fr) minmax(55px, 0.6fr) minmax(120px, 1.1fr)" }}>
+      <span>회원</span><span style={{ textAlign: "center" }}>역할</span><span style={{ textAlign: "center" }}>가입일</span><span style={{ textAlign: "center" }}>상태</span><span style={{ textAlign: "center" }}>평균 별점</span><span style={{ textAlign: "center" }}>신고</span><span></span>
         </div>
 
         {!loading && members.length === 0 && (
@@ -162,7 +162,7 @@ export default function AdminMembers() {
         {members.map((m) => {
           const isSelf = m.id === user?.id;
           return (
-            <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: "1.5fr auto auto auto auto auto 1fr" }}>
+            <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: "minmax(160px, 1.8fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(70px, 0.7fr) minmax(55px, 0.6fr) minmax(120px, 1.1fr)" }}>
               <span style={{ minWidth: 0 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {m.name}{isSelf && <span style={{ color: "var(--text-2)", fontWeight: 400 }}> (나)</span>}
@@ -192,7 +192,7 @@ export default function AdminMembers() {
                 </span>
               </span>
 
-              <span>
+              <span style={{ textAlign: "center" }}>
                 {isSelf ? (
                   <span className="chip" style={{ fontSize: 11 }}>{ROLE_LABEL[m.role] ?? m.role}</span>
                 ) : (
@@ -217,11 +217,11 @@ export default function AdminMembers() {
                 )}
               </span>
 
-              <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+              <span style={{ fontSize: 13, color: "var(--text-2)", textAlign: "center" }}>
                 {new Date(m.createdAt).toLocaleDateString("ko-KR")}
               </span>
 
-              <span>
+              <span style={{ textAlign: "center" }}>
                 <span
                   className="chip"
                   style={{
@@ -233,7 +233,7 @@ export default function AdminMembers() {
                 </span>
               </span>
 
-              <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+              <span style={{ fontSize: 13, color: "var(--text-2)", textAlign: "center" }}>
                 {m.avgRating !== null ? `★ ${m.avgRating}` : "—"}
               </span>
 
@@ -242,6 +242,7 @@ export default function AdminMembers() {
                   fontSize: 13,
                   color: m.reportCount > 0 ? "var(--primary)" : "var(--text-2)",
                   fontWeight: m.reportCount > 0 ? 700 : 400,
+                  textAlign: "center",
                 }}
               >
                 {m.reportCount > 0 ? `${m.reportCount}건` : "—"}

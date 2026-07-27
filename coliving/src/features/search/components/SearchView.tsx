@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import type { SearchParams, SortKey } from "@/lib/types";
+import type { BuildingType, SearchParams, SortKey } from "@/lib/types";
 import {
   BUILDING_TYPE_LABELS,
   RENTAL_UNIT_LABELS,
@@ -11,6 +11,7 @@ import {
   SHARED_FACILITY_LABELS,
 } from "@/lib/types";
 import { regionLabel } from "@/lib/seoul";
+import { formatStayDuration } from "@/lib/stay-dates";
 
 import { useSearchProperties } from "../api/useSearchProperties";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
@@ -19,6 +20,13 @@ import { activeFilterCount, filtersToParams, paramsToFilters } from "../schema";
 import { PropertyCard, PropertyCardSkeleton } from "./PropertyCard";
 import { SearchMap } from "./SearchMap";
 import { FilterSheet } from "./FilterSheet";
+
+const QUICK_BUILDING_TYPES: BuildingType[] = [
+  "house",
+  "apartment",
+  "officetel",
+  "studio",
+];
 
 const SORT_OPTIONS: {
   key: SortKey;
@@ -106,6 +114,14 @@ export function SearchView() {
     });
   };
 
+  const toggleQuickBuildingType = (buildingType: BuildingType) => {
+    const selected = filters.buildingTypes ?? [];
+    const next = selected.includes(buildingType)
+      ? selected.filter((item) => item !== buildingType)
+      : [...selected, buildingType];
+    commit({ ...filters, buildingTypes: next });
+  };
+
   const activeCount = activeFilterCount(filters);
 
   const hasVisibleFilters =
@@ -163,7 +179,7 @@ export function SearchView() {
             <input
               key={filters.q ?? ""}
               defaultValue={filters.q ?? ""}
-              placeholder="지역, 숙소명으로 검색"
+              placeholder="회사명, 역, 업무지구 또는 숙소명 검색"
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   setQuery((event.target as HTMLInputElement).value);
@@ -188,53 +204,48 @@ export function SearchView() {
           <button
             type="button"
             onClick={() => setFilterOpen(true)}
-            className="btn btn-ghost press"
-            style={{
-              position: "relative",
-            }}
+            className={`btn btn-ghost press search-toolbar-control${activeCount > 0 ? " is-active" : ""}`}
+            aria-label={activeCount > 0 ? `필터 열기, ${activeCount}개 적용됨` : "필터 열기"}
           >
-            <span aria-hidden="true" />
-            필터
-            {activeCount > 0 && (
-              <span
-                style={{
-                  background: "var(--primary)",
-                  color: "#fff",
-                  borderRadius: 99,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  minWidth: 18,
-                  height: 18,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "0 5px",
-                }}
-              >
-                {activeCount}
-              </span>
-            )}
+            <span className="search-toolbar-control-label">필터</span>
+            {activeCount > 0 && <span className="filter-active-dot" aria-hidden="true" />}
           </button>
 
-          <select
-            value={filters.sort ?? "recommended"}
-            onChange={(event) => setSort(event.target.value as SortKey)}
-            aria-label="정렬"
-            style={{
-              padding: "11px 14px",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--r-pill)",
-              background: "var(--surface)",
-              fontSize: 14,
-              cursor: "pointer",
-            }}
-          >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <div className="search-sort-control">
+            <span className="search-sort-display" aria-hidden="true">
+              <span>
+                {SORT_OPTIONS.find(
+                  (option) => option.key === (filters.sort ?? "recommended"),
+                )?.label ?? "추천순"}
+              </span>
+              <svg
+                className="search-sort-chevron"
+                viewBox="0 0 20 20"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="m6 8 4 4 4-4"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <select
+              value={filters.sort ?? "recommended"}
+              onChange={(event) => setSort(event.target.value as SortKey)}
+              aria-label="정렬"
+              className="search-sort-select"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <button
             type="button"
@@ -243,6 +254,34 @@ export function SearchView() {
           >
             {showMap ? "리스트만" : "지도 보기"}
           </button>
+        </div>
+
+        <div className="quick-building-filter" aria-label="건물 유형 빠른 선택">
+          <strong className="quick-building-filter-label">건물 유형</strong>
+          <div className="quick-building-filter-options">
+            <button
+              type="button"
+              className="chip press quick-building-chip"
+              data-active={(filters.buildingTypes?.length ?? 0) === 0}
+              onClick={() => commit({ ...filters, buildingTypes: [] })}
+            >
+              전체
+            </button>
+            {QUICK_BUILDING_TYPES.map((buildingType) => (
+              <button
+                key={buildingType}
+                type="button"
+                className="chip press quick-building-chip"
+                data-active={(filters.buildingTypes ?? []).includes(buildingType)}
+                onClick={() => toggleQuickBuildingType(buildingType)}
+              >
+                {BUILDING_TYPE_LABELS[buildingType]}
+              </button>
+            ))}
+          </div>
+          <span className="quick-building-filter-help">
+            원하는 건물 유형을 바로 선택해보세요.
+          </span>
         </div>
 
         <div
@@ -390,7 +429,7 @@ export function SearchView() {
                   })
                 }
               >
-                {filters.checkIn} ~ {filters.checkOut} ×
+                {filters.checkIn} ~ {filters.checkOut} · {formatStayDuration(filters.checkIn, filters.checkOut)} ×
               </button>
             )}
           </div>
@@ -429,6 +468,8 @@ export function SearchView() {
                   house={house}
                   onHover={setHover}
                   active={hover === house.id}
+                  checkIn={filters.checkIn}
+                  checkOut={filters.checkOut}
                 />
               ))}
 

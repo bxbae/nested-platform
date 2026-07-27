@@ -1,4 +1,4 @@
-import { computePrice, couponDiscount, SERVICE_FEE_RATE } from "../pricing";
+import { computePrice, couponDiscount, SERVICE_FEE_RATE, stayCharge } from "../pricing";
 
 describe("computePrice", () => {
   const base = {
@@ -21,6 +21,34 @@ describe("computePrice", () => {
     // deposit + rent*6 + cleaning + maintenance*6 + fee
     // 3,000,000 + 4,800,000 + 100,000 + 300,000 + 40,000
     expect(p.contractTotal).toBe(8_240_000);
+  });
+
+
+  it("prorates the final partial month for an exact check-out date", () => {
+    const p = computePrice({
+      monthlyRent: 800_000,
+      deposit: 3_000_000,
+      cleaningFee: 100_000,
+      maintenanceFee: 60_000,
+      checkIn: new Date("2026-08-05T00:00:00.000Z"),
+      checkOut: new Date("2026-09-21T00:00:00.000Z"),
+    });
+
+    // 8/5→9/5 one full month, then 16 of the 30 days in 9/5→10/5.
+    expect(p.fullMonths).toBe(1);
+    expect(p.extraDays).toBe(16);
+    expect(p.rentSubtotal).toBe(1_226_667);
+    expect(p.maintenanceSubtotal).toBe(92_000);
+    expect(p.contractTotal).toBe(4_458_667);
+  });
+
+
+  it("prorates a short contract extension by the actual segment length", () => {
+    const start = new Date("2026-09-21T00:00:00.000Z");
+    const end = new Date("2026-09-27T00:00:00.000Z");
+
+    expect(stayCharge(700_000, start, end).amount).toBe(140_000);
+    expect(stayCharge(50_000, start, end).amount).toBe(10_000);
   });
 
   it("applies a discount to dueNow but never below one free month", () => {
