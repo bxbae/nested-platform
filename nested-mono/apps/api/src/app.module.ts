@@ -2,7 +2,6 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { GraphQLModule } from "@nestjs/graphql";
 import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
-import { BullModule } from "@nestjs/bullmq";
 import { join } from "path";
 
 import { PrismaModule } from "./prisma/prisma.module";
@@ -37,13 +36,6 @@ import { TransitModule } from './modules/transit/transit.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-
-    // BullMQ shares the Redis connection.
-    BullModule.forRoot({
-      connection: {
-        url: process.env.REDIS_URL ?? "redis://localhost:6379",
-      },
-    }),
 
     // GraphQL (optional) alongside REST — code-first, auto-generated schema.
     GraphQLModule.forRoot<ApolloDriverConfig>({
