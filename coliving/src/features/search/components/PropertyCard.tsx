@@ -16,14 +16,24 @@ export function PropertyCard({
   house,
   onHover,
   active,
+  checkIn,
+  checkOut,
 }: {
   house: House;
   onHover?: (id: string | null) => void;
   active?: boolean;
+  checkIn?: string;
+  checkOut?: string;
 }) {
   // 찜 상태는 서버가 진실이다. 예전에는 Zustand 로컬 상태만 바꿔서, 하트는
   // 채워지는데 새로고침하면 사라지고 상세 화면과도 어긋났다.
   const { saved, toggle } = useFavorite(house.id);
+  const inventory = house.inventory;
+  const isClosed = inventory?.fullyBooked ?? false;
+  const detailParams = new URLSearchParams();
+  if (checkIn) detailParams.set("checkIn", checkIn);
+  if (checkOut) detailParams.set("checkOut", checkOut);
+  const detailHref = `/homes/${house.id}${detailParams.size ? `?${detailParams.toString()}` : ""}`;
 
   const badges: string[] = [];
   if (house.petsAllowed) badges.push("🐾 반려동물");
@@ -32,7 +42,7 @@ export function PropertyCard({
 
   return (
     <MotionLink
-      href={`/homes/${house.id}`}
+      href={detailHref}
       className="card hover-card"
       onMouseEnter={() => onHover?.(house.id)}
       onMouseLeave={() => onHover?.(null)}
@@ -46,7 +56,12 @@ export function PropertyCard({
         outlineOffset: -1,
       }}
     >
-      <Thumbnail src={house.photo} color={house.color} height={190}>
+      <Thumbnail
+        src={house.photo}
+        color={house.color}
+        height={190}
+        imageFilter={isClosed ? "grayscale(1) saturate(0) brightness(.72)" : undefined}
+      >
         <div
           style={{
             display: "flex",
@@ -75,6 +90,26 @@ export function PropertyCard({
                 }}
               >
                 내 숙소
+              </span>
+            )}
+            {inventory && (inventory.fullyBooked || inventory.remainingSpots != null) && (
+              <span
+                className="chip"
+                style={{
+                  border: "none",
+                  fontWeight: 700,
+                  fontSize: 12,
+                  background: inventory.fullyBooked ? "#4b4b52" : "var(--secondary)",
+                  color: "#fff",
+                }}
+              >
+                {inventory.blocked
+                  ? "호스트 예약 불가"
+                  : inventory.fullyBooked
+                    ? inventory.scope === "SELECTED_DATES"
+                      ? "예약 마감"
+                      : "현재 만실"
+                    : `잔여 ${inventory.remainingSpots}자리`}
               </span>
             )}
           </div>
@@ -142,7 +177,7 @@ export function PropertyCard({
           </span>
           {/* 오늘 기준 누가 살고 있는 방 — 목록에서 빼지 않고 표시만 한다.
               나중 날짜로는 입주할 수 있기 때문이다. */}
-          {house.occupied && (
+          {house.occupied && !inventory?.fullyBooked && inventory?.remainingSpots == null && (
             <span
               className="chip"
               title={

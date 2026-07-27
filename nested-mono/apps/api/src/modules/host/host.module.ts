@@ -8,6 +8,8 @@ import {
   computeRoomRevenue,
   computeSettlementBreakdown,
   computeTrend,
+  computeCurrentOperations,
+  reservationGross,
   type RawReservation,
   type RoomRevenueRow,
   type SettlementBreakdown,
@@ -31,6 +33,10 @@ export interface HostDashboard {
   listingCount: number;
   reservationCount: number;
   occupancy: number; // 0–100, trailing 30 days across all my rooms
+  confirmedRevenue: number;
+  scheduledSettlement: number;
+  currentOccupants: number;
+  activeContractCount: number;
   newInquiries: number;
   // 처리하지 않은 새 예약(결제 대기 중이라 승인/거절이 필요한 건)과, 최근
   // 30일 내 게스트/호스트가 취소한 건수. 둘 다 "예약 관리"에서 처리하는
@@ -58,18 +64,26 @@ export class HostService {
     const windowStart = new Date(now.getTime() - WINDOW_DAYS * 86_400_000);
 
     const [rooms, allReservations, chatRooms] = await Promise.all([
-      this.prisma.room.findMany({ where: { hostId }, select: { id: true, name: true } }),
+      this.prisma.room.findMany({
+        where: { hostId },
+        select: { id: true, name: true, rentalUnit: true, capacity: true },
+      }),
       this.prisma.reservation.findMany({
         where: { room: { hostId } },
         select: {
           id: true,
           roomId: true,
           status: true,
+          bookingMode: true,
+          reservedSpots: true,
           monthlyRent: true,
           months: true,
           checkIn: true,
           checkOut: true,
           createdAt: true,
+          companionId: true,
+          companionStatus: true,
+          companions: { select: { userId: true, status: true } },
         },
       }),
       // Chat rooms are "문의". Pull the latest unread-by-host message per
@@ -90,12 +104,27 @@ export class HostService {
       }),
     ]);
 
-    const reservations = allReservations as RawReservation[];
-    const roomIds = rooms.map((r) => r.id);
+    const reservations: RawReservation[] = allReservations.map((reservation) => {
+      const acceptedCompanionIds = new Set(
+        reservation.companions
+          .filter((companion) => companion.status === "ACCEPTED")
+          .map((companion) => companion.userId),
+      );
+      if (
+        reservation.companionId &&
+        reservation.companionStatus === "ACCEPTED"
+      ) {
+        acceptedCompanionIds.add(reservation.companionId);
+      }
+      return {
+        ...reservation,
+        acceptedCompanionCount: acceptedCompanionIds.size,
+      };
+    });
 
     const inRange = (d: Date, start: Date, end?: Date) => d >= start && (end ? d < end : true);
     const earning = reservations.filter((r) => EARNING_STATUSES.includes(r.status));
-    const gross = (r: RawReservation) => r.monthlyRent * r.months;
+    const gross = (r: RawReservation) => reservationGross(r);
 
     const thisMonth = earning
       .filter((r) => inRange(r.createdAt, thisMonthStart))
@@ -127,21 +156,35 @@ export class HostService {
         r.createdAt >= windowStart,
     ).length;
 
+    const settlement = computeSettlementBreakdown(reservations, now);
+    const operations = computeCurrentOperations(reservations, rooms, now);
+    const confirmedRevenue = reservations
+      .filter(
+        (reservation) =>
+          EARNING_STATUSES.includes(reservation.status) &&
+          reservation.createdAt >= thisMonthStart,
+      )
+      .reduce((sum, reservation) => sum + gross(reservation), 0);
+
     return {
       thisMonth,
       lastMonth,
       changePct: lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 100) : null,
       listingCount: rooms.length,
       reservationCount: reservations.length,
-      occupancy: computeOccupancyPct(reservations, roomIds, windowStart, now),
+      occupancy: computeOccupancyPct(reservations, rooms, windowStart, now),
+      confirmedRevenue,
+      scheduledSettlement: settlement.scheduled.amount,
+      currentOccupants: operations.currentOccupants,
+      activeContractCount: operations.activeContractCount,
       newInquiries: withUnread.length,
       newReservationCount: reservations.filter(
         (r) => r.status === ReservationStatus.PENDING_PAYMENT,
       ).length,
       cancelledCount,
-      trend: computeTrend(reservations, roomIds, now, 6),
+      trend: computeTrend(reservations, rooms, now, 6),
       roomRevenue: computeRoomRevenue(reservations, rooms, windowStart, now),
-      settlement: computeSettlementBreakdown(reservations, now),
+      settlement,
       recentInquiries,
     };
   }

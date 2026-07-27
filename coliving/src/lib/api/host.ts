@@ -22,9 +22,14 @@ import {
 export interface RoomRevenueRow {
   roomId: string;
   roomName: string;
+  rentalUnit: "WHOLE" | "PRIVATE_ROOM" | "BED" | null;
+  capacity: number | null;
   reservationCount: number;
+  currentReservedSpots: number;
+  currentRemainingSpots: number | null;
   occupancyPct: number;
   revenue: number;
+  platformFee: number;
   netRevenue: number;
 }
 
@@ -50,6 +55,10 @@ export interface HostDashboard {
   listingCount: number;
   reservationCount: number;
   occupancy: number; // 0–100, trailing 30 days
+  confirmedRevenue: number;
+  scheduledSettlement: number;
+  currentOccupants: number;
+  activeContractCount: number;
   newInquiries: number;
   newReservationCount: number; // pending, needs host action
   cancelledCount: number; // cancelled in the last 30 days
@@ -77,13 +86,30 @@ export async function getHostDashboard(): Promise<HostDashboard> {
       listingCount: s.listingCount,
       reservationCount: s.reservationCount,
       occupancy: s.occupancy,
+      confirmedRevenue: s.thisMonth,
+      scheduledSettlement: demoSettlementBreakdown().scheduled.amount,
+      currentOccupants: hostReservations
+        .filter((reservation) =>
+          ["CONFIRMED", "EARLY_CHECKOUT_REQUESTED", "EARLY_CHECKOUT_APPROVED", "EXTENSION_REQUESTED"].includes(reservation.status),
+        )
+        .reduce((sum, reservation) => sum + Math.max(1, reservation.reservedSpots ?? 1), 0),
+      activeContractCount: hostReservations.filter((reservation) =>
+        ["CONFIRMED", "EARLY_CHECKOUT_REQUESTED", "EARLY_CHECKOUT_APPROVED", "EXTENSION_REQUESTED"].includes(reservation.status),
+      ).length,
       newInquiries: unread.length,
       newReservationCount: hostReservations.filter((r) => r.status === "PENDING_PAYMENT").length,
       cancelledCount: hostReservations.filter(
         (r) => r.status === "CANCELLED_BY_GUEST" || r.status === "CANCELLED_BY_HOST",
       ).length,
       trend,
-      roomRevenue: demoRoomRevenue(),
+      roomRevenue: demoRoomRevenue().map((row) => ({
+        ...row,
+        rentalUnit: null,
+        capacity: null,
+        currentReservedSpots: 0,
+        currentRemainingSpots: null,
+        platformFee: Math.max(0, row.revenue - row.netRevenue),
+      })),
       settlement: demoSettlementBreakdown(),
       recentInquiries: unread.slice(0, 5).map((i) => ({
         chatRoomId: i.id,
@@ -103,13 +129,46 @@ export interface CalendarReservation {
   id: string;
   roomId: string;
   guestName: string;
+  companionNames: string[];
   checkIn: string; // ISO
   checkOut: string; // ISO
   status: string;
+  bookingMode: "UNIT" | "BED" | "WHOLE_ROOM";
+  reservedSpots: number;
+  changeType: "EARLY_CHECKOUT" | "EXTENSION" | null;
+  changeStatus:
+    | "HOST_REVIEW"
+    | "PAYMENT_PENDING"
+    | "APPROVED"
+    | "REJECTED"
+    | "CANCELLED"
+    | "EXPIRED"
+    | "COMPLETED"
+    | null;
+  requestedCheckOut: string | null;
+}
+export interface CalendarDay {
+  date: string;
+  blocked: boolean;
+  blockReason: string | null;
+  reservedSpots: number;
+  pendingSpots: number;
+  confirmedSpots: number;
+  remainingSpots: number | null;
+  fullyBooked: boolean;
+  guestNames: string[];
+  reservationIds: string[];
 }
 export interface CalendarMonth {
+  room: {
+    id: string;
+    name: string;
+    rentalUnit: string | null;
+    capacity: number | null;
+  };
   reservations: CalendarReservation[];
   blockedDates: string[]; // YYYY-MM-DD
+  days: CalendarDay[];
 }
 
 // GET /host/calendar — one room's reservations + blocked days for a month.
@@ -119,7 +178,12 @@ export async function getHostCalendar(
   month: number,
 ): Promise<CalendarMonth> {
   if (!USE_REAL_API) {
-    return { reservations: [], blockedDates: [] };
+    return {
+      room: { id: roomId, name: "숙소", rentalUnit: null, capacity: null },
+      reservations: [],
+      blockedDates: [],
+      days: [],
+    };
   }
   const p = new URLSearchParams({ roomId, year: String(year), month: String(month) });
   return api.get<CalendarMonth>(`/host/calendar?${p.toString()}`);
@@ -135,6 +199,27 @@ export async function blockDate(roomId: string, date: string, reason?: string): 
 export async function unblockDate(roomId: string, date: string): Promise<void> {
   if (!USE_REAL_API) return;
   await api.delete("/host/calendar/block", { body: { roomId, date } });
+}
+
+export async function blockDateRange(
+  roomId: string,
+  startDate: string,
+  endDate: string,
+  reason?: string,
+): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.post("/host/calendar/block-range", { roomId, startDate, endDate, reason });
+}
+
+export async function unblockDateRange(
+  roomId: string,
+  startDate: string,
+  endDate: string,
+): Promise<void> {
+  if (!USE_REAL_API) return;
+  await api.delete("/host/calendar/block-range", {
+    body: { roomId, startDate, endDate },
+  });
 }
 
 // ── CSV export ──
@@ -181,11 +266,19 @@ export interface SettlementRow {
   checkOut: string;
   months: number;
   occupants: number;
+  bookingMode: "UNIT" | "BED" | "WHOLE_ROOM";
+  reservedSpots: number;
   monthlyRent: number;
   deposit: number;
   gross: number;
   commission: number;
   net: number;
+  extensionPaid: number;
+  estimatedRefund: number;
+  depositDeduction: number;
+  finalRefund: number | null;
+  changeType: "EARLY_CHECKOUT" | "EXTENSION" | null;
+  changeStatus: string | null;
   status: "SCHEDULED" | "PAID";
 }
 export interface SettlementSummary {

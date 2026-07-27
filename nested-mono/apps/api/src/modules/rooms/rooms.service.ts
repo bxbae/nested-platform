@@ -10,6 +10,18 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.module";
 import { GeocodingService } from "./geocoding.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
+import {
+  INVENTORY_HOLDING_STATUSES,
+  addUtcDays,
+  atUtcDayStart,
+  calculateInventory,
+  isoDate,
+  overlaps,
+} from "../reservations/reservation-inventory.util";
+import {
+  addCalendarMonths,
+  fullCalendarMonthsBetween,
+} from "../reservations/pricing";
 
 export interface RoomSearchQuery {
   region?: string;
@@ -48,13 +60,7 @@ export interface RoomSearchQuery {
 // 오늘 날짜가 어떤 예약의 checkIn~checkOut 사이에 있으면 지금 누군가 살고 있는
 // 방이다. 목록에서 "입주 중"으로 표시해 헛걸음을 줄인다. 방을 목록에서 빼지는
 // 않는다 — 나중 날짜로는 들어갈 수 있기 때문이다.
-const OCCUPYING_STATUSES = [
-  "PENDING_PAYMENT",
-  "CONFIRMED",
-  "EARLY_CHECKOUT_REQUESTED",
-  "EARLY_CHECKOUT_APPROVED",
-  "EXTENSION_REQUESTED",
-] as const;
+const OCCUPYING_STATUSES = INVENTORY_HOLDING_STATUSES;
 
 function appendAnd(where: Record<string, any>, clause: Record<string, any>) {
   where.AND = [...(Array.isArray(where.AND) ? where.AND : []), clause];
@@ -67,7 +73,7 @@ function deriveLegacyRoomType(
   if (!rentalUnit || !buildingType) return undefined;
   if (rentalUnit !== "WHOLE") return "SHARE_ROOM";
   if (buildingType === "STUDIO") return "ONE_ROOM";
-  if (buildingType === "APARTMENT") return "APARTMENT";
+  if (buildingType === "APARTMENT" || buildingType === "OFFICETEL") return "APARTMENT";
   return "WHOLE_HOUSE";
 }
 
@@ -156,6 +162,7 @@ export class RoomsService {
   // ── Search / list (검색 API) — cursor pagination + filters ──
   async search(query: RoomSearchQuery) {
     const take = Math.min(Math.max(Math.trunc(query.take ?? 20), 1), 50);
+    const requestedWindow = this.parseRequestedWindow(query);
     const where: any = { published: true };
     if (query.legalDongCode) {
       where.legalDongCode = query.legalDongCode;
@@ -217,6 +224,7 @@ export class RoomsService {
       appendAnd(where, {
         OR: [
           { name: { contains: term, mode: "insensitive" } },
+          { city: { contains: term, mode: "insensitive" } },
           { district: { contains: term, mode: "insensitive" } },
           { neighborhood: { contains: term, mode: "insensitive" } },
           { region: { contains: term, mode: "insensitive" } },
@@ -244,55 +252,12 @@ export class RoomsService {
       where.bedrooms = { gte: minBedrooms };
     }
 
-    // Date-range availability (날짜 기반 검색). A room is bookable for the
-    // requested window when it has NO reservation that overlaps it. Overlap is
-    // the same rule the reservation service uses:
-    //   existing.checkIn < requested.checkOut AND existing.checkOut > requested.checkIn
-    // Only reservations that still hold inventory count (PENDING_PAYMENT /
-    // CONFIRMED); cancelled or completed stays free the dates up again.
-    if (query.checkIn && query.checkOut) {
-      const from = new Date(query.checkIn);
-      const to = new Date(query.checkOut);
-      if (
-        !Number.isNaN(from.getTime()) &&
-        !Number.isNaN(to.getTime()) &&
-        from < to
-      ) {
-        // The room must also be move-in ready by the requested start date.
-        where.availableFrom = { lte: from };
-
-        const overlap = {
-          status: { in: [...OCCUPYING_STATUSES] },
-          checkIn: { lt: to },
-          checkOut: { gt: from },
-        };
-
-        // 전체 숙소·개인실·기존 미분류 숙소는 기간이 겹치면 예약할 수 없다.
-        // 다인실은 BED 예약이 일부 존재해도 남은 자리를 판매해야 하므로,
-        // 방 전체를 막는 UNIT/WHOLE_ROOM 예약만 검색 단계에서 제외한다.
-        // 정확한 잔여 자리 합계는 예약 견적 API가 다시 검증한다.
-        appendAnd(where, {
-          OR: [
-            {
-              rentalUnit: "BED",
-              reservations: {
-                none: {
-                  ...overlap,
-                  bookingMode: { in: ["UNIT", "WHOLE_ROOM"] },
-                },
-              },
-            },
-            {
-              rentalUnit: { in: ["WHOLE", "PRIVATE_ROOM"] },
-              reservations: { none: overlap },
-            },
-            {
-              rentalUnit: null,
-              reservations: { none: overlap },
-            },
-          ],
-        });
-      }
+    // 날짜 범위 검색은 실제로 전체 기간을 예약할 수 있는 숙소만 반환한다.
+    // 플랫폼 최소 1개월과 숙소별 최소 계약 기간을 먼저 적용하고, 예약 중복·
+    // 다인실 잔여 자리·호스트 차단일은 재고 계산 후 최종 제외한다.
+    if (requestedWindow) {
+      where.availableFrom = { lte: requestedWindow.checkIn };
+      where.minStayMonths = { lte: requestedWindow.fullMonths };
     }
     // gender: an ANY room satisfies any request; otherwise must match
     if (query.gender && query.gender !== "ANY") {
@@ -310,7 +275,7 @@ export class RoomsService {
     // path (see searchByRating) that reuses this same `where` filter. Every
     // other sort maps to a plain column and keeps id-based cursor pagination.
     if (query.sort === "rating") {
-      return this.searchByRating(where, take, query.cursor, query.currentUserId);
+      return this.searchByRating(where, take, query.cursor, query.currentUserId, query);
     }
 
     // recommended is default (createdAt desc as proxy)
@@ -322,6 +287,10 @@ export class RoomsService {
           : query.sort === "newest"
             ? { availableFrom: "asc" }
             : { createdAt: "desc" };
+
+    if (requestedWindow) {
+      return this.searchAvailableByColumnSort(where, orderBy, take, query);
+    }
 
     // total is computed once (page 1 has no cursor) so the UI can show a count
     const total = query.cursor
@@ -335,10 +304,9 @@ export class RoomsService {
       orderBy,
       include: {
         images: { orderBy: { order: "asc" }, take: 1 },
-        ...occupancyInclude(),
       },
     });
-    const items = rows.map(withOccupancy);
+    const items = await this.attachInventoryState(rows, query);
 
     const hasMore = items.length > take;
     const page = hasMore ? items.slice(0, take) : items;
@@ -354,11 +322,264 @@ export class RoomsService {
     };
   }
 
+  private parseRequestedWindow(query: RoomSearchQuery): {
+    checkIn: Date;
+    checkOut: Date;
+    fullMonths: number;
+  } | null {
+    const hasCheckIn = Boolean(query.checkIn);
+    const hasCheckOut = Boolean(query.checkOut);
+    if (hasCheckIn !== hasCheckOut) {
+      throw new BadRequestException(
+        "입주일과 퇴실일을 모두 선택해주세요.",
+      );
+    }
+    if (!query.checkIn || !query.checkOut) return null;
+
+    const checkIn = new Date(query.checkIn);
+    const checkOut = new Date(query.checkOut);
+    if (
+      Number.isNaN(checkIn.getTime()) ||
+      Number.isNaN(checkOut.getTime()) ||
+      checkOut <= checkIn
+    ) {
+      throw new BadRequestException("입주 기간이 올바르지 않습니다.");
+    }
+
+    const platformMinimum = addCalendarMonths(checkIn, 1);
+    if (checkOut < platformMinimum) {
+      throw new BadRequestException(
+        `최소 거주 기간은 1개월입니다. 퇴실일을 ${isoDate(platformMinimum)} 이후로 선택해주세요.`,
+      );
+    }
+
+    return {
+      checkIn,
+      checkOut,
+      fullMonths: Math.max(1, fullCalendarMonthsBetween(checkIn, checkOut)),
+    };
+  }
+
+  private async searchAvailableByColumnSort(
+    where: any,
+    orderBy: any,
+    take: number,
+    query: RoomSearchQuery,
+  ) {
+    // 다인실은 예약 자리 합산이 필요하므로 관계 필터만으로 정확히 거르기
+    // 어렵다. 기본 필터 결과에 공통 재고 계산을 적용한 뒤 페이지를 나눈다.
+    const rows = await this.prisma.room.findMany({
+      where,
+      orderBy,
+      include: {
+        images: { orderBy: { order: "asc" }, take: 1 },
+      },
+    });
+    const enriched = await this.attachInventoryState(rows, query);
+    const available = enriched.filter(
+      (room) => !room.inventory?.fullyBooked,
+    );
+
+    const cursorIndex = query.cursor
+      ? available.findIndex((room) => room.id === query.cursor)
+      : -1;
+    const offset = cursorIndex >= 0 ? cursorIndex + 1 : 0;
+    const window = available.slice(offset, offset + take + 1);
+    const hasMore = window.length > take;
+    const page = hasMore ? window.slice(0, take) : window;
+
+    return {
+      items: page.map((room) => ({
+        ...room,
+        isMine: query.currentUserId
+          ? room.hostId === query.currentUserId
+          : false,
+      })),
+      nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+      ...(!query.cursor ? { total: available.length } : {}),
+    };
+  }
+
+  private async attachInventoryState(rows: any[], query: RoomSearchQuery) {
+    if (rows.length === 0) return [];
+
+    const today = atUtcDayStart(new Date());
+    const tomorrow = addUtcDays(today, 1);
+    const requestedFrom = query.checkIn ? new Date(query.checkIn) : null;
+    const requestedTo = query.checkOut ? new Date(query.checkOut) : null;
+    const hasRequestedWindow = Boolean(
+      requestedFrom &&
+        requestedTo &&
+        !Number.isNaN(requestedFrom.getTime()) &&
+        !Number.isNaN(requestedTo.getTime()) &&
+        requestedFrom < requestedTo,
+    );
+    const inventoryFrom = hasRequestedWindow ? requestedFrom! : today;
+    const inventoryTo = hasRequestedWindow ? requestedTo! : tomorrow;
+    const queryFrom = inventoryFrom < today ? inventoryFrom : today;
+    const queryTo = inventoryTo > tomorrow ? inventoryTo : tomorrow;
+    const roomIds = rows.map((room) => room.id);
+
+    const [reservations, blocks] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where: {
+          roomId: { in: roomIds },
+          status: { in: INVENTORY_HOLDING_STATUSES },
+          checkIn: { lt: queryTo },
+          checkOut: { gt: queryFrom },
+        },
+        select: {
+          roomId: true,
+          checkIn: true,
+          checkOut: true,
+          bookingMode: true,
+          reservedSpots: true,
+          companionId: true,
+          companionStatus: true,
+        },
+      }),
+      this.prisma.calendarBlock.findMany({
+        where: {
+          roomId: { in: roomIds },
+          blocked: true,
+          date: { gte: atUtcDayStart(inventoryFrom), lt: atUtcDayStart(inventoryTo) },
+        },
+        select: { roomId: true, date: true },
+      }),
+    ]);
+
+    return rows.map((room) => {
+      const roomReservations = reservations.filter((r) => r.roomId === room.id);
+      const current = roomReservations.filter((r) =>
+        overlaps(r.checkIn, r.checkOut, today, tomorrow),
+      );
+      const selected = roomReservations.filter((r) =>
+        overlaps(r.checkIn, r.checkOut, inventoryFrom, inventoryTo),
+      );
+      const blocked = blocks.some((block) => block.roomId === room.id);
+      const inventory = calculateInventory(
+        room.rentalUnit,
+        room.capacity,
+        selected,
+        blocked,
+      );
+      const residents = current.reduce((sum, r) => {
+        if (r.bookingMode === "BED" || r.bookingMode === "WHOLE_ROOM") {
+          return sum + Math.max(1, r.reservedSpots);
+        }
+        return sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0);
+      }, 0);
+      const availableAgainFrom = current.reduce<Date | null>(
+        (latest, r) => latest === null || r.checkOut > latest ? r.checkOut : latest,
+        null,
+      );
+
+      return {
+        ...room,
+        occupied: current.length > 0,
+        residents,
+        availableAgainFrom,
+        rating: room.avgRating ?? 0,
+        inventory: {
+          ...inventory,
+          scope: hasRequestedWindow ? "SELECTED_DATES" : "CURRENT",
+          checkIn: hasRequestedWindow ? isoDate(inventoryFrom) : null,
+          checkOut: hasRequestedWindow ? isoDate(inventoryTo) : null,
+        },
+      };
+    });
+  }
+
+  async availabilityMonth(
+    id: string,
+    year: number,
+    month: number,
+    requestedSpots = 1,
+  ) {
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        rentalUnit: true,
+        capacity: true,
+        availableFrom: true,
+      },
+    });
+    if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
+
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
+    const monthEnd = new Date(Date.UTC(year, month, 1));
+    const [reservations, blocks] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where: {
+          roomId: id,
+          status: { in: INVENTORY_HOLDING_STATUSES },
+          checkIn: { lt: monthEnd },
+          checkOut: { gt: monthStart },
+        },
+        select: { checkIn: true, checkOut: true, bookingMode: true, reservedSpots: true },
+      }),
+      this.prisma.calendarBlock.findMany({
+        where: { roomId: id, blocked: true, date: { gte: monthStart, lt: monthEnd } },
+        select: { date: true, reason: true },
+      }),
+    ]);
+    const blockMap = new Map(blocks.map((block) => [isoDate(block.date), block.reason ?? null]));
+    const days = [];
+    const today = atUtcDayStart(new Date());
+
+    for (let day = monthStart; day < monthEnd; day = addUtcDays(day, 1)) {
+      const nextDay = addUtcDays(day, 1);
+      const date = isoDate(day);
+      const active = reservations.filter((reservation) =>
+        overlaps(reservation.checkIn, reservation.checkOut, day, nextDay),
+      );
+      const hostBlocked = blockMap.has(date);
+      const beforeAvailableFrom = day < atUtcDayStart(room.availableFrom);
+      const past = day < today;
+      const inventory = calculateInventory(
+        room.rentalUnit,
+        room.capacity,
+        active,
+        hostBlocked || beforeAvailableFrom || past,
+      );
+      const enoughSpots =
+        room.rentalUnit !== "BED" ||
+        (inventory.remainingSpots ?? 0) >= Math.max(1, requestedSpots);
+      days.push({
+        date,
+        blocked: hostBlocked,
+        blockReason: blockMap.get(date) ?? null,
+        beforeAvailableFrom,
+        past,
+        reservedSpots: inventory.reservedSpots,
+        remainingSpots: inventory.remainingSpots,
+        fullyBooked: inventory.fullyBooked,
+        available: !inventory.fullyBooked && enoughSpots,
+      });
+    }
+
+    return {
+      roomId: room.id,
+      rentalUnit: room.rentalUnit,
+      capacity: room.capacity,
+      availableFrom: isoDate(room.availableFrom),
+      requestedSpots: Math.max(1, requestedSpots),
+      days,
+    };
+  }
+
   // ── Sort by average review rating ──
   // Rating is a relation aggregate, so id-cursor pagination doesn't apply here.
   // The cursor is instead an offset ("cursor:<n>"), keeping the public response
   // shape identical to the column-sorted path. Rooms with no reviews sort last.
-  private async searchByRating(where: any, take: number, cursor?: string, currentUserId?: string) {
+  private async searchByRating(
+    where: any,
+    take: number,
+    cursor?: string,
+    currentUserId?: string,
+    query: RoomSearchQuery = {},
+  ) {
     // 1) Resolve the filtered set with the SAME Prisma `where` — no filter drift.
     const filtered = await this.prisma.room.findMany({
       where,
@@ -386,21 +607,40 @@ export class RoomsService {
       ORDER BY AVG(rv."rating") DESC NULLS LAST, r."createdAt" DESC
     `;
 
+    const rankedIds = ranked.map((row) => row.id);
+    let availableIds = rankedIds;
+
+    if (query.checkIn && query.checkOut) {
+      const allRows = await this.prisma.room.findMany({
+        where: { id: { in: rankedIds } },
+        include: {
+          images: { orderBy: { order: "asc" }, take: 1 },
+        },
+      });
+      const enriched = await this.attachInventoryState(allRows, query);
+      const availableSet = new Set(
+        enriched
+          .filter((room) => !room.inventory?.fullyBooked)
+          .map((room) => room.id),
+      );
+      availableIds = rankedIds.filter((id) => availableSet.has(id));
+    }
+
     // 3) Offset slice (+1 to detect a next page), decoding the offset cursor.
     const offset = cursor ? Number(cursor) || 0 : 0;
-    const window = ranked.slice(offset, offset + take + 1);
+    const window = availableIds.slice(offset, offset + take + 1);
     const hasMore = window.length > take;
-    const pageIds = (hasMore ? window.slice(0, take) : window).map((r) => r.id);
+    const pageIds = hasMore ? window.slice(0, take) : window;
 
     // 4) Fetch the page rows, then restore the ranked order (findMany won't keep it).
     const rows = await this.prisma.room.findMany({
       where: { id: { in: pageIds } },
       include: {
         images: { orderBy: { order: "asc" }, take: 1 },
-        ...occupancyInclude(),
       },
     });
-    const byId = new Map(rows.map((row) => [row.id, withOccupancy(row)]));
+    const enriched = await this.attachInventoryState(rows, query);
+    const byId = new Map(enriched.map((row) => [row.id, row]));
     const items = pageIds.map((id) => byId.get(id)).filter(Boolean);
     const withOwnership = items.map((room: any) => ({
       ...room,
@@ -410,7 +650,7 @@ export class RoomsService {
     return {
       items: withOwnership,
       nextCursor: hasMore ? String(offset + take) : null,
-      ...(total !== undefined ? { total } : {}),
+      ...(!cursor ? { total: availableIds.length } : {}),
     };
   }
 
@@ -485,13 +725,91 @@ export class RoomsService {
 
   // Every room I host, published or not, newest first. Powers 숙소 관리.
   async listForHost(hostId: string) {
-    return this.prisma.room.findMany({
+    const rooms = await this.prisma.room.findMany({
       where: { hostId },
       orderBy: { createdAt: "desc" },
       include: {
         images: { orderBy: { order: "asc" } },
         _count: { select: { reservations: true } },
       },
+    });
+    if (rooms.length === 0) return [];
+
+    const today = atUtcDayStart(new Date());
+    const tomorrow = addUtcDays(today, 1);
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        roomId: { in: rooms.map((room) => room.id) },
+        status: { in: INVENTORY_HOLDING_STATUSES },
+        checkOut: { gt: today },
+      },
+      select: {
+        id: true,
+        roomId: true,
+        checkIn: true,
+        checkOut: true,
+        status: true,
+        bookingMode: true,
+        reservedSpots: true,
+        guest: { select: { name: true } },
+        companion: { select: { name: true } },
+        companions: {
+          where: { status: { in: ["PENDING", "ACCEPTED"] } },
+          select: { user: { select: { name: true } } },
+        },
+      },
+      orderBy: { checkIn: "asc" },
+    });
+    const blocks = await this.prisma.calendarBlock.findMany({
+      where: {
+        roomId: { in: rooms.map((room) => room.id) },
+        blocked: true,
+        date: { gte: today, lt: tomorrow },
+      },
+      select: { roomId: true },
+    });
+    const blockedRoomIds = new Set(blocks.map((block) => block.roomId));
+
+    return rooms.map((room) => {
+      const roomReservations = reservations.filter((r) => r.roomId === room.id);
+      const current = roomReservations.filter((r) =>
+        overlaps(r.checkIn, r.checkOut, today, tomorrow),
+      );
+      const future = roomReservations.filter((r) => r.checkIn >= tomorrow);
+      const currentInventory = calculateInventory(
+        room.rentalUnit,
+        room.capacity,
+        current,
+        blockedRoomIds.has(room.id),
+      );
+      const guestNames = [
+        ...new Set(
+          current.flatMap((reservation) => [
+            reservation.guest?.name ?? "게스트",
+            ...reservation.companions.map((member) => member.user.name),
+            ...(reservation.companions.length === 0 && reservation.companion?.name
+              ? [reservation.companion.name]
+              : []),
+          ]),
+        ),
+      ];
+      const currentCheckOuts = current.map((r) => r.checkOut);
+      const next = future[0];
+
+      return {
+        ...room,
+        currentInventory: {
+          ...currentInventory,
+          reservationCount: current.length,
+          representativeGuestName: guestNames[0] ?? null,
+          additionalGuestCount: Math.max(0, guestNames.length - 1),
+          nextCheckIn: next?.checkIn ?? null,
+          nextCheckOut:
+            currentCheckOuts.length > 0
+              ? new Date(Math.min(...currentCheckOuts.map((date) => +date)))
+              : next?.checkOut ?? null,
+        },
+      };
     });
   }
 
@@ -532,10 +850,18 @@ export class RoomsService {
       throw new BadRequestException("숙소 분류를 확인해주세요.");
     }
 
+    const normalizedCapacity =
+      rest.rentalUnit == null
+        ? rest.capacity
+        : rest.rentalUnit === "BED"
+          ? rest.capacity
+          : null;
+
     const result = await this.prisma.$transaction(async (tx) => {
       const room = await tx.room.create({
         data: {
           ...rest,
+          capacity: normalizedCapacity,
           roomType: legacyRoomType,
           classificationReviewRequired: false,
           hostId,
@@ -616,8 +942,13 @@ export class RoomsService {
       if (!nextRentalUnit || !nextBuildingType) {
         throw new BadRequestException("예약 공간과 건물 유형을 모두 선택해주세요.");
       }
-      if (nextCapacity == null || nextCapacity < 1) {
-        throw new BadRequestException("최대 수용 인원을 입력해주세요.");
+      if (
+        nextRentalUnit === "BED" &&
+        (nextCapacity == null || nextCapacity < 2)
+      ) {
+        throw new BadRequestException(
+          "다인실 수용 인원은 2명 이상이어야 합니다.",
+        );
       }
       if (nextRentalUnit === "WHOLE" && nextSharedFacilities.length > 0) {
         throw new BadRequestException("전체 숙소는 공유 시설을 선택하지 않습니다.");
@@ -626,6 +957,9 @@ export class RoomsService {
         throw new BadRequestException("공유 시설을 하나 이상 선택해주세요.");
       }
       rest.roomType = deriveLegacyRoomType(nextRentalUnit, nextBuildingType);
+      if (nextRentalUnit !== "BED") {
+        rest.capacity = null;
+      }
       // 분류 세 축이 유효하게 저장된 경우에만 검토 필요 상태를 해제한다.
       rest.classificationReviewRequired = false;
     } else if (rest.classificationReviewRequired === false) {
@@ -670,14 +1004,7 @@ export class RoomsService {
     const active = await this.prisma.reservation.count({
       where: {
         roomId: id,
-        status: {
-          in: [
-            "PENDING_PAYMENT",
-            "CONFIRMED",
-            "EARLY_CHECKOUT_REQUESTED",
-            "EARLY_CHECKOUT_APPROVED",
-          ],
-        },
+        status: { in: INVENTORY_HOLDING_STATUSES },
       },
     });
     if (active > 0) {
