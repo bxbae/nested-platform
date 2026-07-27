@@ -68,9 +68,10 @@ export function FilterSheet({
   }, [open, initial]);
 
   useEffect(() => {
-    if (!draft.district) {
+    if (selectedArea !== "서울" || !draft.district) {
       setNeighborhoods([]);
       setRegionsError(null);
+      setRegionsLoading(false);
       return;
     }
 
@@ -106,7 +107,7 @@ export function FilterSheet({
     return () => {
       cancelled = true;
     };
-  }, [draft.district]);
+  }, [draft.district, selectedArea]);
 
   if (!open) {
     return null;
@@ -350,7 +351,7 @@ export function FilterSheet({
             </div>
           </Section>
 
-          {draft.district && (
+          {selectedArea === "서울" && draft.district && (
             <Section title="세부 지역(동)">
               <p
                 style={{
