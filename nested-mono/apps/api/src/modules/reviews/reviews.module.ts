@@ -91,7 +91,14 @@ export class ReviewsService {
     return this.prisma.review.findMany({
       where: { room: { hostId } },
       include: {
-        author: { select: { id: true, name: true, avatarColor: true } },
+        author: {
+          select: {
+            id: true,
+            name: true,
+            avatarColor: true,
+            avatarUrl: true,
+          },
+        },
         room: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },

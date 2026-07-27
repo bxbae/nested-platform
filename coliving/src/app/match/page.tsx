@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/api/useAuth";
 import { getPreference } from "@/lib/api/preference";
-import { getMatches, type MatchCandidate } from "@/lib/api/match";
+import {
+  genderLabel,
+  getMatches,
+  type MatchCandidate,
+} from "@/lib/api/match";
 import { UserBadges } from "@/components/UserBadges";
 import MatchDetailModal from "./MatchDetailModal";
 
@@ -248,9 +252,13 @@ export default function Match() {
                         color: "var(--text-2)",
                       }}
                     >
-                      {[m.ageGroup ? `${m.ageGroup}대` : null, m.job]
+                      {[
+                        genderLabel(m.gender),
+                        m.ageGroup ? `${m.ageGroup}대` : null,
+                        m.job,
+                      ]
                         .filter(Boolean)
-                        .join(" · ") || "정보 없음"}
+                        .join(" · ")}
                     </div>
                   </div>
 

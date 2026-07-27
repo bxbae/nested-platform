@@ -21,6 +21,7 @@ import type {
   Sociability,
   SharedSpaceStyle,
   DrinkingHabit,
+  Gender,
 } from "@prisma/client";
 import { ageGroup } from "../../common/age-group";
 
@@ -135,6 +136,7 @@ export interface MatchCandidate {
   name: string;
   // 정확한 나이 대신 연령대(20/30/40)만 노출한다.
   ageGroup: number | null;
+  gender: Gender;
   job: string | null;
   avatarColor: string;
   avatarUrl: string | null;
@@ -183,6 +185,7 @@ export class MatchService {
             id: true,
             name: true,
             birthDate: true,
+            gender: true,
             job: true,
             avatarColor: true,
             avatarUrl: true,
@@ -230,6 +233,7 @@ export class MatchService {
         userId: other.user.id,
         name: other.user.name,
         ageGroup: ageGroup(other.user.birthDate),
+        gender: other.user.gender,
         job: other.user.job,
         avatarColor: other.user.avatarColor,
         avatarUrl: other.user.avatarUrl,
@@ -274,6 +278,7 @@ export class MatchService {
               id: true,
               name: true,
               birthDate: true,
+              gender: true,
               job: true,
               bio: true,
               avatarColor: true,
@@ -332,6 +337,7 @@ export class MatchService {
       userId: target.user.id,
       name: target.user.name,
       ageGroup: ageGroup(target.user.birthDate),
+      gender: target.user.gender,
       job: target.user.job,
       avatarColor: target.user.avatarColor,
       avatarUrl: target.user.avatarUrl,

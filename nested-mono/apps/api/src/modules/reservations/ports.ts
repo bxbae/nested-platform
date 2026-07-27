@@ -92,6 +92,7 @@ export interface ReservationRecord {
   serviceFee: number;
   discount: number;
   totalDueNow: number;
+  couponId?: string | null;
   createdAt: Date;
   // 연장 요청 시 게스트가 원한 개월 수 (대기 중에만 값 존재)
   extensionMonths?: number | null;
@@ -109,6 +110,8 @@ export interface CouponRecord {
   validTo: Date;
   usageLimit: number | null;
   usedCount: number;
+  kind: string;
+  ownerId: string | null;
 }
 
 // Repository port

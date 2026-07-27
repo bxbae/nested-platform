@@ -32,6 +32,8 @@ export interface PriceBreakdown {
   maintenanceSubtotal: number;
   serviceFee: number;
   discount: number;
+  /** 실제 첫 달 월세에서 차감된 비율. 정액 쿠폰도 월세 대비 비율로 표시한다. */
+  discountPercent: number;
   /** What the guest pays now to confirm: deposit + first month + fees − discount */
   dueNow: number;
   /** Full contract value over the whole stay */
@@ -145,6 +147,11 @@ export function computePrice(input: PricingInput): PriceBreakdown {
   const serviceFee = Math.round(monthlyRent * SERVICE_FEE_RATE);
   const rentSubtotal = duration.amount;
   const maintenanceSubtotal = maintenance.amount;
+  // 쿠폰은 보증금·청소비·관리비·서비스 수수료가 아니라 첫 달 월세에만 적용한다.
+  const discountPercent =
+    monthlyRent > 0
+      ? Number(((discount / monthlyRent) * 100).toFixed(1))
+      : 0;
 
   // The platform minimum is one month, so the first monthly payment is always
   // payable in full at confirmation. Only the final partial month is prorated.
@@ -165,6 +172,7 @@ export function computePrice(input: PricingInput): PriceBreakdown {
     maintenanceSubtotal,
     serviceFee,
     discount,
+    discountPercent,
     dueNow,
     contractTotal,
   };

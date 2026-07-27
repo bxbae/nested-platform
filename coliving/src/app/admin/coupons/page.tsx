@@ -33,6 +33,8 @@ export default function AdminCoupons() {
   const [validFrom, setValidFrom] = useState(todayStr());
   const [validTo, setValidTo] = useState(todayStr(30));
   const [usageLimit, setUsageLimit] = useState("");
+  const [minSpend, setMinSpend] = useState("");
+  const [maxDiscount, setMaxDiscount] = useState("");
 
   async function refresh() {
     try {
@@ -60,10 +62,15 @@ export default function AdminCoupons() {
         validFrom,
         validTo,
         usageLimit: usageLimit ? Number(usageLimit) : null,
+        minSpend: minSpend ? Number(minSpend) : 0,
+        maxDiscount:
+          type === "PERCENT" && maxDiscount ? Number(maxDiscount) : null,
       });
       setCode("");
       setValue("");
       setUsageLimit("");
+      setMinSpend("");
+      setMaxDiscount("");
       setCreating(false);
       await refresh();
     } finally {
@@ -97,6 +104,9 @@ export default function AdminCoupons() {
 
       {creating && (
         <div className="card" style={{ padding: 20, marginBottom: 18, display: "grid", gap: 12 }}>
+          <p style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+            쿠폰은 첫 달 월세에만 적용됩니다. 보증금·청소비·관리비·서비스 수수료는 할인 대상이 아닙니다.
+          </p>
           <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="쿠폰 코드 (예: WELCOME10)"
             style={{ padding: "11px 14px", border: "1px solid var(--border)", borderRadius: "var(--r-sm)", textTransform: "uppercase" }} />
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -107,8 +117,14 @@ export default function AdminCoupons() {
             </select>
             <input value={value} onChange={(e) => setValue(e.target.value)} type="number" placeholder={type === "PERCENT" ? "할인율 (예: 10)" : "할인액 (예: 50000)"}
               style={{ padding: "9px 12px", border: "1px solid var(--border)", borderRadius: "var(--r-sm)", width: 160 }} />
-            <input value={usageLimit} onChange={(e) => setUsageLimit(e.target.value)} type="number" placeholder="사용 한도 (선택)"
-              style={{ padding: "9px 12px", border: "1px solid var(--border)", borderRadius: "var(--r-sm)", width: 150 }} />
+            <input value={usageLimit} onChange={(e) => setUsageLimit(e.target.value)} type="number" placeholder="전체 사용 한도 (선택)"
+              style={{ padding: "9px 12px", border: "1px solid var(--border)", borderRadius: "var(--r-sm)", width: 170 }} />
+            <input value={minSpend} onChange={(e) => setMinSpend(e.target.value)} type="number" placeholder="최소 첫 달 월세"
+              style={{ padding: "9px 12px", border: "1px solid var(--border)", borderRadius: "var(--r-sm)", width: 170 }} />
+            {type === "PERCENT" && (
+              <input value={maxDiscount} onChange={(e) => setMaxDiscount(e.target.value)} type="number" placeholder="최대 할인액 (선택)"
+                style={{ padding: "9px 12px", border: "1px solid var(--border)", borderRadius: "var(--r-sm)", width: 170 }} />
+            )}
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 13.5, color: "var(--text-2)" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -154,6 +170,8 @@ export default function AdminCoupons() {
                     </div>
                     <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
                       {c.usedCount}{c.usageLimit ? `/${c.usageLimit}` : ""} 사용 · {fmtDate(c.validTo)}까지
+                      {c.minSpend > 0 ? ` · 첫 달 월세 ₩${c.minSpend.toLocaleString()} 이상` : ""}
+                      {c.maxDiscount ? ` · 최대 ₩${c.maxDiscount.toLocaleString()} 할인` : ""}
                     </div>
                     {c.usageLimit != null && (
                       <div style={{ height: 5, borderRadius: 99, background: "var(--bg-2)", marginTop: 8, width: 180, overflow: "hidden" }}>

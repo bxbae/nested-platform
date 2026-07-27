@@ -13,7 +13,12 @@ interface ApiReview {
   body: string;
   hostReply: string | null;
   createdAt: string;
-  author: { id: string; name: string; avatarColor: string | null };
+  author: {
+    id: string;
+    name: string;
+    avatarColor: string | null;
+    avatarUrl: string | null;
+  };
   room: { id: string; name: string };
 }
 
@@ -25,6 +30,7 @@ export interface HostReview {
   houseName: string;
   author: string;
   avatarColor: string;
+  avatarUrl: string | null;
   rating: number;
   date: string; // "2026.05"
   body: string;
@@ -40,6 +46,7 @@ function adapt(r: ApiReview): HostReview {
     houseName: r.room.name.trim(),
     author: r.author?.name ?? "게스트",
     avatarColor: r.author?.avatarColor ?? "#FF5A5F",
+    avatarUrl: r.author?.avatarUrl ?? null,
     rating: r.rating,
     date: `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}`,
     body: r.body,
@@ -57,6 +64,7 @@ export async function listHostReviews(): Promise<HostReview[]> {
       houseName: r.houseName,
       author: r.author,
       avatarColor: r.avatarColor,
+      avatarUrl: null,
       rating: r.rating,
       date: r.date,
       body: r.body,
