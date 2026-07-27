@@ -12,7 +12,12 @@ import {
   type ApiRoom,
   type ApiSearchResponse,
 } from "./adapters";
-import type { RoomType } from "@/lib/types";
+import type {
+  BuildingType,
+  RentalUnit,
+  RoomType,
+  SharedFacility,
+} from "@/lib/types";
 import type { AddressValue } from "@/components/AddressSearch";
 import { filtersToParams } from "@/features/search/schema";
 import type { SearchParams, PaginatedRooms, House } from "@/lib/types";
@@ -46,7 +51,11 @@ export interface CreateRoomInput {
   region: string;
   address: AddressValue;
   verifiedByHost: true; // attestation; the API refuses anything else
-  roomType: RoomType;
+  /** 신규 숙소 분류. roomType은 기존 데이터 호환용으로만 선택적으로 보낸다. */
+  rentalUnit: RentalUnit;
+  buildingType: BuildingType;
+  sharedFacilities: SharedFacility[];
+  roomType?: RoomType;
   monthlyRent: number;
   deposit: number;
   cleaningFee: number;
@@ -54,14 +63,14 @@ export interface CreateRoomInput {
   minStayMonths: number;
   availableFrom: string; // ISO date
   images: string[];
-  /** 함께 지낼 최대 인원. 독채(whole_house)는 null 로 보낸다. */
+  /** 공유형 다인실의 침대·자리 수. 단독형·개인실은 null. */
   capacity?: number | null;
   /** 침실 개수 (선택) */
   bedrooms?: number | null;
 }
 
-// POST /rooms — host only. The listing is created unpublished and only becomes
-// searchable once an admin approves it.
+// POST /rooms — host only. The current backend publishes a verified listing
+// immediately; admins can later unpublish a problematic listing.
 export async function createRoom(input: CreateRoomInput): Promise<{ id: string }> {
   return api.post<{ id: string }>("/rooms", {
     name: input.name,
@@ -75,7 +84,10 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
     detailAddress: input.address.detailAddress,
     zipCode: input.address.zipCode,
     verifiedByHost: input.verifiedByHost,
-    roomType: input.roomType.toUpperCase(),
+    ...(input.roomType ? { roomType: input.roomType.toUpperCase() } : {}),
+    rentalUnit: input.rentalUnit.toUpperCase(),
+    buildingType: input.buildingType.toUpperCase(),
+    sharedFacilities: input.sharedFacilities.map((facility) => facility.toUpperCase()),
     monthlyRent: input.monthlyRent,
     deposit: input.deposit,
     cleaningFee: input.cleaningFee,
@@ -94,16 +106,46 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
 export interface HostListing extends House {
   published: boolean;
   reservationCount: number;
+  currentInventory?: {
+    reservationCount: number;
+    reservedSpots: number;
+    remainingSpots: number | null;
+    fullyBooked: boolean;
+    blocked: boolean;
+    representativeGuestName: string | null;
+    additionalGuestCount: number;
+    nextCheckIn: string | null;
+    nextCheckOut: string | null;
+  };
 }
 
 export async function listMyRooms(): Promise<HostListing[]> {
-  const rows = await api.get<(ApiRoom & { published: boolean; _count?: { reservations: number } })[]>(
-    "/rooms/mine",
-  );
+  const rows = await api.get<(ApiRoom & {
+    published: boolean;
+    _count?: { reservations: number };
+    currentInventory?: {
+      reservationCount: number;
+      reservedSpots: number;
+      remainingSpots: number | null;
+      fullyBooked: boolean;
+      blocked: boolean;
+      representativeGuestName: string | null;
+      additionalGuestCount: number;
+      nextCheckIn: string | null;
+      nextCheckOut: string | null;
+    };
+  })[]>("/rooms/mine");
   return rows.map((r) => ({
     ...apiRoomToHouse(r),
     published: r.published,
     reservationCount: r._count?.reservations ?? 0,
+    currentInventory: r.currentInventory
+      ? {
+          ...r.currentInventory,
+          nextCheckIn: r.currentInventory.nextCheckIn?.slice(0, 10) ?? null,
+          nextCheckOut: r.currentInventory.nextCheckOut?.slice(0, 10) ?? null,
+        }
+      : undefined,
   }));
 }
 
@@ -119,16 +161,65 @@ export interface UpdateRoomInput {
   minStayMonths?: number;
   availableFrom?: string; // ISO date
   capacity?: number | null;
+  rentalUnit?: RentalUnit;
+  buildingType?: BuildingType;
+  sharedFacilities?: SharedFacility[];
+  classificationReviewRequired?: boolean;
   images?: string[]; // full gallery, in display order — index 0 is the cover
 }
 
 export async function updateRoom(id: string, input: UpdateRoomInput): Promise<void> {
-  await api.patch(`/rooms/${id}`, input);
+  await api.patch(`/rooms/${id}`, {
+    ...input,
+    ...(input.rentalUnit ? { rentalUnit: input.rentalUnit.toUpperCase() } : {}),
+    ...(input.buildingType ? { buildingType: input.buildingType.toUpperCase() } : {}),
+    ...(input.sharedFacilities
+      ? { sharedFacilities: input.sharedFacilities.map((facility) => facility.toUpperCase()) }
+      : {}),
+  });
 }
 
 // DELETE /rooms/:id — 예약이 걸려 있으면 서버가 거부한다.
 export async function deleteRoom(id: string): Promise<void> {
   await api.delete(`/rooms/${id}`);
+}
+
+export interface RoomAvailabilityDay {
+  date: string;
+  blocked: boolean;
+  blockReason: string | null;
+  beforeAvailableFrom: boolean;
+  past: boolean;
+  reservedSpots: number;
+  remainingSpots: number | null;
+  fullyBooked: boolean;
+  available: boolean;
+}
+
+export interface RoomAvailabilityMonth {
+  roomId: string;
+  rentalUnit: string | null;
+  capacity: number | null;
+  availableFrom: string;
+  requestedSpots: number;
+  days: RoomAvailabilityDay[];
+}
+
+export async function getRoomAvailabilityMonth(
+  roomId: string,
+  year: number,
+  month: number,
+  requestedSpots = 1,
+): Promise<RoomAvailabilityMonth> {
+  const params = new URLSearchParams({
+    year: String(year),
+    month: String(month),
+    requestedSpots: String(requestedSpots),
+  });
+  return api.get<RoomAvailabilityMonth>(
+    `/rooms/${encodeURIComponent(roomId)}/availability?${params.toString()}`,
+    { auth: false },
+  );
 }
 
 export async function getRoom(id: string): Promise<House> {

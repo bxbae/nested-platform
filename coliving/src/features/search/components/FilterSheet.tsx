@@ -1,28 +1,41 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { GenderPolicy, RoomType, SearchParams } from "@/lib/types";
-import { GENDER_LABELS, ROOM_TYPE_LABELS } from "@/lib/types";
+import type {
+  BuildingType,
+  GenderPolicy,
+  RentalUnit,
+  SearchParams,
+  SharedFacility,
+} from "@/lib/types";
+import {
+  BUILDING_TYPE_LABELS,
+  GENDER_LABELS,
+  RENTAL_UNIT_LABELS,
+  SHARED_FACILITY_LABELS,
+} from "@/lib/types";
 import { won } from "@/lib/format";
-import { DISTRICT_OPTIONS } from "@/lib/seoul";
+import { AREA_OPTIONS, DISTRICT_OPTIONS, DISTRICTS_BY_AREA, WORKPLACE_PRESETS, type ServiceArea } from "@/lib/seoul";
 import { getLegalNeighborhoods, type LegalRegionOption } from "@/lib/api/regions";
 import { DEFAULT_FILTERS, RENT_MAX, RENT_MIN } from "../schema";
-
-const ROOM_TYPES: RoomType[] = [
-  "one_room",
-  "share_room",
-  "whole_house",
-  "apartment",
-];
+import {
+  addCalendarMonthsISO,
+  formatStayDuration,
+  isStayAtLeastMonths,
+  minimumCheckOutISO,
+  PLATFORM_MIN_STAY_MONTHS,
+} from "@/lib/stay-dates";
 
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
-
-const ROOM_TYPE_DESCRIPTIONS: Record<RoomType, string> = {
-  one_room: "개인 공간 중심",
-  share_room: "침실 또는 공간 공유",
-  whole_house: "집 전체 단독 사용",
-  apartment: "아파트형 주거",
-};
+const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
+const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "officetel", "house"];
+const SHARED_FACILITIES: SharedFacility[] = [
+  "bathroom",
+  "kitchen",
+  "living_room",
+  "laundry_room",
+  "entrance",
+];
 
 export function FilterSheet({
   open,
@@ -36,6 +49,10 @@ export function FilterSheet({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<SearchParams>(initial);
+  const [selectedArea, setSelectedArea] = useState<ServiceArea>(
+    DISTRICT_OPTIONS.find((item) => item.value === initial.district)?.area ??
+      "서울",
+  );
   const [neighborhoods, setNeighborhoods] = useState<LegalRegionOption[]>([]);
   const [regionsLoading, setRegionsLoading] = useState(false);
   const [regionsError, setRegionsError] = useState<string | null>(null);
@@ -43,6 +60,10 @@ export function FilterSheet({
   useEffect(() => {
     if (open) {
       setDraft(initial);
+      setSelectedArea(
+        DISTRICT_OPTIONS.find((item) => item.value === initial.district)?.area ??
+          "서울",
+      );
     }
   }, [open, initial]);
 
@@ -53,11 +74,18 @@ export function FilterSheet({
       return;
     }
 
+    const selectedDistrictOption = DISTRICT_OPTIONS.find(
+      (item) => item.value === draft.district,
+    );
+
     let cancelled = false;
     setRegionsLoading(true);
     setRegionsError(null);
 
-    getLegalNeighborhoods(draft.district)
+    getLegalNeighborhoods(
+      draft.district,
+      selectedDistrictOption?.city ?? "서울",
+    )
       .then((items) => {
         if (!cancelled) setNeighborhoods(items);
       })
@@ -91,16 +119,26 @@ export function FilterSheet({
     }));
   };
 
-  const toggleRoomType = (roomType: RoomType) => {
-    const current = draft.roomTypes ?? [];
-
-    set({
-      roomTypes: current.includes(roomType)
-        ? current.filter((item) => item !== roomType)
-        : [...current, roomType],
-    });
-  };
-
+  const hasPartialStayRange = Boolean(draft.checkIn) !== Boolean(draft.checkOut);
+  const hasInvalidStayRange = Boolean(
+    draft.checkIn && draft.checkOut && draft.checkOut <= draft.checkIn,
+  );
+  const hasTooShortStay = Boolean(
+    draft.checkIn &&
+      draft.checkOut &&
+      !isStayAtLeastMonths(
+        draft.checkIn,
+        draft.checkOut,
+        PLATFORM_MIN_STAY_MONTHS,
+      ),
+  );
+  const stayDuration =
+    draft.checkIn && draft.checkOut
+      ? formatStayDuration(draft.checkIn, draft.checkOut)
+      : "";
+  const minimumCheckOut = draft.checkIn
+    ? minimumCheckOutISO(draft.checkIn, PLATFORM_MIN_STAY_MONTHS)
+    : "";
 
   return (
     <>
@@ -159,22 +197,118 @@ export function FilterSheet({
             gap: 26,
           }}
         >
-          <Section title="지역(구)">
+          <Section title="직장 또는 목적지">
             <p
               style={{
                 fontSize: 12.5,
                 color: "var(--text-2)",
                 marginBottom: 12,
+                lineHeight: 1.55,
               }}
             >
-              구를 선택하면 해당 지역의 세부 동을 선택할 수 있습니다.
+              회사명, 역, 업무지구를 입력하거나 자주 찾는 목적지를 선택하세요.
             </p>
+
+            <div className="filter-destination-control">
+              <input
+                className="filter-destination-input"
+                value={draft.q ?? ""}
+                onChange={(event) =>
+                  set({
+                    q: event.target.value,
+                  })
+                }
+                placeholder="예: 판교역, 송도, 강남역"
+                aria-label="직장 또는 목적지"
+              />
+
+              {draft.q && (
+                <button
+                  type="button"
+                  className="filter-destination-clear press"
+                  onClick={() =>
+                    set({
+                      q: "",
+                    })
+                  }
+                >
+                  지우기
+                </button>
+              )}
+            </div>
 
             <div
               style={{
                 display: "flex",
                 gap: 8,
                 flexWrap: "wrap",
+                marginTop: 10,
+              }}
+            >
+              {WORKPLACE_PRESETS.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  className="chip press"
+                  data-active={
+                    draft.q === item.query &&
+                    draft.district === item.district
+                  }
+                  onClick={() => {
+                    setSelectedArea(item.area);
+                    set({
+                      q: item.query,
+                      district: item.district,
+                      region: item.region,
+                      legalDongCode: "",
+                    });
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          <Section title="지역">
+            <p
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-2)",
+                marginBottom: 12,
+                lineHeight: 1.55,
+              }}
+            >
+              서울뿐 아니라 경기와 인천의 주요 출근 생활권까지 선택할 수 있습니다.
+            </p>
+
+            <div className="filter-area-tabs" role="tablist" aria-label="광역 지역">
+              {AREA_OPTIONS.map((area) => (
+                <button
+                  key={area}
+                  type="button"
+                  className="chip press"
+                  data-active={selectedArea === area}
+                  onClick={() => {
+                    setSelectedArea(area);
+                    set({
+                      district: "",
+                      region: "",
+                      legalDongCode: "",
+                    });
+                  }}
+                >
+                  {area}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginTop: 10,
               }}
             >
               <button
@@ -189,15 +323,15 @@ export function FilterSheet({
                   })
                 }
               >
-                전체
+                {selectedArea} 전체
               </button>
 
-              {DISTRICT_OPTIONS.map((item) => {
+              {(DISTRICTS_BY_AREA[selectedArea] ?? []).map((item) => {
                 const active = draft.district === item.value;
 
                 return (
                   <button
-                    key={item.value}
+                    key={`${item.area}-${item.value}`}
                     type="button"
                     className="chip"
                     data-active={active}
@@ -242,7 +376,7 @@ export function FilterSheet({
                   onClick={() =>
                     set({
                       region: "",
-                    legalDongCode: "",
+                      legalDongCode: "",
                     })
                   }
                 >
@@ -305,58 +439,35 @@ export function FilterSheet({
             />
           </Section>
 
-          <Section title="주거 형태">
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 10,
-              }}
-            >
-              {ROOM_TYPES.map((roomType) => {
-                const active = (draft.roomTypes ?? []).includes(roomType);
-
-                return (
-                  <button
-                    key={roomType}
-                    type="button"
-                    onClick={() => toggleRoomType(roomType)}
-                    className="press"
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: "var(--r-sm)",
-                      border: active
-                        ? "1.5px solid var(--text)"
-                        : "1px solid var(--border)",
-                        background: active ? "var(--text)" : "var(--surface)",
-                      color: active ? "var(--bg)" : "var(--text)",
-                      fontWeight: 600,
-                      fontSize: 14,
-                      textAlign: "left",
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: "block",
-                      }}
-                    >
-                      {ROOM_TYPE_LABELS[roomType]}
-                    </span>
-
-                    <span
-                      style={{
-                        display: "block",
-                        marginTop: 3,
-                        fontSize: 11.5,
-                        fontWeight: 450,
-                        opacity: 0.72,
-                      }}
-                    >
-                      {ROOM_TYPE_DESCRIPTIONS[roomType]}
-                    </span>
-                  </button>
-                );
-              })}
+          <Section title="숙소 유형">
+            <p style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 12 }}>
+              예약 공간, 건물 유형, 공유 시설을 각각 선택할 수 있습니다.
+            </p>
+            <div style={{ display: "grid", gap: 10 }}>
+              <MultiSelectDropdown
+                label="예약 공간"
+                placeholder="전체 숙소 유형"
+                values={draft.rentalUnits ?? []}
+                options={RENTAL_UNITS}
+                labels={RENTAL_UNIT_LABELS}
+                onChange={(rentalUnits) => set({ rentalUnits })}
+              />
+              <MultiSelectDropdown
+                label="건물 유형"
+                placeholder="전체 건물"
+                values={draft.buildingTypes ?? []}
+                options={BUILDING_TYPES}
+                labels={BUILDING_TYPE_LABELS}
+                onChange={(buildingTypes) => set({ buildingTypes })}
+              />
+              <MultiSelectDropdown
+                label="공유 시설"
+                placeholder="공유 시설 전체"
+                values={draft.sharedFacilities ?? []}
+                options={SHARED_FACILITIES}
+                labels={SHARED_FACILITY_LABELS}
+                onChange={(sharedFacilities) => set({ sharedFacilities })}
+              />
             </div>
           </Section>
 
@@ -433,31 +544,93 @@ export function FilterSheet({
             </div>
           </Section>
 
-          <Section title="입주 가능일">
-            <input
-              type="date"
-              value={draft.availableFrom ?? ""}
-              onChange={(event) =>
-                set({
-                  availableFrom: event.target.value,
-                })
-              }
-              style={{
-                padding: "11px 14px",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--r-sm)",
-                width: "100%",
-              }}
-            />
+          <Section title="입주 기간">
+            <div className="filter-stay-dates">
+              <label className="filter-date-field">
+                <span>입주일</span>
+                <input
+                  type="date"
+                  value={draft.checkIn ?? ""}
+                  max={draft.checkOut || undefined}
+                  onChange={(event) => {
+                    const checkIn = event.target.value;
+                    const earliestCheckOut = checkIn
+                      ? minimumCheckOutISO(checkIn, PLATFORM_MIN_STAY_MONTHS)
+                      : "";
+                    set({
+                      checkIn,
+                      checkOut:
+                        draft.checkOut && earliestCheckOut && draft.checkOut < earliestCheckOut
+                          ? ""
+                          : draft.checkOut,
+                      availableFrom: "",
+                    });
+                  }}
+                />
+              </label>
 
-            <p
+              <label className="filter-date-field">
+                <span>퇴실일</span>
+                <input
+                  type="date"
+                  value={draft.checkOut ?? ""}
+                  min={minimumCheckOut || undefined}
+                  disabled={!draft.checkIn}
+                  onChange={(event) =>
+                    set({
+                      checkOut: event.target.value,
+                      availableFrom: "",
+                    })
+                  }
+                />
+              </label>
+            </div>
+
+            <div
               style={{
-                fontSize: 12.5,
-                color: "var(--text-2)",
-                marginTop: 6,
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginTop: 12,
               }}
             >
-              선택한 날짜에 입주 가능한 숙소만 표시됩니다.
+              {[1, 3, 6, 12].map((months) => (
+                <button
+                  key={months}
+                  type="button"
+                  className="chip press"
+                  disabled={!draft.checkIn}
+                  onClick={() =>
+                    set({
+                      checkOut: draft.checkIn
+                        ? addCalendarMonthsISO(draft.checkIn, months)
+                        : "",
+                      availableFrom: "",
+                    })
+                  }
+                >
+                  {months}개월
+                </button>
+              ))}
+            </div>
+
+            <p
+              className="filter-helper-text"
+              data-error={
+                hasPartialStayRange || hasInvalidStayRange || hasTooShortStay
+              }
+            >
+              {hasPartialStayRange
+                ? draft.checkIn
+                  ? `최소 거주 기간은 1개월입니다. 퇴실일을 ${minimumCheckOut} 이후로 선택해주세요.`
+                  : "입주일과 퇴실일을 모두 선택해야 기간 필터가 적용됩니다."
+                : hasInvalidStayRange
+                  ? "퇴실일은 입주일보다 뒤여야 합니다."
+                  : hasTooShortStay
+                    ? `최소 거주 기간은 1개월입니다. 퇴실일을 ${minimumCheckOut} 이후로 선택해주세요.`
+                    : stayDuration
+                      ? `선택한 거주 기간 · ${stayDuration}`
+                      : "최소 1개월부터 선택할 수 있으며, 1개월 16일처럼 날짜 단위로 조정할 수 있습니다."}
             </p>
           </Section>
 
@@ -620,12 +793,87 @@ export function FilterSheet({
               justifyContent: "center",
             }}
             onClick={() => onApply(draft)}
+            disabled={hasPartialStayRange || hasInvalidStayRange || hasTooShortStay}
           >
             적용하기
           </button>
         </div>
       </div>
     </>
+  );
+}
+
+
+function MultiSelectDropdown<T extends string>({
+  label,
+  placeholder,
+  values,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  values: T[];
+  options: T[];
+  labels: Record<T, string>;
+  onChange: (values: T[]) => void;
+}) {
+  const summary = values.length
+    ? values.map((value) => labels[value]).join(", ")
+    : placeholder;
+
+  return (
+    <details
+      className="filter-multi-select"
+      data-active={values.length > 0}
+    >
+      <summary className="filter-multi-select-summary">
+        <span className="filter-multi-select-label">{label}</span>
+        <span className="filter-multi-select-value">
+          {values.length > 0 && (
+            <span className="filter-multi-select-check" aria-hidden="true">✓</span>
+          )}
+          <span>{summary}</span>
+        </span>
+      </summary>
+      <div className="filter-multi-select-options">
+        <label
+          className="filter-multi-select-option"
+          data-active={values.length === 0}
+        >
+          <input
+            type="checkbox"
+            checked={values.length === 0}
+            onChange={() => onChange([])}
+          />
+          전체
+        </label>
+        {options.map((option) => {
+          const active = values.includes(option);
+          return (
+            <label
+              key={option}
+              className="filter-multi-select-option"
+              data-active={active}
+            >
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={() =>
+                  onChange(
+                    active
+                      ? values.filter((value) => value !== option)
+                      : [...values, option],
+                  )
+                }
+              />
+              {labels[option]}
+            </label>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
@@ -697,7 +945,7 @@ function ToggleRow({
             width: 22,
             height: 22,
             borderRadius: 99,
-            background: "#fff",
+            background: "var(--surface)",
             transition: "left .18s cubic-bezier(.2,.8,.3,1)",
             boxShadow: "var(--shadow-sm)",
           }}

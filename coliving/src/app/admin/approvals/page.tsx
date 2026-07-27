@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { won } from "@/lib/format";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
+import { getAccommodationLabel } from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
 import {
   listPendingRooms,
@@ -173,7 +173,7 @@ export default function Approvals() {
                     <div style={{ minWidth: 200 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <strong style={{ fontSize: 16 }}>{h.name.trim()}</strong>
-                        <span className="chip" style={{ fontSize: 11 }}>{ROOM_TYPE_LABELS[h.roomType]}</span>
+                        <span className="chip" style={{ fontSize: 11 }}>{getAccommodationLabel(h)}</span>
                         {flagged && (
                           <span
                             className="chip"
@@ -250,7 +250,7 @@ export default function Approvals() {
                 <div style={{ minWidth: 200 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <strong style={{ fontSize: 16 }}>{h.name.trim()}</strong>
-                    <span className="chip" style={{ fontSize: 11 }}>{ROOM_TYPE_LABELS[h.roomType]}</span>
+                    <span className="chip" style={{ fontSize: 11 }}>{getAccommodationLabel(h)}</span>
                     {h.verifiedByHost && (
                       <span
                         className="chip"

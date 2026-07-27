@@ -33,6 +33,8 @@ const noticeUpdateSchema = z.object({
   body: z.string().min(1).max(5000).optional(),
   pinned: z.boolean().optional(),
 });
+const MAX_HOME_BANNERS = 5;
+
 const bannerCreateSchema = z.object({
   title: z.string().min(1, "제목을 입력해주세요.").max(200),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요."),
@@ -388,6 +390,102 @@ export class AdminService {
       reporterName: r.reporter?.name ?? "알 수 없음",
     }));
   }
+  // ── 휴지통 (소프트 삭제된 커뮤니티 콘텐츠) ──
+  // 삭제는 deletedAt 을 찍어두기만 하므로, 여기서 목록을 보여주고 되돌린다.
+  async trash() {
+    const [posts, comments] = await Promise.all([
+      this.prisma.post.findMany({
+        where: { deletedAt: { not: null } },
+        orderBy: { deletedAt: "desc" },
+        take: 200,
+        include: { author: { select: { name: true } } },
+      }),
+      this.prisma.comment.findMany({
+        where: { deletedAt: { not: null } },
+        orderBy: { deletedAt: "desc" },
+        take: 200,
+        include: {
+          author: { select: { name: true } },
+          post: { select: { id: true, title: true } },
+        },
+      }),
+    ]);
+
+    return {
+      posts: posts.map((p) => ({
+        id: p.id,
+        title: p.title,
+        body: p.body,
+        authorName: p.author?.name ?? "알 수 없음",
+        deletedAt: p.deletedAt,
+        createdAt: p.createdAt,
+      })),
+      comments: comments.map((c) => ({
+        id: c.id,
+        body: c.body,
+        authorName: c.author?.name ?? "알 수 없음",
+        postId: c.post?.id ?? null,
+        postTitle: c.post?.title ?? "(삭제된 게시글)",
+        deletedAt: c.deletedAt,
+        createdAt: c.createdAt,
+      })),
+    };
+  }
+
+  async restorePost(id: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { id },
+      select: { id: true, deletedAt: true },
+    });
+    if (!post)
+      throw new NotFoundException({
+        code: "POST_NOT_FOUND",
+        message: "게시글을 찾을 수 없습니다.",
+      });
+    if (!post.deletedAt) return { ok: true };
+
+    await this.prisma.post.update({
+      where: { id },
+      data: { deletedAt: null },
+    });
+    return { ok: true };
+  }
+
+  async restoreComment(id: string) {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id },
+      select: { id: true, deletedAt: true, postId: true },
+    });
+    if (!comment)
+      throw new NotFoundException({
+        code: "COMMENT_NOT_FOUND",
+        message: "댓글을 찾을 수 없습니다.",
+      });
+    if (!comment.deletedAt) return { ok: true };
+
+    // 원글이 삭제된 상태면 댓글만 살려도 화면에 나오지 않는다.
+    const post = await this.prisma.post.findUnique({
+      where: { id: comment.postId },
+      select: { deletedAt: true },
+    });
+
+    await this.prisma.$transaction([
+      this.prisma.comment.update({
+        where: { id },
+        data: { deletedAt: null },
+      }),
+      ...(post?.deletedAt
+        ? [
+            this.prisma.post.update({
+              where: { id: comment.postId },
+              data: { deletedAt: null },
+            }),
+          ]
+        : []),
+    ]);
+    return { ok: true, restoredPost: !!post?.deletedAt };
+  }
+
   async setReportStatus(id: string, status: string) {
     // 검토 중으로 변경할 때는 상태만 변경
     if (status !== "RESOLVED") {
@@ -480,6 +578,15 @@ export class AdminService {
 
     let reported: { id: string; name: string; email: string } | null = null;
     let chat: { kind: "ROOM" | "DIRECT"; id: string } | null = null;
+    // MESSAGE의 "채팅 보기"랑 같은 역할 — REVIEW 신고는 관리자가 "어떤
+    // 숙소의, 누가 쓴, 언제 쓴 무슨 내용"인지 한 번에 볼 수 있어야 한다.
+    let review: {
+      id: string;
+      body: string;
+      rating: number;
+      createdAt: Date;
+      room: { id: string; name: string };
+    } | null = null;
 
     if (report.targetType === "USER") {
       reported = await this.prisma.user.findUnique({
@@ -493,11 +600,27 @@ export class AdminService {
       });
       reported = room?.host ?? null;
     } else if (report.targetType === "REVIEW") {
-      const review = await this.prisma.review.findUnique({
+      const found = await this.prisma.review.findUnique({
         where: { id: report.targetId },
-        select: { author: { select: { id: true, name: true, email: true } } },
+        select: {
+          id: true,
+          body: true,
+          rating: true,
+          createdAt: true,
+          author: { select: { id: true, name: true, email: true } },
+          room: { select: { id: true, name: true } },
+        },
       });
-      reported = review?.author ?? null;
+      reported = found?.author ?? null;
+      if (found) {
+        review = {
+          id: found.id,
+          body: found.body,
+          rating: found.rating,
+          createdAt: found.createdAt,
+          room: found.room,
+        };
+      }
     } else if (report.targetType === "COMMUNITY_POST") {
       const post = await this.prisma.post.findUnique({
         where: { id: report.targetId },
@@ -536,7 +659,7 @@ export class AdminService {
       }
     }
 
-    return { reporter: report.reporter, reported, chat };
+    return { reporter: report.reporter, reported, chat, review };
   }
 
   // 채팅방(숙소 문의) 대화 조회 — 관리자는 대화 참여자가 아니어도
@@ -869,7 +992,7 @@ export class AdminService {
     });
   }
 
-  createBanner(data: {
+  async createBanner(data: {
     title: string;
     color: string;
     position: string;
@@ -878,6 +1001,16 @@ export class AdminService {
     active?: boolean;
     order?: number;
   }) {
+    const bannerCount = await this.prisma.banner.count({
+      where: { position: "메인 상단" },
+    });
+
+    if (bannerCount >= MAX_HOME_BANNERS) {
+      throw new BadRequestException(
+        "메인 배너는 최대 5장까지 등록할 수 있습니다.",
+      );
+    }
+
     return this.prisma.banner.create({
       data: {
         title: data.title,
@@ -1078,6 +1211,22 @@ export class AdminController {
   @Delete("rooms/:id")
   reject(@Param("id") id: string) {
     return this.admin.rejectRoom(id);
+  }
+
+  // GET /admin/trash — 소프트 삭제된 게시글/댓글
+  @Get("trash")
+  trash() {
+    return this.admin.trash();
+  }
+
+  @Patch("trash/posts/:id/restore")
+  restorePost(@Param("id") id: string) {
+    return this.admin.restorePost(id);
+  }
+
+  @Patch("trash/comments/:id/restore")
+  restoreComment(@Param("id") id: string) {
+    return this.admin.restoreComment(id);
   }
 
   @Get("reports")

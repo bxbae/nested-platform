@@ -19,13 +19,19 @@ export const translations = {
       logout: "로그아웃",
       getStarted: "시작하기",
 
-      allHomes: "전체 숙소",
+      allHomes: "모든 숙소",
       allHomesDescription: "지역과 조건으로 둘러보기",
       oneRoomDescription: "개인 공간을 확보한 주거",
       shareRoomDescription: "합리적인 비용으로 함께",
       wholeHouseDescription: "집 전체를 단독으로 사용",
+      rentalWhole: "단독형 숙소",
+      rentalWholeDescription: "공간 전체를 한 팀이 단독 사용",
+      rentalPrivateRoom: "공유형 · 개인실",
+      rentalPrivateRoomDescription: "침실은 단독, 일부 시설은 공유",
+      rentalBed: "공유형 · 다인실",
+      rentalBedDescription: "한 자리씩 예약하는 공유형 숙소",
 
-      findByHousingType: "주거 형태로 찾기",
+      findByHousingType: "숙소 유형으로 찾기",
       findByPurpose: "목적으로 찾기",
 
       commuteSearchDescription: "통근 시간 짧은 순으로 검색",
@@ -59,8 +65,14 @@ export const translations = {
       oneRoomDescription: "A home with your own private space",
       shareRoomDescription: "Share a home at an affordable cost",
       wholeHouseDescription: "Use the entire home privately",
+      rentalWhole: "Private entire place",
+      rentalWholeDescription: "One party uses the full property",
+      rentalPrivateRoom: "Shared home · private room",
+      rentalPrivateRoomDescription: "Private bedroom with shared facilities",
+      rentalBed: "Shared home · shared room",
+      rentalBedDescription: "Book one or more beds",
 
-      findByHousingType: "Browse by housing type",
+      findByHousingType: "Browse by booking space",
       findByPurpose: "Browse by purpose",
 
       commuteSearchDescription: "Find homes with shorter commutes",

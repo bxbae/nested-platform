@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { wonShort } from "@/lib/format";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
+import { getAccommodationLabel } from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
 import { HeroSearch } from "@/components/HeroSearch";
 import { NoticeBar } from "@/components/NoticeBar";
@@ -35,15 +35,7 @@ export default async function Home() {
       <NoticeBar />
 
       {/* 메인 히어로 */}
-      <section
-        style={{
-          position: "relative",
-          minHeight: 620,
-          overflow: "visible",
-          background: "var(--bg-2)",   // 라이트: #f7f7f7(연한 회색), 다크: #202024(짙은 회색)로 자동 전환
-          zIndex: 10,
-        }}
-      >
+      <section className="home-hero-section">
         {/* 관리자가 등록한 메인 배너 이미지를 자동 슬라이드로 표시합니다. */}
         <HomeBanner />
 
@@ -59,21 +51,10 @@ export default async function Home() {
           }}
         />
 
-        <div
-          className="wrap"
-          style={{
-            position: "relative",
-            minHeight: 620,
-            paddingTop: 78,
-            paddingBottom: 68,
-            display: "flex",
-            alignItems: "center",
-            zIndex: 2,
-          }}
-        >
+        <div className="wrap home-hero-inner">
           <div style={{ width: "100%" }}>
             <div className="home-hero-copy" style={{ maxWidth: 760 }}>
-              <span className="eyebrow">서울의 공유주거</span>
+              <span className="eyebrow">서울·근교 직장인 공유주거</span>
 
               <h1
                 className="display home-hero-title"
@@ -100,8 +81,8 @@ export default async function Home() {
                   maxWidth: 540,
                 }}
               >
-                출근 시간과 생활 성향을 기준으로 나에게 맞는 공유주거를
-                찾아보세요.
+                회사·역·업무지구까지의 통근시간과 생활 성향을 기준으로
+                나에게 맞는 집을 찾아보세요.
               </p>
             </div>
 
@@ -372,7 +353,7 @@ export default async function Home() {
                         fontWeight: 600,
                       }}
                     >
-                      {ROOM_TYPE_LABELS[house.roomType]}
+                      {getAccommodationLabel(house)}
                     </span>
 
                     <span

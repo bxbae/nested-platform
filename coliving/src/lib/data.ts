@@ -1082,7 +1082,32 @@ export const houses: House[] = [
     smokingAllowed: false,
     parking: false,
   }
+
 ];
+
+// Demo-only classification so the three-axis filters and seat booking can be
+// exercised even when NEXT_PUBLIC_USE_REAL_API is false. Production Room rows
+// are migrated conservatively and ambiguous legacy values remain review-required.
+for (const house of houses) {
+  if (house.roomType === "whole_house") {
+    house.rentalUnit = "whole";
+    house.buildingType = "house";
+    house.sharedFacilities = [];
+  } else if (house.roomType === "share_room") {
+    house.rentalUnit = "bed";
+    house.buildingType = "house";
+    house.sharedFacilities = ["bathroom", "kitchen", "living_room", "laundry_room"];
+  } else if (house.roomType === "apartment") {
+    house.rentalUnit = "private_room";
+    house.buildingType = "apartment";
+    house.sharedFacilities = ["bathroom", "kitchen", "living_room", "laundry_room"];
+  } else {
+    house.rentalUnit = "private_room";
+    house.buildingType = "studio";
+    house.sharedFacilities = ["bathroom", "kitchen", "laundry_room"];
+  }
+  house.classificationReviewRequired = false;
+}
 
 // ── Residents (used for matching) ───────────────────────────────────
 export const residents: Resident[] = [

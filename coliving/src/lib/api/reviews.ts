@@ -13,13 +13,14 @@ interface ApiReview {
   body: string;
   hostReply: string | null;
   createdAt: string;
-  author: { name: string; avatarColor: string | null };
+  author: { id: string; name: string; avatarColor: string | null };
   room: { id: string; name: string };
 }
 
 // What the 리뷰 관리 page renders.
 export interface HostReview {
   id: string;
+  authorId?: string;
   houseId: string;
   houseName: string;
   author: string;
@@ -34,6 +35,7 @@ function adapt(r: ApiReview): HostReview {
   const d = new Date(r.createdAt);
   return {
     id: r.id,
+    authorId: r.author?.id,
     houseId: r.room.id,
     houseName: r.room.name.trim(),
     author: r.author?.name ?? "게스트",

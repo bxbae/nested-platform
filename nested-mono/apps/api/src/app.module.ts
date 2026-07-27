@@ -16,6 +16,7 @@ import { StorageModule } from "./modules/storage/storage.controller";
 import { ReviewsModule } from "./modules/reviews/reviews.module";
 import { FavoritesModule } from "./modules/favorites/favorites.module";
 import { CommunityModule } from "./modules/community/community.module";
+import { InquiriesModule } from "./modules/inquiries/inquiries.module";
 import { NotificationsApiModule } from "./modules/notifications-api/notifications-api.module";
 import { MessagesModule } from "./modules/messages/messages.module";
 import { AdminModule } from "./modules/admin/admin.module";
@@ -63,6 +64,7 @@ import { TransitModule } from './modules/transit/transit.module';
     ReviewsModule,
     FavoritesModule,
     CommunityModule,
+    InquiriesModule,
     NotificationsApiModule,
     MessagesModule,
     AdminModule,

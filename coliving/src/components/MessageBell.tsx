@@ -10,6 +10,7 @@ import {
   getMessageUnreadCount,
   listChatRooms,
   listDirectConversations,
+  markAllMessagesRead,
   type ApiChatRoom,
   type ApiDirectConversation,
 } from "@/lib/api/messages";
@@ -34,6 +35,7 @@ export function MessageBell() {
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<MessagePreviewItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [readingAll, setReadingAll] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -124,6 +126,37 @@ export function MessageBell() {
 
       return next;
     });
+  }
+
+  async function readAllMessages() {
+    if (readingAll || unread === 0) {
+      return;
+    }
+
+    setReadingAll(true);
+
+    const previousUnread = unread;
+    const previousItems = items;
+
+    setUnread(0);
+    setItems((current) =>
+      current.map((item) => ({
+        ...item,
+        unread: false,
+      })),
+    );
+
+    try {
+      await markAllMessagesRead();
+
+      window.dispatchEvent(new Event("messages:read"));
+    } catch {
+      setUnread(previousUnread);
+      setItems(previousItems);
+      await loadMessages();
+    } finally {
+      setReadingAll(false);
+    }
   }
 
   return (
@@ -217,14 +250,40 @@ export function MessageBell() {
             <strong>메시지</strong>
 
             {unread > 0 && (
-              <span
+              <div
                 style={{
-                  color: "var(--text-2)",
-                  fontSize: 12.5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
                 }}
               >
-                안 읽음 {unread}개
-              </span>
+                <span
+                  style={{
+                    color: "var(--text-2)",
+                    fontSize: 12.5,
+                  }}
+                >
+                  안 읽음 {unread}개
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => void readAllMessages()}
+                  disabled={readingAll}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--primary)",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: readingAll ? "default" : "pointer",
+                    padding: 0,
+                    opacity: readingAll ? 0.55 : 1,
+                  }}
+                >
+                  {readingAll ? "처리 중…" : "모두 읽음"}
+                </button>
+              </div>
             )}
           </div>
 

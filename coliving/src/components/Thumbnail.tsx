@@ -9,11 +9,13 @@ export function Thumbnail({
   color,
   height = 200,
   children,
+  imageFilter,
 }: {
   src?: string;
   color: string;
   height?: number | string;
   children?: React.ReactNode;
+  imageFilter?: string;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -58,7 +60,8 @@ export function Thumbnail({
             height: "100%",
             objectFit: "cover",
             opacity: loaded ? 1 : 0,
-            transition: "opacity .5s ease, transform .5s cubic-bezier(.2,.8,.3,1)",
+            filter: imageFilter,
+            transition: "opacity .5s ease, transform .5s cubic-bezier(.2,.8,.3,1), filter .25s ease",
           }}
         />
       )}

@@ -73,29 +73,37 @@ export default function HostDashboardPage() {
       {/* ── 핵심 KPI cards ── */}
       <div
         className="stat-row"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}
       >
         <ClickableStat
-          href="/host/reservations?filter=PENDING_PAYMENT"
-          label="새 예약 / 취소"
-          value={loading ? "…" : `${data?.newReservationCount ?? 0} / ${data?.cancelledCount ?? 0}`}
-          hint="처리 대기 · 최근 취소"
-          accent={!!data && (data.newReservationCount > 0 || data.cancelledCount > 0)}
+          label="이번 달 확정 매출"
+          value={loading ? "…" : won(data?.confirmedRevenue ?? 0)}
+          hint="확정·정산 대상 예약"
         />
         <ClickableStat
-          label="이번 달 매출"
-          value={loading ? "…" : won(data?.thisMonth ?? 0)}
-          hint={
-            data?.changePct == null
-              ? "지난달 데이터 없음"
-              : `지난달 대비 ${data.changePct >= 0 ? "▲" : "▼"} ${Math.abs(data.changePct)}%`
-          }
+          href="/host/settlements"
+          label="정산 예정액"
+          value={loading ? "…" : won(data?.scheduledSettlement ?? 0)}
+          hint="수수료 차감 후"
         />
         <ClickableStat
           href="/host/calendar"
-          label="점유율"
+          label="현재 입주 인원"
+          value={loading ? "…" : `${data?.currentOccupants ?? 0}명`}
+          hint={`${data?.activeContractCount ?? 0}건 계약 진행 중`}
+        />
+        <ClickableStat
+          href="/host/calendar"
+          label="전체 점유율"
           value={loading ? "…" : `${data?.occupancy ?? 0}%`}
-          hint="최근 30일"
+          hint="최근 30일 · 다인실 자리 기준"
+        />
+        <ClickableStat
+          href="/host/reservations?filter=PENDING_PAYMENT"
+          label="신규 예약 / 취소"
+          value={loading ? "…" : `${data?.newReservationCount ?? 0} / ${data?.cancelledCount ?? 0}`}
+          hint="처리 대기 · 최근 30일 취소"
+          accent={!!data && (data.newReservationCount > 0 || data.cancelledCount > 0)}
         />
       </div>
 
@@ -133,9 +141,12 @@ export default function HostDashboardPage() {
               <thead>
                 <tr style={{ background: "var(--surface-2, #f7f7f7)", textAlign: "left" }}>
                   <Th>객실명</Th>
+                  <Th>예약 유형</Th>
+                  <Th>현재 예약 현황</Th>
                   <Th right>예약 건수</Th>
                   <Th right>점유율</Th>
                   <Th right>매출</Th>
+                  <Th right>수수료</Th>
                   <Th right>순수익</Th>
                 </tr>
               </thead>
@@ -148,9 +159,12 @@ export default function HostDashboardPage() {
                 {roomRevenue.map((r) => (
                   <tr key={r.roomId} style={{ borderTop: "1px solid var(--border)" }}>
                     <Td>{r.roomName}</Td>
+                    <Td>{rentalUnitLabel(r.rentalUnit)}</Td>
+                    <Td>{inventoryLabel(r)}</Td>
                     <Td right>{r.reservationCount}건</Td>
                     <Td right>{r.occupancyPct}%</Td>
                     <Td right>{won(r.revenue)}</Td>
+                    <Td right>{won(r.platformFee)}</Td>
                     <Td right strong>{won(r.netRevenue)}</Td>
                   </tr>
                 ))}
@@ -211,6 +225,21 @@ export default function HostDashboardPage() {
 //     </div>
 //   );
 // }
+
+function rentalUnitLabel(unit: "WHOLE" | "PRIVATE_ROOM" | "BED" | null): string {
+  if (unit === "BED") return "공유형 다인실";
+  if (unit === "PRIVATE_ROOM") return "공유형 개인실";
+  return "단독형 숙소";
+}
+
+function inventoryLabel(row: HostDashboard["roomRevenue"][number]): string {
+  if (row.rentalUnit !== "BED") {
+    return row.currentReservedSpots > 0 ? "현재 예약 중" : "현재 예약 가능";
+  }
+  const capacity = Math.max(1, row.capacity ?? 1);
+  const remaining = row.currentRemainingSpots ?? Math.max(0, capacity - row.currentReservedSpots);
+  return `${row.currentReservedSpots}/${capacity}자리 · ${remaining > 0 ? `잔여 ${remaining}자리` : "예약 마감"}`;
+}
 
 // ── KPI card, optionally a link ──
 function ClickableStat({

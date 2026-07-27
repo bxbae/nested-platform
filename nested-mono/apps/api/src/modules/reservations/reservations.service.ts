@@ -9,21 +9,35 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { computePrice, couponDiscount, type PriceBreakdown } from "./pricing";
+import {
+  addCalendarMonths,
+  computePrice,
+  couponDiscount,
+  fullCalendarMonthsBetween,
+  stayCharge,
+  SERVICE_FEE_RATE,
+  MAX_STAY_MONTHS,
+  type PriceBreakdown,
+} from "./pricing";
 import type {
   ReservationRepo,
   PaymentGateway,
   ReservationRecord,
   ReservationStatus,
   CouponRecord,
+  RoomRecord,
+  BookingMode,
 } from "./ports";
 import type {
   QuoteDto,
   CreateReservationDto,
   ConfirmPaymentDto,
+  ContractChangeQuoteDto,
+  ContractChangePaymentDto,
 } from "./dto/reservation.dto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
+import { calculateInventory } from "./reservation-inventory.util";
 
 // DI tokens for the ports (bound to Prisma/PSP impls in the module).
 export const RESERVATION_REPO = Symbol("RESERVATION_REPO");
@@ -46,7 +60,16 @@ export class ReservationsService {
   ) {}
 
   // ── QUOTE ── price preview. No writes, no side effects.
-  async quote(dto: QuoteDto): Promise<PriceBreakdown & { checkOut: Date }> {
+  async quote(
+    dto: QuoteDto,
+  ): Promise<
+    PriceBreakdown & {
+      checkOut: Date;
+      bookingMode: BookingMode;
+      reservedSpots: number;
+      remainingSpots: number | null;
+    }
+  > {
     const room = await this.repo.findRoom(dto.roomId);
     if (!room)
       throw new NotFoundException({
@@ -54,51 +77,40 @@ export class ReservationsService {
         message: "숙소를 찾을 수 없습니다.",
       });
 
-    if (dto.months < room.minStayMonths) {
-      throw new UnprocessableEntityException({
-        code: "MIN_STAY",
-        message: `최소 ${room.minStayMonths}개월 이상 예약해야 합니다.`,
-      });
-    }
-    if (dto.checkIn < stripTime(room.availableFrom)) {
-      throw new UnprocessableEntityException({
-        code: "NOT_AVAILABLE_YET",
-        message: "선택한 날짜에는 아직 입주할 수 없습니다.",
-      });
-    }
+    const stay = this.resolveStayWindow(dto.checkIn, dto.checkOut, dto.months);
+    this.assertStayRules(room, dto.checkIn, stay.checkOut);
 
-    // Same overlap check as create(). Without it a quote could report the dates
-    // as bookable and then the reservation would fail with 409 — the user saw
-    // "예약 가능한 날짜입니다" followed by "이미 예약되었습니다".
-    const checkOut = addMonths(dto.checkIn, dto.months);
-    const overlaps = await this.repo.findOverlapping(
-      dto.roomId,
-      dto.checkIn,
-      checkOut,
-    );
-    if (overlaps.length > 0) {
-      throw new ConflictException({
-        code: "DATES_UNAVAILABLE",
-        message: "선택한 기간은 이미 예약되었습니다.",
-      });
-    }
+    const booking = this.normalizeBooking(room, dto.bookingMode, dto.reservedSpots);
+    const checkOut = stay.checkOut;
+    const [overlaps, blockedDates] = await Promise.all([
+      this.repo.findOverlapping(dto.roomId, dto.checkIn, checkOut),
+      this.repo.findBlockedDates(dto.roomId, dto.checkIn, checkOut),
+    ]);
+    this.assertNoHostBlocks(blockedDates);
+    const remainingSpots = this.assertInventoryAvailable(room, overlaps, booking);
 
+    const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
+    const pricingInput = this.scaledPricing(room, units);
     const discount = await this.resolveDiscount(
       dto.couponCode,
-      room.monthlyRent,
+      pricingInput.monthlyRent,
     );
     const breakdown = computePrice({
-      monthlyRent: room.monthlyRent,
-      deposit: room.deposit,
-      cleaningFee: room.cleaningFee,
-      maintenanceFee: room.maintenanceFee,
-      months: dto.months,
+      ...pricingInput,
+      checkIn: dto.checkIn,
+      checkOut,
       discount,
     });
-    return { ...breakdown, checkOut };
+    return {
+      ...breakdown,
+      checkOut,
+      bookingMode: booking.bookingMode,
+      reservedSpots: booking.reservedSpots,
+      remainingSpots,
+    };
   }
 
-  // ── CREATE ── holds inventory as PENDING_PAYMENT. Rejects overlaps (409).
+  // ── CREATE ── holds inventory as PENDING_PAYMENT.
   async create(
     dto: CreateReservationDto,
     guestId: string,
@@ -110,62 +122,106 @@ export class ReservationsService {
         message: "숙소를 찾을 수 없습니다.",
       });
 
-    // 호스트 본인이 등록한 숙소는 예약(결제)할 수 없다.
     if (room.hostId === guestId) {
       throw new BadRequestException({
         code: "SELF_BOOKING_NOT_ALLOWED",
         message: "본인이 등록한 숙소는 예약할 수 없습니다.",
-     });
-    }  
+      });
+    }
 
-    if (dto.companionId === guestId) {
+    const companionIds = [...new Set([
+      ...(dto.companionIds ?? []),
+      ...(dto.companionId ? [dto.companionId] : []),
+    ])];
+
+    if (companionIds.includes(guestId)) {
       throw new BadRequestException({
         code: "INVALID_COMPANION",
         message: "자기 자신을 룸메이트로 지정할 수 없습니다.",
       });
     }
-
-    const checkOut = addMonths(dto.checkIn, dto.months);
-
-    // Pre-check overlap (the repo re-checks under a serializable lock on insert).
-    const overlaps = await this.repo.findOverlapping(
-      dto.roomId,
-      dto.checkIn,
-      checkOut,
-    );
-    if (overlaps.length > 0) {
-      throw new ConflictException({
-        code: "DATES_UNAVAILABLE",
-        message: "선택한 기간은 이미 예약되었습니다.",
+    if (companionIds.includes(room.hostId)) {
+      throw new BadRequestException({
+        code: "INVALID_COMPANION",
+        message: "숙소 호스트를 동반 입주자로 지정할 수 없습니다.",
       });
     }
 
+    const stay = this.resolveStayWindow(dto.checkIn, dto.checkOut, dto.months);
+    this.assertStayRules(room, dto.checkIn, stay.checkOut);
+    const booking = this.normalizeBooking(
+      room,
+      dto.bookingMode,
+      dto.reservedSpots,
+    );
+
+    const usesMultiCompanionSelection = (dto.companionIds?.length ?? 0) > 0;
+    if (usesMultiCompanionSelection && room.rentalUnit !== "BED") {
+      throw new BadRequestException({
+        code: "COMPANION_REQUIRES_SHARED_ROOM",
+        message: "친구 다중 선택은 공유형 다인실 예약에서만 사용할 수 있습니다.",
+      });
+    }
+    if (room.rentalUnit === "BED" && companionIds.length > 0 && booking.reservedSpots < 2) {
+      throw new BadRequestException({
+        code: "COMPANION_REQUIRES_TWO_SPOTS",
+        message: "친구와 함께 예약하려면 두 자리 이상을 선택해야 합니다.",
+      });
+    }
+    if (room.rentalUnit === "BED" && companionIds.length > Math.max(0, booking.reservedSpots - 1)) {
+      throw new BadRequestException({
+        code: "TOO_MANY_COMPANIONS",
+        message: `선택한 ${booking.reservedSpots}자리에는 친구를 최대 ${Math.max(0, booking.reservedSpots - 1)}명까지 초대할 수 있습니다.`,
+      });
+    }
+    if (companionIds.length > 0) {
+      const friendIds = await this.repo.findFriendIds(guestId, companionIds);
+      if (friendIds.length !== companionIds.length) {
+        throw new ForbiddenException({
+          code: "COMPANION_NOT_FRIEND",
+          message: "현재 친구 목록에 있는 사용자만 동반 입주자로 선택할 수 있습니다.",
+        });
+      }
+    }
+
+    const checkOut = stay.checkOut;
+    const [overlaps, blockedDates] = await Promise.all([
+      this.repo.findOverlapping(dto.roomId, dto.checkIn, checkOut),
+      this.repo.findBlockedDates(dto.roomId, dto.checkIn, checkOut),
+    ]);
+    this.assertNoHostBlocks(blockedDates);
+    this.assertInventoryAvailable(room, overlaps, booking);
+
+    const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
+    const pricingInput = this.scaledPricing(room, units);
     const discount = await this.resolveDiscount(
       dto.couponCode,
-      room.monthlyRent,
+      pricingInput.monthlyRent,
     );
     const price = computePrice({
-      monthlyRent: room.monthlyRent,
-      deposit: room.deposit,
-      cleaningFee: room.cleaningFee,
-      maintenanceFee: room.maintenanceFee,
-      months: dto.months,
+      ...pricingInput,
+      checkIn: dto.checkIn,
+      checkOut,
       discount,
     });
 
-    // Price is computed server-side only; client never supplies the total.
     try {
+      const legacyCompanionId = companionIds[0] ?? null;
       return await this.repo.createHold({
         roomId: room.id,
         guestId,
-        // 공동 예약: 상대를 지정하면 초대 대기 상태로 시작한다.
-        companionId: dto.companionId ?? null,
-        companionStatus: dto.companionId ? "PENDING" : null,
+        companionIds,
+        companionId: legacyCompanionId,
+        companionStatus: legacyCompanionId ? "PENDING" : null,
         companionRespondedAt: null,
         checkIn: dto.checkIn,
         checkOut,
-        months: dto.months,
+        originalCheckOut: checkOut,
+        actualCheckOut: null,
+        months: stay.fullMonths,
         status: "PENDING_PAYMENT",
+        bookingMode: booking.bookingMode,
+        reservedSpots: booking.reservedSpots,
         monthlyRent: price.monthlyRent,
         deposit: price.deposit,
         cleaningFee: price.cleaningFee,
@@ -175,9 +231,6 @@ export class ReservationsService {
         totalDueNow: price.dueNow,
       });
     } catch (e) {
-      // P2003 = foreign key violation: the guest id in the token no longer
-      // maps to a User row (e.g. account removed). Ask them to sign in again
-      // rather than surfacing a raw 500.
       if (
         e &&
         typeof e === "object" &&
@@ -299,13 +352,14 @@ export class ReservationsService {
         message: "예약을 찾을 수 없습니다.",
       });
     }
-    if (r.companionId !== userId) {
+    const companionStatus = await this.repo.findCompanionStatus(id, userId);
+    if (!companionStatus) {
       throw new ForbiddenException({
         code: "FORBIDDEN",
         message: "초대받은 사람만 응답할 수 있습니다.",
       });
     }
-    if (r.companionStatus !== "PENDING") {
+    if (companionStatus !== "PENDING") {
       throw new BadRequestException({
         code: "ALREADY_RESPONDED",
         message: "이미 응답한 초대입니다.",
@@ -313,6 +367,7 @@ export class ReservationsService {
     }
     return this.repo.updateCompanionStatus(
       id,
+      userId,
       decision === "accept" ? "ACCEPTED" : "DECLINED",
     );
   }
@@ -375,34 +430,30 @@ export class ReservationsService {
     return cancelledReservation;
   }
 
-  // Guest requests an early checkout on a CONFIRMED reservation. This doesn't
-  // end the stay yet — it flips to EARLY_CHECKOUT_REQUESTED and waits for the
-  // host to approve or reject.
+  // ── 계약 변경 요청: 조기 퇴실 / 정확한 날짜 연장 ───────────────
+  async quoteContractChange(
+    id: string,
+    guestId: string,
+    dto: ContractChangeQuoteDto,
+  ) {
+    const reservation = await this.requireGuestReservation(id, guestId);
+    return this.buildContractChangeQuote(
+      reservation,
+      dto.type,
+      dto.requestedCheckOut,
+    );
+  }
+
   async requestEarlyCheckout(
     id: string,
     guestId: string,
-  ): Promise<ReservationRecord> {
-    const reservation = await this.repo.findById(id);
-
-    if (!reservation) {
-      throw new NotFoundException({
-        code: "RESERVATION_NOT_FOUND",
-        message: "예약을 찾을 수 없습니다.",
-      });
-    }
-
-    if (reservation.guestId !== guestId) {
-      throw new ForbiddenException({
-        code: "FORBIDDEN",
-        message: "본인의 예약만 조기 퇴실을 요청할 수 있습니다.",
-      });
-    }
-
-    // 같은 요청이 다시 들어와도 알림을 중복 생성하지 않는다.
+    requestedCheckOut?: Date,
+  ) {
+    const reservation = await this.requireGuestReservation(id, guestId);
     if (reservation.status === "EARLY_CHECKOUT_REQUESTED") {
-      return reservation;
+      if (!this.prisma) return reservation;
+      return this.getActiveContractChange(id);
     }
-
     if (reservation.status !== "CONFIRMED") {
       throw new BadRequestException({
         code: "NOT_CONFIRMED",
@@ -410,203 +461,558 @@ export class ReservationsService {
       });
     }
 
-    const room = await this.repo.findRoom(reservation.roomId);
-
-    if (!room) {
-      throw new NotFoundException({
-        code: "ROOM_NOT_FOUND",
-        message: "숙소를 찾을 수 없습니다.",
-      });
+    // Tests and non-Prisma adapters keep the previous status-only fallback.
+    if (!this.prisma) {
+      return this.repo.updateStatus(id, "EARLY_CHECKOUT_REQUESTED");
     }
 
-    const updatedReservation = await this.repo.updateStatus(
-      id,
-      "EARLY_CHECKOUT_REQUESTED",
+    const target =
+      requestedCheckOut ??
+      effectiveEarlyCheckOut(reservation.checkIn, new Date());
+    const quote = await this.buildContractChangeQuote(
+      reservation,
+      "EARLY_CHECKOUT",
+      target,
     );
+    await this.assertNoActiveContractChange(id);
 
-    if (room.hostId !== guestId && this.prisma && this.notificationsGateway) {
-      const notification = await this.prisma.notification.create({
+    const prisma = this.prisma;
+    const request = await prisma.$transaction(async (tx) => {
+      const created = await tx.contractChangeRequest.create({
         data: {
-          userId: room.hostId,
-          type: "EARLY_CHECKOUT_REQUESTED",
-          title: "조기 퇴실 요청이 들어왔어요",
-          body: `"${room.name}" 숙소의 게스트가 조기 퇴실을 요청했습니다.`,
-          targetUrl: "/host/reservations",
+          reservationId: id,
+          requesterId: guestId,
+          type: "EARLY_CHECKOUT",
+          status: "HOST_REVIEW",
+          originalCheckOut: reservation.checkOut,
+          requestedCheckOut: quote.requestedCheckOut,
+          estimatedRefund: quote.estimatedRefund,
         },
       });
+      await tx.reservation.update({
+        where: { id },
+        data: {
+          status: "EARLY_CHECKOUT_REQUESTED",
+          originalCheckOut:
+            reservation.originalCheckOut ?? reservation.checkOut,
+        },
+      });
+      return created;
+    });
 
-      this.notificationsGateway.emitToUser(room.hostId, notification);
+    const room = await this.repo.findRoom(reservation.roomId);
+    if (room && room.hostId !== guestId) {
+      await this.notifyUser(
+        room.hostId,
+        "EARLY_CHECKOUT_REQUESTED",
+        "조기 퇴실 요청이 들어왔어요",
+        `"${room.name}" 게스트가 ${quote.requestedCheckOut
+          .toISOString()
+          .slice(0, 10)} 퇴실을 요청했습니다.`,
+        `/host/reservations?reservationId=${id}`,
+      );
     }
-
-    return updatedReservation;
+    return request;
   }
 
-  // Host approves or rejects an early-checkout request.
-  // Approve → EARLY_CHECKOUT_APPROVED (the stay is treated as ending early).
-  // Reject  → back to CONFIRMED.
+  async requestExtension(
+    id: string,
+    guestId: string,
+    requestedCheckOutOrMonths?: Date | number,
+  ) {
+    const reservation = await this.requireGuestReservation(id, guestId);
+    if (reservation.status !== "CONFIRMED") {
+      throw new BadRequestException({
+        code: "NOT_CONFIRMED",
+        message: "이용 중인 확정 예약만 연장을 요청할 수 있습니다.",
+      });
+    }
+
+    if (!this.prisma) {
+      const months =
+        typeof requestedCheckOutOrMonths === "number"
+          ? requestedCheckOutOrMonths
+          : Math.max(
+              1,
+              fullCalendarMonthsBetween(
+                reservation.checkOut,
+                requestedCheckOutOrMonths ??
+                  addCalendarMonths(reservation.checkOut, 1),
+              ),
+            );
+      return this.repo.requestExtension(id, months);
+    }
+
+    const target =
+      requestedCheckOutOrMonths instanceof Date
+        ? requestedCheckOutOrMonths
+        : addCalendarMonths(
+            reservation.checkOut,
+            typeof requestedCheckOutOrMonths === "number"
+              ? requestedCheckOutOrMonths
+              : 1,
+          );
+    const quote = await this.buildContractChangeQuote(
+      reservation,
+      "EXTENSION",
+      target,
+    );
+    await this.assertNoActiveContractChange(id);
+
+    const fullMonths = fullCalendarMonthsBetween(
+      reservation.checkOut,
+      quote.requestedCheckOut,
+    );
+    const prisma = this.prisma;
+    const request = await prisma.$transaction(async (tx) => {
+      const created = await tx.contractChangeRequest.create({
+        data: {
+          reservationId: id,
+          requesterId: guestId,
+          type: "EXTENSION",
+          status: "HOST_REVIEW",
+          originalCheckOut: reservation.checkOut,
+          requestedCheckOut: quote.requestedCheckOut,
+          additionalRent: quote.additionalRent,
+          additionalMaintenance: quote.additionalMaintenance,
+          additionalServiceFee: quote.additionalServiceFee,
+          additionalAmount: quote.additionalAmount,
+        },
+      });
+      await tx.reservation.update({
+        where: { id },
+        data: {
+          status: "EXTENSION_REQUESTED",
+          extensionMonths: fullMonths > 0 ? fullMonths : null,
+          originalCheckOut:
+            reservation.originalCheckOut ?? reservation.checkOut,
+        },
+      });
+      return created;
+    });
+
+    const room = await this.repo.findRoom(reservation.roomId);
+    if (room && room.hostId !== guestId) {
+      await this.notifyUser(
+        room.hostId,
+        "SYSTEM",
+        "계약 연장 요청이 들어왔어요",
+        `"${room.name}" 게스트가 ${quote.requestedCheckOut
+          .toISOString()
+          .slice(0, 10)}까지 연장을 요청했습니다.`,
+        `/host/reservations?reservationId=${id}`,
+      );
+    }
+    return request;
+  }
+
+  async cancelContractChange(id: string, guestId: string) {
+    const reservation = await this.requireGuestReservation(id, guestId);
+    const prisma = this.requirePrisma();
+    const request = await this.getActiveContractChange(id);
+    if (!request) {
+      throw new BadRequestException({
+        code: "NO_ACTIVE_CHANGE_REQUEST",
+        message: "취소할 계약 변경 요청이 없습니다.",
+      });
+    }
+
+    return prisma.$transaction(async (tx) => {
+      await tx.contractChangeRequest.update({
+        where: { id: request.id },
+        data: { status: "CANCELLED" },
+      });
+      await tx.reservation.update({
+        where: { id },
+        data: {
+          status: "CONFIRMED",
+          checkOut:
+            request.type === "EXTENSION" &&
+            request.status === "PAYMENT_PENDING"
+              ? request.originalCheckOut
+              : reservation.checkOut,
+          extensionMonths: null,
+        },
+      });
+      return { ok: true };
+    });
+  }
+
   async decideEarlyCheckout(
     id: string,
     hostId: string,
     decision: "approve" | "reject",
-  ): Promise<ReservationRecord> {
-    const r = await this.repo.findById(id);
-    if (!r)
-      throw new NotFoundException({
-        code: "RESERVATION_NOT_FOUND",
-        message: "예약을 찾을 수 없습니다.",
-      });
-    const ownerId = await this.repo.findRoomHostId(id);
-    if (ownerId !== hostId) {
-      throw new ForbiddenException({
-        code: "NOT_HOST",
-        message: "본인 숙소의 예약만 처리할 수 있습니다.",
-      });
+    reason?: string,
+  ) {
+    const reservation = await this.requireHostReservation(id, hostId);
+    if (!this.prisma) {
+      if (reservation.status !== "EARLY_CHECKOUT_REQUESTED") {
+        throw new BadRequestException({
+          code: "NOT_REQUESTED",
+          message: "조기 퇴실이 요청된 예약만 처리할 수 있습니다.",
+        });
+      }
+      return decision === "approve"
+        ? this.repo.approveEarlyCheckout(
+            id,
+            effectiveEarlyCheckOut(reservation.checkIn, new Date()),
+          )
+        : this.repo.updateStatus(id, "CONFIRMED");
     }
-    if (r.status !== "EARLY_CHECKOUT_REQUESTED") {
+
+    const request = await this.getActiveContractChange(
+      id,
+      "EARLY_CHECKOUT",
+      "HOST_REVIEW",
+    );
+    if (!request) {
       throw new BadRequestException({
         code: "NOT_REQUESTED",
-        message: "조기 퇴실이 요청된 예약만 처리할 수 있습니다.",
+        message: "검토 대기 중인 조기 퇴실 요청이 없습니다.",
       });
     }
-    const room = await this.repo.findRoom(r.roomId);
 
-    const updated = await this.repo.updateStatus(
-      id,
-      decision === "approve" ? "EARLY_CHECKOUT_APPROVED" : "CONFIRMED",
-    );
+    const prisma = this.prisma;
+    if (decision === "reject") {
+      await prisma.$transaction([
+        prisma.contractChangeRequest.update({
+          where: { id: request.id },
+          data: {
+            status: "REJECTED",
+            rejectReason: reason?.trim() || null,
+            reviewedAt: new Date(),
+          },
+        }),
+        prisma.reservation.update({
+          where: { id },
+          data: { status: "CONFIRMED" },
+        }),
+      ]);
+      await this.notifyUser(
+        reservation.guestId,
+        "EARLY_CHECKOUT_REJECTED",
+        "조기 퇴실 요청이 거절되었어요",
+        reason?.trim() || "기존 계약 종료일이 유지됩니다.",
+        "/me/trips",
+      );
+      return { status: "REJECTED" };
+    }
 
-    if (this.prisma) {
-      const approved = decision === "approve";
-      const roomName = room?.name ?? "예약한 숙소";
-
-      const notification = await this.prisma.notification.create({
+    await prisma.$transaction([
+      prisma.contractChangeRequest.update({
+        where: { id: request.id },
         data: {
-          userId: r.guestId,
-          type: approved
-            ? "EARLY_CHECKOUT_APPROVED"
-            : "EARLY_CHECKOUT_REJECTED",
-          title: approved
-            ? "조기 퇴실 요청이 승인되었어요"
-            : "조기 퇴실 요청이 거절되었어요",
-          body: approved
-            ? `"${roomName}"의 조기 퇴실 요청이 승인되었습니다.`
-            : `"${roomName}"의 조기 퇴실 요청이 거절되어 기존 예약이 유지됩니다.`,
-          targetUrl: "/me/trips",
+          status: "APPROVED",
+          reviewedAt: new Date(),
+          appliedAt: new Date(),
         },
-      });
-
-      this.notificationsGateway?.emitToUser(r.guestId, notification);
-    }
-
-    return updated;
+      }),
+      prisma.reservation.update({
+        where: { id },
+        data: {
+          status: "EARLY_CHECKOUT_APPROVED",
+          checkOut: request.requestedCheckOut,
+          originalCheckOut:
+            reservation.originalCheckOut ?? request.originalCheckOut,
+        },
+      }),
+    ]);
+    await this.notifyUser(
+      reservation.guestId,
+      "EARLY_CHECKOUT_APPROVED",
+      "조기 퇴실 요청이 승인되었어요",
+      `퇴실 예정일이 ${request.requestedCheckOut
+        .toISOString()
+        .slice(0, 10)}로 변경되었습니다.`,
+      "/me/trips",
+    );
+    return { status: "APPROVED", checkOut: request.requestedCheckOut };
   }
 
-  // ── 계약 연장 ──────────────────────────────────────────────
-  // Guest asks to stay longer on a CONFIRMED reservation. Mirrors the
-  // early-checkout flow: request → host approves/rejects.
-  async requestExtension(
-    id: string,
-    guestId: string,
-    months: number,
-  ): Promise<ReservationRecord> {
-    const r = await this.repo.findById(id);
-    if (!r)
-      throw new NotFoundException({
-        code: "RESERVATION_NOT_FOUND",
-        message: "예약을 찾을 수 없습니다.",
-      });
-    if (r.guestId !== guestId) {
-      throw new ForbiddenException({
-        code: "FORBIDDEN",
-        message: "본인 예약만 요청할 수 있습니다.",
-      });
-    }
-    if (r.status !== "CONFIRMED") {
-      throw new BadRequestException({
-        code: "NOT_CONFIRMED",
-        message: "이용 중인(확정) 예약만 연장을 요청할 수 있습니다.",
-      });
-    }
-    if (months < 1 || months > 24) {
-      throw new BadRequestException({
-        code: "INVALID_MONTHS",
-        message: "연장 개월 수는 1~24개월 사이여야 합니다.",
-      });
-    }
-    return this.repo.requestExtension(id, months);
-  }
-
-  // Host approves (extend checkOut) or rejects (back to CONFIRMED).
   async decideExtension(
     id: string,
     hostId: string,
     decision: "approve" | "reject",
-  ): Promise<ReservationRecord> {
-    const r = await this.repo.findById(id);
-    if (!r)
-      throw new NotFoundException({
-        code: "RESERVATION_NOT_FOUND",
-        message: "예약을 찾을 수 없습니다.",
-      });
-    const ownerId = await this.repo.findRoomHostId(id);
-    if (ownerId !== hostId) {
-      throw new ForbiddenException({
-        code: "NOT_HOST",
-        message: "본인 숙소의 예약만 처리할 수 있습니다.",
-      });
+    reason?: string,
+  ) {
+    const reservation = await this.requireHostReservation(id, hostId);
+    if (!this.prisma) {
+      if (reservation.status !== "EXTENSION_REQUESTED") {
+        throw new BadRequestException({
+          code: "NOT_REQUESTED",
+          message: "연장이 요청된 예약만 처리할 수 있습니다.",
+        });
+      }
+      const months = reservation.extensionMonths ?? 0;
+      return decision === "approve"
+        ? this.repo.applyExtension(id, months)
+        : this.repo.clearExtension(id);
     }
-    if (r.status !== "EXTENSION_REQUESTED") {
+
+    const request = await this.getActiveContractChange(
+      id,
+      "EXTENSION",
+      "HOST_REVIEW",
+    );
+    if (!request) {
       throw new BadRequestException({
         code: "NOT_REQUESTED",
-        message: "연장이 요청된 예약만 처리할 수 있습니다.",
+        message: "검토 대기 중인 연장 요청이 없습니다.",
       });
     }
-    const months = r.extensionMonths ?? 0;
+    const prisma = this.prisma;
 
-    if (decision === "approve" && months < 1) {
-      throw new BadRequestException({
-        code: "INVALID_MONTHS",
-        message: "요청된 연장 개월 수가 올바르지 않습니다.",
-      });
+    if (decision === "reject") {
+      await prisma.$transaction([
+        prisma.contractChangeRequest.update({
+          where: { id: request.id },
+          data: {
+            status: "REJECTED",
+            rejectReason: reason?.trim() || null,
+            reviewedAt: new Date(),
+          },
+        }),
+        prisma.reservation.update({
+          where: { id },
+          data: {
+            status: "CONFIRMED",
+            extensionMonths: null,
+          },
+        }),
+      ]);
+      await this.notifyUser(
+        reservation.guestId,
+        "SYSTEM",
+        "계약 연장 요청이 거절되었어요",
+        reason?.trim() || "기존 계약 종료일이 유지됩니다.",
+        "/me/trips",
+      );
+      return { status: "REJECTED" };
     }
 
-    const updated =
-      decision === "approve"
-        ? await this.repo.applyExtension(id, months)
-        : await this.repo.clearExtension(id);
-
-    if (this.prisma) {
-      const approved = decision === "approve";
-      const room = await this.repo.findRoom(r.roomId);
-      const roomName = room?.name ?? "예약한 숙소";
-
-      const notification = await this.prisma.notification.create({
+    // 승인 직전 다시 확인한다. 결제 대기 24시간 동안에는 checkOut을
+    // 임시 연장해 다른 예약이 해당 기간을 선점하지 못하게 한다.
+    const quote = await this.buildContractChangeQuote(
+      reservation,
+      "EXTENSION",
+      request.requestedCheckOut,
+    );
+    const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await prisma.$transaction([
+      prisma.contractChangeRequest.update({
+        where: { id: request.id },
         data: {
-          userId: r.guestId,
-          type: "SYSTEM",
-          title: approved
-            ? "계약 연장이 승인되었어요"
-            : "계약 연장이 거절되었어요",
-          body: approved
-            ? `"${roomName}" 계약이 ${months}개월 연장되었습니다. 변경된 퇴실 일정을 확인해주세요.`
-            : `"${roomName}" 계약 연장 요청이 거절되어 기존 계약 일정이 유지됩니다.`,
-          targetUrl: "/me/trips",
+          status: "PAYMENT_PENDING",
+          reviewedAt: new Date(),
+          paymentDeadline: deadline,
+          additionalRent: quote.additionalRent,
+          additionalMaintenance: quote.additionalMaintenance,
+          additionalServiceFee: quote.additionalServiceFee,
+          additionalAmount: quote.additionalAmount,
         },
-      });
+      }),
+      prisma.reservation.update({
+        where: { id },
+        data: {
+          checkOut: request.requestedCheckOut,
+          status: "EXTENSION_REQUESTED",
+        },
+      }),
+    ]);
+    await this.notifyUser(
+      reservation.guestId,
+      "PAYMENT",
+      "계약 연장이 승인되었어요",
+      `24시간 안에 추가 금액 ${quote.additionalAmount.toLocaleString(
+        "ko-KR",
+      )}원을 결제해주세요.`,
+      "/me/trips",
+    );
+    return {
+      status: "PAYMENT_PENDING",
+      paymentDeadline: deadline,
+      additionalAmount: quote.additionalAmount,
+    };
+  }
 
-      this.notificationsGateway?.emitToUser(r.guestId, notification);
+  async confirmExtensionPayment(
+    id: string,
+    guestId: string,
+    dto: ContractChangePaymentDto,
+  ) {
+    const reservation = await this.requireGuestReservation(id, guestId);
+    const prisma = this.requirePrisma();
+    const request = await this.getActiveContractChange(
+      id,
+      "EXTENSION",
+      "PAYMENT_PENDING",
+    );
+    if (!request) {
+      throw new BadRequestException({
+        code: "PAYMENT_NOT_PENDING",
+        message: "추가 결제를 기다리는 연장 요청이 없습니다.",
+      });
     }
 
-    return updated;
+    if (
+      request.paymentDeadline &&
+      request.paymentDeadline.getTime() < Date.now()
+    ) {
+      await prisma.$transaction([
+        prisma.contractChangeRequest.update({
+          where: { id: request.id },
+          data: { status: "EXPIRED" },
+        }),
+        prisma.reservation.update({
+          where: { id },
+          data: {
+            checkOut: request.originalCheckOut,
+            status: "CONFIRMED",
+            extensionMonths: null,
+          },
+        }),
+      ]);
+      throw new BadRequestException({
+        code: "EXTENSION_PAYMENT_EXPIRED",
+        message: "연장 결제 기한이 만료되었습니다. 다시 요청해주세요.",
+      });
+    }
+
+    if (dto.amount !== request.additionalAmount) {
+      throw new BadRequestException({
+        code: "AMOUNT_MISMATCH",
+        message: "서버에서 계산한 연장 금액과 결제 금액이 다릅니다.",
+      });
+    }
+    const verified = await this.payments.verify({
+      provider: dto.provider,
+      paymentKey: dto.paymentKey,
+      expectedAmount: request.additionalAmount,
+    });
+    if (
+      !verified.ok ||
+      verified.paidAmount !== request.additionalAmount
+    ) {
+      throw new BadRequestException({
+        code: "PAYMENT_UNVERIFIED",
+        message: "추가 결제를 확인하지 못했습니다.",
+      });
+    }
+
+    const months = Math.max(
+      1,
+      fullCalendarMonthsBetween(
+        reservation.checkIn,
+        request.requestedCheckOut,
+      ),
+    );
+    await prisma.$transaction([
+      prisma.contractChangeRequest.update({
+        where: { id: request.id },
+        data: {
+          status: "APPROVED",
+          paymentProvider: dto.provider,
+          paymentTxnId: verified.providerTxnId,
+          paidAt: new Date(),
+          appliedAt: new Date(),
+        },
+      }),
+      prisma.reservation.update({
+        where: { id },
+        data: {
+          checkOut: request.requestedCheckOut,
+          months,
+          status: "CONFIRMED",
+          extensionMonths: null,
+          originalCheckOut:
+            reservation.originalCheckOut ?? request.originalCheckOut,
+        },
+      }),
+    ]);
+    await this.notifyUser(
+      reservation.guestId,
+      "PAYMENT",
+      "계약 연장이 확정되었어요",
+      `새 퇴실일은 ${request.requestedCheckOut
+        .toISOString()
+        .slice(0, 10)}입니다.`,
+      "/me/trips",
+    );
+    return {
+      status: "CONFIRMED",
+      checkOut: request.requestedCheckOut,
+      paidAmount: request.additionalAmount,
+    };
+  }
+
+  async completeEarlyCheckout(
+    id: string,
+    hostId: string,
+    depositDeduction: number,
+  ) {
+    const reservation = await this.requireHostReservation(id, hostId);
+    const prisma = this.requirePrisma();
+    const request = await prisma.contractChangeRequest.findFirst({
+      where: {
+        reservationId: id,
+        type: "EARLY_CHECKOUT",
+        status: "APPROVED",
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!request) {
+      throw new BadRequestException({
+        code: "EARLY_CHECKOUT_NOT_APPROVED",
+        message: "승인된 조기 퇴실 요청이 없습니다.",
+      });
+    }
+    const deduction = Math.min(
+      Math.max(0, Math.trunc(depositDeduction)),
+      reservation.deposit,
+    );
+    const finalRefund =
+      request.estimatedRefund + Math.max(0, reservation.deposit - deduction);
+
+    await prisma.$transaction([
+      prisma.contractChangeRequest.update({
+        where: { id: request.id },
+        data: {
+          status: "COMPLETED",
+          depositDeduction: deduction,
+          finalRefund,
+          actualCheckOut: request.requestedCheckOut,
+        },
+      }),
+      prisma.reservation.update({
+        where: { id },
+        data: {
+          status: "COMPLETED",
+          actualCheckOut: request.requestedCheckOut,
+          checkOut: request.requestedCheckOut,
+        },
+      }),
+    ]);
+    await this.notifyUser(
+      reservation.guestId,
+      "SYSTEM",
+      "조기 퇴실 정산이 완료되었어요",
+      `예상 반환 금액은 ${finalRefund.toLocaleString(
+        "ko-KR",
+      )}원입니다. 실제 환불은 결제사 처리 결과를 확인해주세요.`,
+      "/me/trips",
+    );
+    return { status: "COMPLETED", finalRefund };
   }
 
   // All reservations for the logged-in guest (my trips).
   async listMine(guestId: string) {
+    await this.expireStaleExtensionPayments();
     return this.repo.listByGuest(guestId);
   }
 
   // All reservations across every room this host owns (host 예약 관리 inbox).
   async listForHost(hostId: string) {
+    await this.expireStaleExtensionPayments();
     return this.repo.listByHost(hostId);
   }
 
@@ -703,6 +1109,433 @@ export class ReservationsService {
     return updated;
   }
 
+  private requirePrisma(): PrismaService {
+    if (!this.prisma) {
+      throw new BadRequestException({
+        code: "CONTRACT_CHANGE_STORAGE_UNAVAILABLE",
+        message: "계약 변경 저장소를 사용할 수 없습니다.",
+      });
+    }
+    return this.prisma;
+  }
+
+  private async requireGuestReservation(
+    id: string,
+    guestId: string,
+  ): Promise<ReservationRecord> {
+    const reservation = await this.repo.findById(id);
+    if (!reservation) {
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
+    }
+    if (reservation.guestId !== guestId) {
+      throw new ForbiddenException({
+        code: "FORBIDDEN",
+        message: "본인의 예약만 변경할 수 있습니다.",
+      });
+    }
+    return reservation;
+  }
+
+  private async requireHostReservation(
+    id: string,
+    hostId: string,
+  ): Promise<ReservationRecord> {
+    const reservation = await this.repo.findById(id);
+    if (!reservation) {
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
+    }
+    const ownerId = await this.repo.findRoomHostId(id);
+    if (ownerId !== hostId) {
+      throw new ForbiddenException({
+        code: "NOT_HOST",
+        message: "본인 숙소의 예약만 처리할 수 있습니다.",
+      });
+    }
+    return reservation;
+  }
+
+  private async getActiveContractChange(
+    reservationId: string,
+    type?: "EARLY_CHECKOUT" | "EXTENSION",
+    status?: "HOST_REVIEW" | "PAYMENT_PENDING",
+  ): Promise<any | null> {
+    if (!this.prisma) return null;
+    return this.prisma.contractChangeRequest.findFirst({
+      where: {
+        reservationId,
+        ...(type ? { type } : {}),
+        status: status
+          ? status
+          : { in: ["HOST_REVIEW", "PAYMENT_PENDING"] },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  private async assertNoActiveContractChange(
+    reservationId: string,
+  ): Promise<void> {
+    const active = await this.getActiveContractChange(reservationId);
+    if (active) {
+      throw new ConflictException({
+        code: "ACTIVE_CHANGE_REQUEST_EXISTS",
+        message: "이미 처리 중인 계약 변경 요청이 있습니다.",
+      });
+    }
+  }
+
+  private async buildContractChangeQuote(
+    reservation: ReservationRecord,
+    type: "EARLY_CHECKOUT" | "EXTENSION",
+    requestedCheckOut: Date,
+  ) {
+    const target = stripTime(requestedCheckOut);
+    const currentCheckOut = stripTime(reservation.checkOut);
+    const checkIn = stripTime(reservation.checkIn);
+    const room = await this.repo.findRoom(reservation.roomId);
+    if (!room) {
+      throw new NotFoundException({
+        code: "ROOM_NOT_FOUND",
+        message: "숙소를 찾을 수 없습니다.",
+      });
+    }
+
+    if (type === "EARLY_CHECKOUT") {
+      const today = stripTime(new Date());
+      if (target < today || target <= checkIn) {
+        throw new BadRequestException({
+          code: "INVALID_EARLY_CHECKOUT_DATE",
+          message: "희망 퇴실일은 오늘 이후이면서 입주일보다 뒤여야 합니다.",
+        });
+      }
+      if (target >= currentCheckOut) {
+        throw new BadRequestException({
+          code: "NOT_EARLY_CHECKOUT",
+          message: "조기 퇴실일은 현재 계약 퇴실일보다 빨라야 합니다.",
+        });
+      }
+
+      const minimumContractEnd = addCalendarMonths(
+        checkIn,
+        Math.max(1, room.minStayMonths),
+      );
+      const billableCheckOut =
+        target < minimumContractEnd ? minimumContractEnd : target;
+      const oldRent = stayCharge(
+        reservation.monthlyRent,
+        checkIn,
+        currentCheckOut,
+      ).amount;
+      const newRent = stayCharge(
+        reservation.monthlyRent,
+        checkIn,
+        billableCheckOut,
+      ).amount;
+      const oldMaintenance = stayCharge(
+        reservation.maintenanceFee,
+        checkIn,
+        currentCheckOut,
+      ).amount;
+      const newMaintenance = stayCharge(
+        reservation.maintenanceFee,
+        checkIn,
+        billableCheckOut,
+      ).amount;
+      const estimatedRefund = Math.max(
+        0,
+        oldRent +
+          oldMaintenance -
+          newRent -
+          newMaintenance,
+      );
+
+      return {
+        type,
+        originalCheckOut: currentCheckOut,
+        requestedCheckOut: target,
+        changedDays: Math.round(
+          (currentCheckOut.getTime() - target.getTime()) / 86_400_000,
+        ),
+        minimumContractEnd,
+        minimumStaySatisfied: target >= minimumContractEnd,
+        additionalRent: 0,
+        additionalMaintenance: 0,
+        additionalServiceFee: 0,
+        additionalAmount: 0,
+        estimatedRefund,
+      };
+    }
+
+    if (target <= currentCheckOut) {
+      throw new BadRequestException({
+        code: "INVALID_EXTENSION_DATE",
+        message: "연장 퇴실일은 현재 퇴실일보다 뒤여야 합니다.",
+      });
+    }
+    const maximumCheckOut = addCalendarMonths(checkIn, MAX_STAY_MONTHS);
+    if (target > maximumCheckOut) {
+      throw new BadRequestException({
+        code: "MAX_STAY",
+        message: `최대 ${MAX_STAY_MONTHS}개월까지 계약할 수 있습니다.`,
+      });
+    }
+
+    const [overlaps, blockedDates] = await Promise.all([
+      this.repo.findOverlapping(
+        reservation.roomId,
+        currentCheckOut,
+        target,
+      ),
+      this.repo.findBlockedDates(
+        reservation.roomId,
+        currentCheckOut,
+        target,
+      ),
+    ]);
+    this.assertNoHostBlocks(blockedDates);
+    this.assertInventoryAvailable(
+      room,
+      overlaps.filter((row) => row.id !== reservation.id),
+      {
+        bookingMode: reservation.bookingMode,
+        reservedSpots: reservation.reservedSpots,
+      },
+    );
+
+    const additionalRent = stayCharge(
+      reservation.monthlyRent,
+      currentCheckOut,
+      target,
+    ).amount;
+    const additionalMaintenance = stayCharge(
+      reservation.maintenanceFee,
+      currentCheckOut,
+      target,
+    ).amount;
+    const additionalServiceFee = Math.round(
+      additionalRent * SERVICE_FEE_RATE,
+    );
+    const additionalAmount =
+      additionalRent +
+      additionalMaintenance +
+      additionalServiceFee;
+
+    return {
+      type,
+      originalCheckOut: currentCheckOut,
+      requestedCheckOut: target,
+      changedDays: Math.round(
+        (target.getTime() - currentCheckOut.getTime()) / 86_400_000,
+      ),
+      minimumContractEnd: null,
+      minimumStaySatisfied: true,
+      additionalRent,
+      additionalMaintenance,
+      additionalServiceFee,
+      additionalAmount,
+      estimatedRefund: 0,
+    };
+  }
+
+  private async expireStaleExtensionPayments(): Promise<void> {
+    if (!this.prisma) return;
+    const prisma = this.prisma;
+    const expired = await prisma.contractChangeRequest.findMany({
+      where: {
+        type: "EXTENSION",
+        status: "PAYMENT_PENDING",
+        paymentDeadline: { lt: new Date() },
+      },
+      select: {
+        id: true,
+        reservationId: true,
+        originalCheckOut: true,
+      },
+    });
+
+    for (const request of expired) {
+      await prisma.$transaction([
+        prisma.contractChangeRequest.update({
+          where: { id: request.id },
+          data: { status: "EXPIRED" },
+        }),
+        prisma.reservation.update({
+          where: { id: request.reservationId },
+          data: {
+            status: "CONFIRMED",
+            checkOut: request.originalCheckOut,
+            extensionMonths: null,
+          },
+        }),
+      ]);
+    }
+  }
+
+  private async notifyUser(
+    userId: string,
+    type: string,
+    title: string,
+    body: string,
+    targetUrl: string,
+  ): Promise<void> {
+    if (!this.prisma) return;
+    const notification = await this.prisma.notification.create({
+      data: {
+        userId,
+        type: type as any,
+        title,
+        body,
+        targetUrl,
+      },
+    });
+    this.notificationsGateway?.emitToUser(userId, notification);
+  }
+
+  private resolveStayWindow(
+    checkIn: Date,
+    checkOut?: Date,
+    legacyMonths?: number,
+  ): { checkOut: Date; fullMonths: number } {
+    const resolvedCheckOut = checkOut
+      ? stripTime(checkOut)
+      : addCalendarMonths(stripTime(checkIn), legacyMonths ?? 0);
+    const fullMonths = fullCalendarMonthsBetween(checkIn, resolvedCheckOut);
+
+    if (resolvedCheckOut <= stripTime(checkIn)) {
+      throw new UnprocessableEntityException({
+        code: "INVALID_STAY_WINDOW",
+        message: "퇴실일은 입주일보다 뒤여야 합니다.",
+      });
+    }
+    if (resolvedCheckOut > addCalendarMonths(checkIn, MAX_STAY_MONTHS)) {
+      throw new UnprocessableEntityException({
+        code: "MAX_STAY",
+        message: `최대 ${MAX_STAY_MONTHS}개월까지 예약할 수 있습니다.`,
+      });
+    }
+    return { checkOut: resolvedCheckOut, fullMonths: Math.max(1, fullMonths) };
+  }
+
+  private assertStayRules(
+    room: RoomRecord,
+    checkIn: Date,
+    checkOut: Date,
+  ): void {
+    const platformMinimum = addCalendarMonths(checkIn, 1);
+    if (checkOut < platformMinimum) {
+      throw new UnprocessableEntityException({
+        code: "PLATFORM_MIN_STAY",
+        message: `최소 거주 기간은 1개월입니다. 퇴실일을 ${platformMinimum.toISOString().slice(0, 10)} 이후로 선택해주세요.`,
+      });
+    }
+
+    const roomMinimum = addCalendarMonths(checkIn, room.minStayMonths);
+    if (checkOut < roomMinimum) {
+      throw new UnprocessableEntityException({
+        code: "MIN_STAY",
+        message: `이 숙소의 최소 계약 기간은 ${room.minStayMonths}개월입니다. 퇴실일을 ${roomMinimum.toISOString().slice(0, 10)} 이후로 선택해주세요.`,
+      });
+    }
+    if (checkIn < stripTime(room.availableFrom)) {
+      throw new UnprocessableEntityException({
+        code: "NOT_AVAILABLE_YET",
+        message: "선택한 날짜에는 아직 입주할 수 없습니다.",
+      });
+    }
+  }
+
+  private normalizeBooking(
+    room: RoomRecord,
+    requestedMode?: BookingMode,
+    requestedSpots?: number,
+  ): { bookingMode: BookingMode; reservedSpots: number } {
+    if (room.rentalUnit !== "BED") {
+      if (requestedMode && requestedMode !== "UNIT") {
+        throw new BadRequestException({
+          code: "INVALID_BOOKING_MODE",
+          message: "전체 숙소와 개인실은 숙소 단위로 예약해야 합니다.",
+        });
+      }
+      if (requestedSpots != null && requestedSpots !== 1) {
+        throw new BadRequestException({
+          code: "INVALID_RESERVED_SPOTS",
+          message: "이 숙소는 한 개의 예약 단위로만 예약할 수 있습니다.",
+        });
+      }
+      return { bookingMode: "UNIT", reservedSpots: 1 };
+    }
+
+    const capacity = Math.max(1, room.capacity ?? 1);
+    const bookingMode: BookingMode =
+      requestedMode === "WHOLE_ROOM" ? "WHOLE_ROOM" : "BED";
+    const reservedSpots =
+      bookingMode === "WHOLE_ROOM" ? capacity : requestedSpots ?? 1;
+
+    if (reservedSpots < 1 || reservedSpots > capacity) {
+      throw new BadRequestException({
+        code: "INVALID_RESERVED_SPOTS",
+        message: `예약 인원은 1명부터 최대 ${capacity}명까지 선택할 수 있습니다.`,
+      });
+    }
+
+    return { bookingMode, reservedSpots };
+  }
+
+  private assertInventoryAvailable(
+    room: RoomRecord,
+    overlaps: ReservationRecord[],
+    booking: { bookingMode: BookingMode; reservedSpots: number },
+  ): number | null {
+    const inventory = calculateInventory(
+      room.rentalUnit,
+      room.capacity,
+      overlaps,
+    );
+
+    if (room.rentalUnit !== "BED") {
+      if (inventory.fullyBooked) throwDatesUnavailable();
+      return null;
+    }
+
+    if (booking.bookingMode === "WHOLE_ROOM") {
+      if (inventory.reservedSpots > 0) throwDatesUnavailable();
+      return 0;
+    }
+
+    const remaining = inventory.remainingSpots ?? 0;
+    if (booking.reservedSpots > remaining) {
+      throw new ConflictException({
+        code: "NOT_ENOUGH_SPOTS",
+        message: `선택한 기간에 남은 자리가 ${remaining}개뿐입니다.`,
+      });
+    }
+
+    return remaining - booking.reservedSpots;
+  }
+
+  private assertNoHostBlocks(blockedDates: Date[]): void {
+    if (blockedDates.length === 0) return;
+    throw new ConflictException({
+      code: "HOST_BLOCKED_DATES",
+      message: "선택한 기간에 호스트가 예약 불가로 설정한 날짜가 있습니다. 다른 기간을 선택해주세요.",
+    });
+  }
+
+  private scaledPricing(room: RoomRecord, units: number) {
+    return {
+      monthlyRent: room.monthlyRent * units,
+      deposit: room.deposit * units,
+      cleaningFee: room.cleaningFee * units,
+      maintenanceFee: room.maintenanceFee * units,
+    };
+  }
+
   private async resolveDiscount(
     code: string | undefined,
     spend: number,
@@ -717,6 +1550,13 @@ export class ReservationsService {
     assertCouponUsable(coupon);
     return couponDiscount(coupon, spend);
   }
+}
+
+function throwDatesUnavailable(): never {
+  throw new ConflictException({
+    code: "DATES_UNAVAILABLE",
+    message: "선택한 기간은 예약이 마감되었습니다. 다른 날짜를 선택해주세요.",
+  });
 }
 
 function assertCouponUsable(c: CouponRecord) {
@@ -735,13 +1575,20 @@ function assertCouponUsable(c: CouponRecord) {
   }
 }
 
-function addMonths(d: Date, months: number): Date {
-  const out = new Date(d);
-  out.setMonth(out.getMonth() + months);
-  return out;
+function effectiveEarlyCheckOut(checkIn: Date, approvedAt: Date): Date {
+  // 퇴실 승인 당일은 기존 게스트가 사용한 날짜로 남기고 다음 날부터 재고를 푼다.
+  // 아직 입주 전인 잘못된 요청이 들어와도 checkOut이 checkIn보다 앞서지 않게 한다.
+  const approvedDay = stripTime(approvedAt);
+  approvedDay.setUTCDate(approvedDay.getUTCDate() + 1);
+  const minimum = stripTime(checkIn);
+  minimum.setUTCDate(minimum.getUTCDate() + 1);
+  return approvedDay > minimum ? approvedDay : minimum;
 }
+
 function stripTime(d: Date): Date {
-  const out = new Date(d);
-  out.setHours(0, 0, 0, 0);
-  return out;
+  // 예약 날짜는 시각이 없는 달력 날짜다. 로컬 달력의 연·월·일을
+  // UTC 자정으로 고정해 개발 환경(KST)과 배포 환경(UTC)의 날짜를 맞춘다.
+  return new Date(
+    Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()),
+  );
 }

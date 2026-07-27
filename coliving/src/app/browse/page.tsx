@@ -1,203 +1,444 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import type { House } from "@/lib/types";
+import {
+  BUILDING_TYPE_LABELS,
+  RENTAL_UNIT_LABELS,
+  SHARED_FACILITY_LABELS,
+  type BuildingType,
+  type House,
+  type RentalUnit,
+  type SharedFacility,
+} from "@/lib/types";
 import { won } from "@/lib/format";
-import { jobHubs, commuteBand } from "@/lib/commute";
+import { commuteBand, jobHubs } from "@/lib/commute";
 import { Thumbnail } from "@/components/Thumbnail";
-import { ROOM_TYPE_LABELS } from "@/lib/types";
 import { regionLabel } from "@/lib/seoul";
 
-// Leaflet touches window, so load the map only on the client.
-const BrowseMap = dynamic(() => import("@/components/BrowseMap"), {
-  ssr: false,
-  loading: () => (
-    <div style={{ width: "100%", height: 380, background: "var(--secondary-soft)" }} />
-  ),
-});
+const BrowseMap = dynamic(
+  () => import("@/components/BrowseMap"),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        style={{
+          width: "100%",
+          height: 380,
+          background: "var(--secondary-soft)",
+        }}
+      />
+    ),
+  },
+);
 
-const vibes = ["any", "quiet", "social", "creative", "calm", "wellness", "international"];
-const VIBE_LABELS: Record<string, string> = { any: "전체", quiet: "조용한 생활", social: "교류가 활발한 곳", creative: "창작자 중심", calm: "차분한 환경", wellness: "건강한 생활", international: "국제적인 환경" };
-const roomTypes = ["any", "one_room", "share_room", "whole_house", "apartment"];
+const RENTAL_UNITS: RentalUnit[] = [
+  "whole",
+  "private_room",
+  "bed",
+];
+
+const BUILDING_TYPES: BuildingType[] = [
+  "house",
+  "apartment",
+  "officetel",
+  "studio",
+];
+
+const SHARED_FACILITIES: SharedFacility[] = [
+  "bathroom",
+  "kitchen",
+  "living_room",
+  "laundry_room",
+  "entrance",
+];
+
+const VIBES = [
+  "quiet",
+  "social",
+  "creative",
+  "calm",
+  "wellness",
+  "international",
+] as const;
+
+const VIBE_LABELS: Record<string, string> = {
+  quiet: "조용한 생활",
+  social: "교류가 활발한 곳",
+  creative: "창작자 중심",
+  calm: "차분한 환경",
+  wellness: "건강한 생활",
+  international: "국제적인 환경",
+};
+
+function toggleValue<T extends string>(
+  values: T[],
+  value: T,
+): T[] {
+  return values.includes(value)
+    ? values.filter((item) => item !== value)
+    : [...values, value];
+}
+
+function rentalUnitOf(house: House): RentalUnit {
+  if (house.rentalUnit) return house.rentalUnit;
+  if (house.roomType === "share_room") return "bed";
+  if (house.roomType === "one_room") return "private_room";
+  return "whole";
+}
+
+function buildingTypeOf(house: House): BuildingType {
+  if (house.buildingType) return house.buildingType;
+  if (house.roomType === "apartment") return "apartment";
+  if (house.roomType === "whole_house") return "house";
+  return "studio";
+}
 
 export default function Browse() {
-  const [hub, setHub] = useState<string>("gangnam");
+  const [hub, setHub] = useState("gangnam");
   const [q, setQ] = useState("");
-  const [roomType, setRoomType] = useState("any");
-  const [vibe, setVibe] = useState("any");
-  const [maxRent, setMaxRent] = useState(1000000);
+  const [rentalUnits, setRentalUnits] = useState<RentalUnit[]>([]);
+  const [buildingTypes, setBuildingTypes] = useState<BuildingType[]>([]);
+  const [sharedFacilities, setSharedFacilities] = useState<SharedFacility[]>([]);
+  const [vibes, setVibes] = useState<string[]>([]);
+  const [maxRent, setMaxRent] = useState(1_100_000);
   const [maxCommute, setMaxCommute] = useState(60);
   const [sort, setSort] = useState("commute");
   const [results, setResults] = useState<House[]>([]);
   const [loading, setLoading] = useState(true);
   const [hover, setHover] = useState<string | null>(null);
 
+  const activeHub = useMemo(
+    () => jobHubs.find((item) => item.id === hub),
+    [hub],
+  );
+
+  const activeFilterCount =
+    rentalUnits.length +
+    buildingTypes.length +
+    sharedFacilities.length +
+    vibes.length +
+    (q ? 1 : 0) +
+    (maxRent < 1_500_000 ? 1 : 0) +
+    (maxCommute < 60 ? 1 : 0);
+
+  const resetFilters = () => {
+    setQ("");
+    setRentalUnits([]);
+    setBuildingTypes([]);
+    setSharedFacilities([]);
+    setVibes([]);
+    setMaxRent(1_100_000);
+    setMaxCommute(60);
+    setSort("commute");
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({
-      q,
-      roomType,
-      vibe,
-      maxRent: String(maxRent),
-      maxCommute: String(maxCommute),
-      hub,
-      sort,
-    });
-    const res = await fetch(`/api/houses?${params}`);
-    const data = await res.json();
-    setResults(data.houses);
-    setLoading(false);
-  }, [q, roomType, vibe, maxRent, maxCommute, hub, sort]);
+
+    try {
+      const params = new URLSearchParams({
+        q,
+        rentalUnits: rentalUnits.join(","),
+        buildingTypes: buildingTypes.join(","),
+        sharedFacilities: sharedFacilities.join(","),
+        vibes: vibes.join(","),
+        maxRent: String(maxRent),
+        maxCommute: String(maxCommute),
+        hub,
+        sort,
+      });
+
+      const response = await fetch(`/api/houses?${params}`);
+
+      if (!response.ok) {
+        throw new Error("통근 숙소 검색에 실패했습니다.");
+      }
+
+      const data = await response.json();
+      setResults(data.houses ?? []);
+    } catch {
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    buildingTypes,
+    hub,
+    maxCommute,
+    maxRent,
+    q,
+    rentalUnits,
+    sharedFacilities,
+    sort,
+    vibes,
+  ]);
 
   useEffect(() => {
-    const t = setTimeout(load, 180);
-    return () => clearTimeout(t);
+    const timer = window.setTimeout(load, 180);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
-  const activeHub = jobHubs.find((h) => h.id === hub);
-
   return (
-    <div className="wrap" style={{ paddingTop: 40, paddingBottom: 60 }}>
+    <div
+      className="wrap commute-browse-page"
+      style={{
+        paddingTop: 40,
+        paddingBottom: 60,
+      }}
+    >
       <span className="eyebrow">직장 위치를 먼저</span>
-      <h1 className="display" style={{ fontSize: 40, marginTop: 8, marginBottom: 6 }}>
+      <h1
+        className="display"
+        style={{
+          fontSize: 40,
+          marginTop: 8,
+          marginBottom: 6,
+        }}
+      >
         직장과 가까운 숙소 찾기
       </h1>
-      <p style={{ color: "var(--text-2)", maxWidth: 560 }}>
-출근 목적지를 기준으로 실제 이동 시간이 짧은 숙소부터 보여드립니다.
+      <p
+        style={{
+          color: "var(--text-2)",
+          maxWidth: 620,
+          lineHeight: 1.65,
+        }}
+      >
+        서울·경기·인천의 주요 업무지구를 기준으로 통근시간이 짧은
+        숙소부터 비교합니다. 예약 공간, 건물 유형, 공유 시설은 여러 개를
+        동시에 선택할 수 있습니다.
       </p>
 
-      {/* Office picker — the commute-first entry point */}
-      <div style={{ marginTop: 22 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 10 }}>
-          어디로 출근하시나요?
+      <section className="commute-section">
+        <div className="commute-section-heading">
+          <div>
+            <strong>어디로 출근하시나요?</strong>
+            <p>근무지와 가장 가까운 업무지구를 선택하세요.</p>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {jobHubs.map((h) => {
-            const on = hub === h.id;
+
+        <div className="commute-hub-grid">
+          {jobHubs.map((item) => {
+            const active = hub === item.id;
+
             return (
               <button
-                key={h.id}
-                onClick={() => setHub(h.id)}
-                className="card"
-                style={{
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  border: on ? "1.5px solid var(--text)" : "1px solid var(--border)",
-                  background: on ? "var(--text)" : "#fff",
-                  // Inactive buttons are always white, so force dark text
-                  // (var(--text) is light in dark mode and would vanish).
-                  color: on ? "var(--bg)" : "#222222",
-                  transition: "all .15s ease",
-                }}
+                key={item.id}
+                type="button"
+                className="commute-hub-card press"
+                data-active={active}
+                onClick={() => setHub(item.id)}
               >
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{h.name}</div>
-                <div style={{ fontSize: 11.5, opacity: on ? 0.75 : 0.6, marginTop: 2 }}>
-                  {h.label}
-                </div>
+                <strong>{item.name}</strong>
+                <span>{item.label}</span>
               </button>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      {/* Filter bar */}
-      <div
-        className="card filter-bar"
-        style={{
-          padding: 18,
-          alignItems: "end",
-          margin: "22px 0",
-        }}
-      >
-        <div className="field">
-          <label>숙소 검색</label>
-          <input
-            placeholder="지역, 숙소명, 분위기 검색"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label>주거 형태</label>
-          <select value={roomType} onChange={(e) => setRoomType(e.target.value)}>
-            {roomTypes.map((r) => (
-              <option key={r} value={r}>
-                {r === "any" ? "전체 유형" : ROOM_TYPE_LABELS[r as keyof typeof ROOM_TYPE_LABELS]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>최대 통근 시간 · {maxCommute}분</label>
-          <input
-            type="range"
-            min={15}
-            max={60}
-            step={5}
-            value={maxCommute}
-            onChange={(e) => setMaxCommute(Number(e.target.value))}
-          />
-        </div>
-        <div className="field">
-          <label>정렬</label>
-          <select value={sort} onChange={(e) => setSort(e.target.value)}>
-            <option value="commute">통근 시간 짧은 순</option>
-            <option value="recommended">추천순</option>
-            <option value="price-asc">가격 낮은 순</option>
-            <option value="price-desc">가격 높은 순</option>
-            <option value="rating">평점 높은 순</option>
-          </select>
-        </div>
-      </div>
+      <section className="card commute-filter-panel">
+        <div className="commute-filter-header">
+          <div>
+            <strong>통근 조건과 숙소 조건</strong>
+            <p>
+              필요한 조건만 선택하세요. 공유 시설은 선택한 시설을 모두
+              갖춘 숙소만 표시합니다.
+            </p>
+          </div>
 
-      {/* Vibe chips */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
-        {vibes.map((v) => (
-          <button
-            key={v}
-            className="chip"
-            data-active={vibe === v}
-            onClick={() => setVibe(v)}
-          >
-            {VIBE_LABELS[v] ?? v}
-          </button>
-        ))}
-      </div>
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              className="btn btn-ghost press"
+              onClick={resetFilters}
+            >
+              조건 초기화
+            </button>
+          )}
+        </div>
+
+        <div className="commute-basic-grid">
+          <label className="field commute-search-field">
+            <span>숙소 검색</span>
+            <input
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+              placeholder="지역, 동네 또는 숙소명 검색"
+            />
+          </label>
+
+          <label className="field">
+            <span>최대 통근시간 · {maxCommute}분</span>
+            <input
+              type="range"
+              min={15}
+              max={60}
+              step={5}
+              value={maxCommute}
+              onChange={(event) =>
+                setMaxCommute(Number(event.target.value))
+              }
+            />
+          </label>
+
+          <label className="field">
+            <span>최대 월세 · {won(maxRent)}</span>
+            <input
+              type="range"
+              min={500_000}
+              max={1_500_000}
+              step={50_000}
+              value={maxRent}
+              onChange={(event) =>
+                setMaxRent(Number(event.target.value))
+              }
+            />
+          </label>
+
+          <label className="field">
+            <span>정렬</span>
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value)}
+            >
+              <option value="commute">통근시간 짧은 순</option>
+              <option value="recommended">추천순</option>
+              <option value="price-asc">월세 낮은 순</option>
+              <option value="price-desc">월세 높은 순</option>
+              <option value="rating">평점 높은 순</option>
+            </select>
+          </label>
+        </div>
+
+        <FilterGroup
+          title="예약 공간"
+          description="단독형·개인실·다인실을 여러 개 선택할 수 있습니다."
+        >
+          {RENTAL_UNITS.map((item) => (
+            <OptionChip
+              key={item}
+              active={rentalUnits.includes(item)}
+              onClick={() =>
+                setRentalUnits((current) =>
+                  toggleValue(current, item),
+                )
+              }
+            >
+              {RENTAL_UNIT_LABELS[item]}
+            </OptionChip>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup
+          title="건물 유형"
+          description="선호하는 건물 형태를 복수 선택할 수 있습니다."
+        >
+          {BUILDING_TYPES.map((item) => (
+            <OptionChip
+              key={item}
+              active={buildingTypes.includes(item)}
+              onClick={() =>
+                setBuildingTypes((current) =>
+                  toggleValue(current, item),
+                )
+              }
+            >
+              {BUILDING_TYPE_LABELS[item]}
+            </OptionChip>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup
+          title="공유 시설"
+          description="선택한 시설을 모두 갖춘 숙소만 표시합니다."
+        >
+          {SHARED_FACILITIES.map((item) => (
+            <OptionChip
+              key={item}
+              active={sharedFacilities.includes(item)}
+              onClick={() =>
+                setSharedFacilities((current) =>
+                  toggleValue(current, item),
+                )
+              }
+            >
+              {SHARED_FACILITY_LABELS[item]}
+            </OptionChip>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup
+          title="생활 분위기"
+          description="하나 이상 선택하면 선택한 분위기 중 하나와 맞는 숙소를 표시합니다."
+        >
+          {VIBES.map((item) => (
+            <OptionChip
+              key={item}
+              active={vibes.includes(item)}
+              onClick={() =>
+                setVibes((current) =>
+                  toggleValue(current, item),
+                )
+              }
+            >
+              {VIBE_LABELS[item]}
+            </OptionChip>
+          ))}
+        </FilterGroup>
+
+        <div className="commute-date-note">
+          정확한 입주일·퇴실일과 최소 계약 기간은{" "}
+          <Link href="/search">일반 숙소 검색</Link>에서 추가로 설정할 수
+          있습니다.
+        </div>
+      </section>
 
       <div className="browse-layout">
-        {/* Results list */}
         <div>
-          <div style={{ color: "var(--text-2)", fontSize: 14, marginBottom: 14 }}>
+          <div
+            style={{
+              color: "var(--text-2)",
+              fontSize: 14,
+              marginBottom: 14,
+            }}
+          >
             {loading
               ? "검색 중…"
               : `${activeHub?.name ?? "목적지"}까지 ${maxCommute}분 이내 숙소 ${results.length}곳`}
           </div>
+
           <div className="results-grid">
-            {results.map((h) => {
-              const band = h.commute ? commuteBand(h.commute.minutes) : null;
+            {results.map((house) => {
+              const band = house.commute
+                ? commuteBand(house.commute.minutes)
+                : null;
+              const rentalUnit = rentalUnitOf(house);
+              const buildingType = buildingTypeOf(house);
+
               return (
                 <Link
-                  key={h.id}
-                  href={`/homes/${h.id}?hub=${hub}`}
+                  key={house.id}
+                  href={`/homes/${house.id}?hub=${hub}`}
                   className="card hover-card"
-                  onMouseEnter={() => setHover(h.id)}
+                  onMouseEnter={() => setHover(house.id)}
                   onMouseLeave={() => setHover(null)}
                   style={{ overflow: "hidden" }}
                 >
-                  <Thumbnail src={h.photo} color={h.color} height={168}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                        padding: 12,
-                        height: "100%",
-                      }}
-                    >
-                      {h.commute && band && (
+                  <Thumbnail
+                    src={house.photo}
+                    color={house.color}
+                    height={168}
+                  >
+                    <div className="commute-card-overlay">
+                      {house.commute && band && (
                         <span
                           className="chip glass"
                           style={{
@@ -205,73 +446,168 @@ export default function Browse() {
                             color: "#fff",
                             border: "none",
                             fontSize: 12,
-                            fontWeight: 600,
-                            boxShadow: "0 2px 8px rgba(0,0,0,.15)",
+                            fontWeight: 700,
                           }}
                         >
-                          {h.commute.mode === "walk" ? "🚶" : "🚇"} {h.commute.minutes}분
+                          {house.commute.mode === "walk"
+                            ? "도보"
+                            : "대중교통"}{" "}
+                          {house.commute.minutes}분
                         </span>
                       )}
-                      <span
-                        className="chip glass"
-                        style={{ fontSize: 11, border: "none", color: "var(--text)" }}
-                      >
-                        {h.residents}/{h.capacity}
-                      </span>
+
+                      {rentalUnit === "bed" && (
+                        <span
+                          className="chip glass"
+                          style={{
+                            border: "none",
+                            color: "#18181b",
+                          }}
+                        >
+                          {house.residents}/{house.capacity ?? 2}자리
+                        </span>
+                      )}
                     </div>
                   </Thumbnail>
+
                   <div style={{ padding: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <strong style={{ fontSize: 15 }}>{h.name.trim()}</strong>
-                      <span style={{ fontSize: 13 }}>★ {h.rating}</span>
+                    <div className="commute-result-title">
+                      <strong>{house.name.trim()}</strong>
+                      <span>★ {house.rating}</span>
                     </div>
-                    <div style={{ color: "var(--text-2)", fontSize: 13, marginTop: 2 }}>
-                      {regionLabel(h.neighborhood)}
-                      {h.commute && (
-                        <span style={{ color: band?.color, fontWeight: 600 }}>
-                          {" · "}{band?.label.toLowerCase()}
+
+                    <div className="commute-result-meta">
+                      {regionLabel(house.neighborhood)}
+                      {house.commute && band && (
+                        <span
+                          style={{
+                            color: band.color,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {" · "}
+                          {band.label.toLowerCase()}
                         </span>
                       )}
                     </div>
-                    <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {h.vibe.map((v) => (
-                        <span key={v} className="chip" style={{ fontSize: 11, padding: "3px 8px" }}>
-                          {v}
-                        </span>
-                      ))}
+
+                    <div className="commute-result-tags">
+                      <span className="chip">
+                        {RENTAL_UNIT_LABELS[rentalUnit]}
+                      </span>
+                      <span className="chip">
+                        {BUILDING_TYPE_LABELS[buildingType]}
+                      </span>
+                      {(house.sharedFacilities ?? [])
+                        .slice(0, 2)
+                        .map((facility) => (
+                          <span key={facility} className="chip">
+                            {SHARED_FACILITY_LABELS[facility]}
+                          </span>
+                        ))}
                     </div>
+
                     <div style={{ marginTop: 12, fontSize: 14 }}>
-                      <strong>{won(h.monthlyRent)}</strong>
-                      <span style={{ color: "var(--text-2)", fontSize: 13 }}> / 월</span>
+                      <strong>{won(house.monthlyRent)}</strong>
+                      <span
+                        style={{
+                          color: "var(--text-2)",
+                          fontSize: 13,
+                        }}
+                      >
+                        {" "}
+                        / 월
+                      </span>
                     </div>
                   </div>
                 </Link>
               );
             })}
           </div>
+
           {!loading && results.length === 0 && (
-            <div className="card" style={{ padding: 30, textAlign: "center", color: "var(--text-2)" }}>
-조건에 맞는 숙소가 없습니다. 통근 시간이나 예산 범위를 넓혀보세요.
+            <div
+              className="card"
+              style={{
+                padding: 30,
+                textAlign: "center",
+                color: "var(--text-2)",
+              }}
+            >
+              조건에 맞는 숙소가 없습니다. 통근시간, 월세 또는 선택한 시설
+              조건을 줄여보세요.
             </div>
           )}
         </div>
 
-        {/* Real map (Leaflet + OSM) with hub */}
         <div className="map-sticky">
-          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-            <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
-              <strong style={{ fontSize: 14 }}>{jobHubs.find((h) => h.id === hub)?.name ?? ""}까지 통근 거리</strong>
-              <span className="mono" style={{ fontSize: 12, color: "var(--primary)" }}>◆ 직장</span>
+          <div
+            className="card"
+            style={{
+              padding: 0,
+              overflow: "hidden",
+            }}
+          >
+            <div className="commute-map-header">
+              <strong>
+                {activeHub?.name ?? ""}까지 통근 거리
+              </strong>
+              <span>◆ 직장</span>
             </div>
-            <BrowseMap
-              houses={results}
-              hover={hover}
-              onHover={setHover}
-              hub={jobHubs.find((h) => h.id === hub)!}
-            />
+
+            {activeHub && (
+              <BrowseMap
+                houses={results}
+                hover={hover}
+                onHover={setHover}
+                hub={activeHub}
+              />
+            )}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function FilterGroup({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="commute-filter-group">
+      <div>
+        <strong>{title}</strong>
+        <p>{description}</p>
+      </div>
+      <div className="commute-filter-options">{children}</div>
+    </div>
+  );
+}
+
+function OptionChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="chip press commute-option-chip"
+      data-active={active}
+      onClick={onClick}
+    >
+      {active && <span aria-hidden="true">✓</span>}
+      {children}
+    </button>
   );
 }
