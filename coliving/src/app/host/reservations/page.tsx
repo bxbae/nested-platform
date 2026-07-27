@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { won } from "@/lib/format";
+import { formatStayDuration } from "@/lib/stay-dates";
 import { reviewTenant } from "@/lib/api/badges";
 import {
   listHostReservations,
@@ -9,6 +10,7 @@ import {
   sendOverdueNotice,
   decideEarlyCheckout,
   decideExtension,
+  completeEarlyCheckout,
   type HostReservation,
   type HostReservationStatus,
 } from "@/lib/api/reservations";
@@ -35,6 +37,7 @@ export default function HostReservations() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [noticed, setNoticed] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<Filter>("all");
+  const [focusedReservationId, setFocusedReservationId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -49,9 +52,25 @@ export default function HostReservations() {
     // (rather than useSearchParams) so this page doesn't need a Suspense
     // boundary just for an initial-filter deep link.
     if (typeof window === "undefined") return;
-    const q = new URLSearchParams(window.location.search).get("filter");
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("filter");
     if (q === "PENDING_PAYMENT" || q === "CONFIRMED" || q === "done") setFilter(q);
+    const reservationId = params.get("reservationId");
+    if (reservationId) {
+      setFocusedReservationId(reservationId);
+      setFilter("all");
+    }
   }, []);
+
+  useEffect(() => {
+    if (!focusedReservationId || rows.length === 0) return;
+    window.setTimeout(() => {
+      document.getElementById(`reservation-${focusedReservationId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 0);
+  }, [focusedReservationId, rows]);
 
   // 노쇼는 되돌릴 수 없고 정산에도 영향을 주므로, 한 번 더 확인받는다.
   // 다른 화면(숙소 삭제·승인 취소)과 같은 "두 번 눌러야 실행" 패턴.
@@ -111,6 +130,23 @@ export default function HostReservations() {
     setBusyId(id);
     try {
       await decideExtension(id, decision);
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function completeEarly(id: string) {
+    if (busyId) return;
+    const raw = window.prompt(
+      "보증금에서 공제할 금액을 원 단위 숫자로 입력해주세요. 공제가 없으면 0",
+      "0",
+    );
+    if (raw === null) return;
+    const deduction = Math.max(0, Number(raw.replace(/,/g, "")) || 0);
+    setBusyId(id);
+    try {
+      await completeEarlyCheckout(id, deduction);
       await load();
     } finally {
       setBusyId(null);
@@ -183,7 +219,17 @@ export default function HostReservations() {
         {shown.map((b) => {
           const st = STATUS[b.status];
           return (
-            <div key={b.id} className="card" style={{ padding: 20 }}>
+            <div
+              key={b.id}
+              id={`reservation-${b.id}`}
+              className="card"
+              style={{
+                padding: 20,
+                border: focusedReservationId === b.id
+                  ? "2px solid var(--primary)"
+                  : "1px solid var(--border)",
+              }}
+            >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -208,9 +254,17 @@ export default function HostReservations() {
                     </span>
                   </div>
                   <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>
-                    {b.guestName} · 입주 {b.moveIn} · {b.months}개월
-                    {b.reservedSpots && b.reservedSpots > 1 ? ` · ${b.reservedSpots}자리` : ""}
+                    {b.guestName} · {b.moveIn} ~ {b.checkOut} · {formatStayDuration(b.moveIn, b.checkOut)}
                   </div>
+                  <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
+                    {bookingTypeLabel(b)} · 예약 {Math.max(1, b.reservedSpots ?? 1)}자리
+                    {b.rentalUnit === "bed" && b.capacity ? ` · 전체 ${b.capacity}자리` : ""}
+                  </div>
+                  {b.companions.length > 0 && (
+                    <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
+                      동반 입주자: {b.companions.map((companion) => `${companion.name}(${companionStatusLabel(companion.status)})`).join(", ")}
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <strong style={{ fontSize: 17 }}>{won(b.totalDueNow)}</strong>
@@ -262,35 +316,141 @@ export default function HostReservations() {
                 </div>
               )}
 
-              {/* Early-checkout request → approve / reject */}
-              {b.status === "EARLY_CHECKOUT_REQUESTED" && (
-                <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 13, color: "var(--text-2)" }}>
-                    입주자가 계약 기간 전 퇴실을 요청했습니다.
-                  </span>
-                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideEarly(b.id, "approve")}>
-                    퇴실 승인
-                  </button>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideEarly(b.id, "reject")}>
-                    거절
-                  </button>
-                </div>
-              )}
+              {/* 조기 퇴실 요청 → 희망일·예상 환불 확인 후 승인/거절 */}
+              {b.status === "EARLY_CHECKOUT_REQUESTED" &&
+                b.latestContractChange?.type === "EARLY_CHECKOUT" && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 10,
+                      marginTop: 14,
+                      padding: 14,
+                      borderRadius: 12,
+                      border: "1px solid var(--border)",
+                      background: "var(--bg-2)",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+                      <strong>조기 퇴실 요청</strong>
+                      <br />
+                      기존 퇴실일 {b.latestContractChange.originalCheckOut}
+                      <br />
+                      희망 퇴실일 {b.latestContractChange.requestedCheckOut}
+                      <br />
+                      예상 조정·환불액 {won(b.latestContractChange.estimatedRefund)}
+                    </div>
+                    {b.latestContractChange.status === "HOST_REVIEW" ? (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          className="btn btn-primary press"
+                          style={{ fontSize: 13, padding: "8px 16px" }}
+                          disabled={busyId === b.id}
+                          onClick={() => void decideEarly(b.id, "approve")}
+                        >
+                          퇴실 승인
+                        </button>
+                        <button
+                          className="btn btn-ghost press"
+                          style={{ fontSize: 13, padding: "8px 16px" }}
+                          disabled={busyId === b.id}
+                          onClick={() => void decideEarly(b.id, "reject")}
+                        >
+                          거절
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+                        현재 상태: {b.latestContractChange.status}
+                      </span>
+                    )}
+                  </div>
+                )}
 
-              {/* Extension request → approve / reject */}
-              {b.status === "EXTENSION_REQUESTED" && (
-                <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 13, color: "var(--text-2)" }}>
-                    입주자가 계약 연장을 요청했습니다.
-                  </span>
-                  <button className="btn btn-primary press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideExt(b.id, "approve")}>
-                    연장 승인
-                  </button>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => decideExt(b.id, "reject")}>
-                    거절
-                  </button>
-                </div>
-              )}
+              {/* 연장 요청 → 희망일·추가 금액 확인 후 승인/거절 */}
+              {b.status === "EXTENSION_REQUESTED" &&
+                b.latestContractChange?.type === "EXTENSION" && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 10,
+                      marginTop: 14,
+                      padding: 14,
+                      borderRadius: 12,
+                      border: "1px solid var(--border)",
+                      background: "var(--bg-2)",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+                      <strong>계약 연장 요청</strong>
+                      <br />
+                      기존 퇴실일 {b.latestContractChange.originalCheckOut}
+                      <br />
+                      요청 퇴실일 {b.latestContractChange.requestedCheckOut}
+                      <br />
+                      추가 월세 {won(b.latestContractChange.additionalRent)}
+                      <br />
+                      추가 관리비 {won(b.latestContractChange.additionalMaintenance)}
+                      <br />
+                      추가 결제액 {won(b.latestContractChange.additionalAmount)}
+                    </div>
+                    {b.latestContractChange.status === "HOST_REVIEW" ? (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          className="btn btn-primary press"
+                          style={{ fontSize: 13, padding: "8px 16px" }}
+                          disabled={busyId === b.id}
+                          onClick={() => void decideExt(b.id, "approve")}
+                        >
+                          연장 승인
+                        </button>
+                        <button
+                          className="btn btn-ghost press"
+                          style={{ fontSize: 13, padding: "8px 16px" }}
+                          disabled={busyId === b.id}
+                          onClick={() => void decideExt(b.id, "reject")}
+                        >
+                          거절
+                        </button>
+                      </div>
+                    ) : b.latestContractChange.status === "PAYMENT_PENDING" ? (
+                      <span style={{ fontSize: 13, color: "var(--warning)" }}>
+                        호스트 승인 완료 · 게스트 추가 결제 대기
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+                        현재 상태: {b.latestContractChange.status}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+              {b.status === "EARLY_CHECKOUT_APPROVED" &&
+                b.latestContractChange?.type === "EARLY_CHECKOUT" &&
+                b.latestContractChange.status === "APPROVED" && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 10,
+                      marginTop: 14,
+                      padding: 14,
+                      borderRadius: 12,
+                      border: "1px solid var(--border)",
+                      background: "var(--bg-2)",
+                    }}
+                  >
+                    <span style={{ fontSize: 13 }}>
+                      승인된 퇴실일 {b.latestContractChange.requestedCheckOut}
+                    </span>
+                    <button
+                      className="btn btn-primary press"
+                      style={{ width: "fit-content", fontSize: 13, padding: "8px 16px" }}
+                      disabled={busyId === b.id}
+                      onClick={() => void completeEarly(b.id)}
+                    >
+                      실제 퇴실·보증금 정산 완료
+                    </button>
+                  </div>
+                )}
 
               {/* Finished stay → review the tenant */}
               {(b.status === "COMPLETED" || b.status === "EARLY_CHECKOUT_APPROVED") && (
@@ -353,4 +513,18 @@ export default function HostReservations() {
       </div>
     </div>
   );
+}
+
+
+function bookingTypeLabel(reservation: HostReservation): string {
+  if (reservation.bookingMode === "bed") return "공유형 다인실 자리 예약";
+  if (reservation.bookingMode === "whole_room") return "공유형 다인실 전체 예약";
+  if (reservation.rentalUnit === "private_room") return "공유형 개인실 예약";
+  return "단독형 숙소 예약";
+}
+
+function companionStatusLabel(status: "PENDING" | "ACCEPTED" | "DECLINED"): string {
+  if (status === "ACCEPTED") return "수락";
+  if (status === "DECLINED") return "거절";
+  return "응답 대기";
 }

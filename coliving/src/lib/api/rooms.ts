@@ -63,7 +63,7 @@ export interface CreateRoomInput {
   minStayMonths: number;
   availableFrom: string; // ISO date
   images: string[];
-  /** 함께 지낼 최대 인원. 신규 숙소는 전체 숙소도 필수로 보낸다. */
+  /** 공유형 다인실의 침대·자리 수. 단독형·개인실은 null. */
   capacity?: number | null;
   /** 침실 개수 (선택) */
   bedrooms?: number | null;
@@ -106,16 +106,46 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
 export interface HostListing extends House {
   published: boolean;
   reservationCount: number;
+  currentInventory?: {
+    reservationCount: number;
+    reservedSpots: number;
+    remainingSpots: number | null;
+    fullyBooked: boolean;
+    blocked: boolean;
+    representativeGuestName: string | null;
+    additionalGuestCount: number;
+    nextCheckIn: string | null;
+    nextCheckOut: string | null;
+  };
 }
 
 export async function listMyRooms(): Promise<HostListing[]> {
-  const rows = await api.get<(ApiRoom & { published: boolean; _count?: { reservations: number } })[]>(
-    "/rooms/mine",
-  );
+  const rows = await api.get<(ApiRoom & {
+    published: boolean;
+    _count?: { reservations: number };
+    currentInventory?: {
+      reservationCount: number;
+      reservedSpots: number;
+      remainingSpots: number | null;
+      fullyBooked: boolean;
+      blocked: boolean;
+      representativeGuestName: string | null;
+      additionalGuestCount: number;
+      nextCheckIn: string | null;
+      nextCheckOut: string | null;
+    };
+  })[]>("/rooms/mine");
   return rows.map((r) => ({
     ...apiRoomToHouse(r),
     published: r.published,
     reservationCount: r._count?.reservations ?? 0,
+    currentInventory: r.currentInventory
+      ? {
+          ...r.currentInventory,
+          nextCheckIn: r.currentInventory.nextCheckIn?.slice(0, 10) ?? null,
+          nextCheckOut: r.currentInventory.nextCheckOut?.slice(0, 10) ?? null,
+        }
+      : undefined,
   }));
 }
 
@@ -152,6 +182,44 @@ export async function updateRoom(id: string, input: UpdateRoomInput): Promise<vo
 // DELETE /rooms/:id — 예약이 걸려 있으면 서버가 거부한다.
 export async function deleteRoom(id: string): Promise<void> {
   await api.delete(`/rooms/${id}`);
+}
+
+export interface RoomAvailabilityDay {
+  date: string;
+  blocked: boolean;
+  blockReason: string | null;
+  beforeAvailableFrom: boolean;
+  past: boolean;
+  reservedSpots: number;
+  remainingSpots: number | null;
+  fullyBooked: boolean;
+  available: boolean;
+}
+
+export interface RoomAvailabilityMonth {
+  roomId: string;
+  rentalUnit: string | null;
+  capacity: number | null;
+  availableFrom: string;
+  requestedSpots: number;
+  days: RoomAvailabilityDay[];
+}
+
+export async function getRoomAvailabilityMonth(
+  roomId: string,
+  year: number,
+  month: number,
+  requestedSpots = 1,
+): Promise<RoomAvailabilityMonth> {
+  const params = new URLSearchParams({
+    year: String(year),
+    month: String(month),
+    requestedSpots: String(requestedSpots),
+  });
+  return api.get<RoomAvailabilityMonth>(
+    `/rooms/${encodeURIComponent(roomId)}/availability?${params.toString()}`,
+    { auth: false },
+  );
 }
 
 export async function getRoom(id: string): Promise<House> {

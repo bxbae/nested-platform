@@ -18,6 +18,8 @@ import {
   listDirectMessages,
   sendDirectMessage,
   markDirectConversationRead,
+  hideChatRoomConversation,
+  hideDirectConversation,
   type ApiChatRoom,
   type ApiMessage,
   type ApiDirectConversation,
@@ -42,6 +44,8 @@ type UnifiedMessage = {
   createdAt: string;
 };
 
+type ConversationFilter = "all" | "unread";
+
 function getConversationActivityTime(conversation: Conversation): number {
   const lastMessage = conversation.raw.messages?.[0];
 
@@ -63,6 +67,8 @@ export default function MessagesPage() {
   const { user } = useAuth();
   const [roomChats, setRoomChats] = useState<ApiChatRoom[]>([]);
   const [directChats, setDirectChats] = useState<ApiDirectConversation[]>([]);
+  const [filter, setFilter] = useState<ConversationFilter>("all");
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [active, setActive] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -117,6 +123,24 @@ export default function MessagesPage() {
         })),
       ]),
     [directChats, roomChats],
+  );
+
+  const unreadConversationCount = useMemo(
+    () =>
+      conversations.filter(
+        (conversation) => (conversation.raw.unreadCount ?? 0) > 0,
+      ).length,
+    [conversations],
+  );
+
+  const filteredConversations = useMemo(
+    () =>
+      filter === "unread"
+        ? conversations.filter(
+            (conversation) => (conversation.raw.unreadCount ?? 0) > 0,
+          )
+        : conversations,
+    [conversations, filter],
   );
 
   const refreshConversationLists = useCallback(async () => {
@@ -201,7 +225,6 @@ export default function MessagesPage() {
     };
 
     messageSocket.on("messages:changed", handleMessagesChanged);
-
     window.addEventListener("focus", handleWindowFocus);
 
     return () => {
@@ -468,6 +491,61 @@ export default function MessagesPage() {
     }
   }
 
+  async function hideConversation(conversation: Conversation) {
+    const key = `${conversation.kind}:${conversation.id}`;
+
+    if (deletingKey) return;
+
+    const meta = getConversationMeta(conversation, user?.id);
+    const confirmed = window.confirm(
+      `“${meta.name}” 대화를 목록에서 삭제할까요?\n새 메시지가 오면 목록에 다시 표시됩니다.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingKey(key);
+    setError(null);
+
+    try {
+      if (conversation.kind === "direct") {
+        await hideDirectConversation(conversation.id);
+        setDirectChats((current) =>
+          current.filter((item) => item.id !== conversation.id),
+        );
+      } else {
+        await hideChatRoomConversation(conversation.id);
+        setRoomChats((current) =>
+          current.filter((item) => item.id !== conversation.id),
+        );
+      }
+
+      if (active?.id === conversation.id && active.kind === conversation.kind) {
+        const remaining = conversations.filter(
+          (item) =>
+            !(item.id === conversation.id && item.kind === conversation.kind),
+        );
+        const nextActive =
+          (filter === "unread"
+            ? remaining.find((item) => (item.raw.unreadCount ?? 0) > 0)
+            : remaining[0]) ?? null;
+
+        setActive(nextActive);
+        if (!nextActive) setMessages([]);
+      }
+
+      window.dispatchEvent(new Event("messages:read"));
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "대화를 목록에서 삭제하지 못했습니다.",
+      );
+      await refreshConversationLists();
+    } finally {
+      setDeletingKey(null);
+    }
+  }
+
   if (loading) {
     return <p style={{ color: "var(--text-2)" }}>메시지를 불러오는 중…</p>;
   }
@@ -494,55 +572,176 @@ export default function MessagesPage() {
       ) : (
         <div className="messages-split">
           <div className="messages-room-list">
-            {conversations.map((conversation) => {
-              const meta = getConversationMeta(conversation, user?.id);
-              return (
-                <button
-                  key={`${conversation.kind}:${conversation.id}`}
-                  onClick={() => setActive(conversation)}
-                  className="card press"
-                  style={{
-                    padding: 14,
-                    textAlign: "left",
-                    display: "flex",
-                    gap: 12,
-                    alignItems: "flex-start",
-                    border:
-                      active?.id === conversation.id &&
-                      active.kind === conversation.kind
-                        ? "1.5px solid var(--text)"
-                        : "1px solid var(--border)",
-                  }}
-                >
-                  <Avatar
-                    name={meta.name}
-                    color={meta.color}
-                    url={meta.avatarUrl}
-                    size={40}
-                  />
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <strong style={{ fontSize: 14 }}>{meta.name}</strong>
-                    <div style={{ fontSize: 12, color: "var(--text-2)" }}>
-                      {conversation.kind === "direct"
-                        ? "친구 메시지"
-                        : meta.context}
-                    </div>
-                    <div
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                marginBottom: 4,
+              }}
+            >
+              <button
+                type="button"
+                className="press"
+                onClick={() => setFilter("all")}
+                aria-pressed={filter === "all"}
+                style={{
+                  padding: "9px 10px",
+                  borderRadius: 12,
+                  border: "1px solid var(--border)",
+                  background:
+                    filter === "all" ? "var(--text)" : "var(--surface)",
+                  color: filter === "all" ? "var(--surface)" : "var(--text)",
+                  fontWeight: 700,
+                }}
+              >
+                전체 {conversations.length}
+              </button>
+              <button
+                type="button"
+                className="press"
+                onClick={() => setFilter("unread")}
+                aria-pressed={filter === "unread"}
+                style={{
+                  padding: "9px 10px",
+                  borderRadius: 12,
+                  border: "1px solid var(--border)",
+                  background:
+                    filter === "unread" ? "var(--text)" : "var(--surface)",
+                  color: filter === "unread" ? "var(--surface)" : "var(--text)",
+                  fontWeight: 700,
+                }}
+              >
+                안 읽음 {unreadConversationCount}
+              </button>
+            </div>
+
+            {filteredConversations.length === 0 ? (
+              <div
+                className="card"
+                style={{
+                  padding: "30px 18px",
+                  textAlign: "center",
+                  color: "var(--text-2)",
+                  fontSize: 13.5,
+                }}
+              >
+                {filter === "unread"
+                  ? "안 읽은 대화가 없어요."
+                  : "아직 대화가 없어요."}
+              </div>
+            ) : (
+              filteredConversations.map((conversation) => {
+                const meta = getConversationMeta(conversation, user?.id);
+                const unreadCount = conversation.raw.unreadCount ?? 0;
+                const key = `${conversation.kind}:${conversation.id}`;
+                const deleting = deletingKey === key;
+
+                return (
+                  <div key={key} style={{ position: "relative" }}>
+                    <button
+                      type="button"
+                      onClick={() => setActive(conversation)}
+                      className="card press"
                       style={{
-                        fontSize: 12.5,
-                        color: "var(--text-2)",
-                        marginTop: 4,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        width: "100%",
+                        padding: "14px 48px 14px 14px",
+                        textAlign: "left",
+                        display: "flex",
+                        gap: 12,
+                        alignItems: "flex-start",
+                        border:
+                          active?.id === conversation.id &&
+                          active.kind === conversation.kind
+                            ? "1.5px solid var(--text)"
+                            : "1px solid var(--border)",
                       }}
                     >
-                      {meta.preview}
-                    </div>
+                      <Avatar
+                        name={meta.name}
+                        color={meta.color}
+                        url={meta.avatarUrl}
+                        size={40}
+                      />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 7,
+                          }}
+                        >
+                          <strong style={{ fontSize: 14 }}>{meta.name}</strong>
+                          {unreadCount > 0 && (
+                            <span
+                              aria-label={`안 읽은 메시지 ${unreadCount}개`}
+                              style={{
+                                minWidth: 20,
+                                height: 20,
+                                padding: "0 6px",
+                                borderRadius: 999,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                background: "var(--primary)",
+                                color: "#fff",
+                                fontSize: 10.5,
+                                fontWeight: 800,
+                              }}
+                            >
+                              {unreadCount > 99 ? "99+" : unreadCount}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text-2)" }}>
+                          {conversation.kind === "direct"
+                            ? "친구 메시지"
+                            : meta.context}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12.5,
+                            color:
+                              unreadCount > 0 ? "var(--text)" : "var(--text-2)",
+                            fontWeight: unreadCount > 0 ? 700 : 400,
+                            marginTop: 4,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {meta.preview}
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={`${meta.name} 대화 삭제`}
+                      title="대화 목록에서 삭제"
+                      disabled={Boolean(deletingKey)}
+                      onClick={() => void hideConversation(conversation)}
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        width: 28,
+                        height: 28,
+                        border: "none",
+                        borderRadius: 999,
+                        background: "transparent",
+                        color: "var(--text-2)",
+                        cursor: deletingKey ? "default" : "pointer",
+                        opacity: deleting ? 0.45 : 1,
+                        fontSize: 15,
+                      }}
+                    >
+                      {deleting ? "…" : "✕"}
+                    </button>
                   </div>
-                </button>
-              );
-            })}
+                );
+              })
+            )}
           </div>
 
           {active && (

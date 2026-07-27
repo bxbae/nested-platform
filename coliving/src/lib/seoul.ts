@@ -1,66 +1,61 @@
-export const DISTRICT_OPTIONS = [
-  {
-    label: "강남구",
-    value: "강남구",
-    aliases: ["Gangnam-gu", "Yeoksam-dong"],
-  },
-  {
-    label: "서초구",
-    value: "서초구",
-    aliases: ["Seocho-gu"],
-  },
-  {
-    label: "송파구",
-    value: "송파구",
-    aliases: ["Songpa-gu"],
-  },
-  {
-    label: "마포구",
-    value: "마포구",
-    aliases: [
-      "Mapo-gu",
-      "Mangwon-dong",
-      "Seogyo-dong",
-      "Yeonnam-dong",
-      "Hongdae",
-    ],
-  },
-  {
-    label: "성동구",
-    value: "성동구",
-    aliases: ["Seongdong-gu", "Seongsu-dong"],
-  },
-  {
-    label: "용산구",
-    value: "용산구",
-    aliases: ["Yongsan-gu", "Itaewon"],
-  },
-  {
-    label: "영등포구",
-    value: "영등포구",
-    aliases: ["Yeongdeungpo-gu", "Yeouido"],
-  },
-  {
-    label: "종로구",
-    value: "종로구",
-    aliases: ["Jongno-gu", "Hyehwa-dong"],
-  },
-  {
-    label: "관악구",
-    value: "관악구",
-    aliases: ["Gwanak-gu", "Sillim", "Bongcheon-dong"],
-  },
-  {
-    label: "구로구",
-    value: "구로구",
-    aliases: ["Guro-gu", "Gasan-dong"],
-  },
-  {
-    label: "분당구",
-    value: "분당구",
-    aliases: ["Bundang-gu", "Pangyo"],
-  },
-] as const;
+export type ServiceArea = "서울" | "경기" | "인천";
+
+export const AREA_OPTIONS: readonly ServiceArea[] = [
+  "서울",
+  "경기",
+  "인천",
+];
+
+export interface ServiceDistrictOption {
+  area: ServiceArea;
+  city: string;
+  label: string;
+  value: string;
+  aliases: readonly string[];
+}
+
+export const DISTRICTS_BY_AREA: Record<
+  ServiceArea,
+  readonly ServiceDistrictOption[]
+> = {
+  서울: [
+    { area: "서울", city: "서울", label: "강남구", value: "강남구", aliases: ["Gangnam-gu", "Yeoksam-dong", "역삼동"] },
+    { area: "서울", city: "서울", label: "서초구", value: "서초구", aliases: ["Seocho-gu"] },
+    { area: "서울", city: "서울", label: "송파구", value: "송파구", aliases: ["Songpa-gu"] },
+    { area: "서울", city: "서울", label: "마포구", value: "마포구", aliases: ["Mapo-gu", "Mangwon-dong", "Seogyo-dong", "Yeonnam-dong", "Hongdae"] },
+    { area: "서울", city: "서울", label: "성동구", value: "성동구", aliases: ["Seongdong-gu", "Seongsu-dong"] },
+    { area: "서울", city: "서울", label: "용산구", value: "용산구", aliases: ["Yongsan-gu", "Itaewon"] },
+    { area: "서울", city: "서울", label: "영등포구", value: "영등포구", aliases: ["Yeongdeungpo-gu", "Yeouido"] },
+    { area: "서울", city: "서울", label: "종로구", value: "종로구", aliases: ["Jongno-gu", "Hyehwa-dong"] },
+    { area: "서울", city: "서울", label: "관악구", value: "관악구", aliases: ["Gwanak-gu", "Sillim", "Bongcheon-dong"] },
+    { area: "서울", city: "서울", label: "구로구", value: "구로구", aliases: ["Guro-gu", "Gasan-dong"] },
+    { area: "서울", city: "서울", label: "강서구", value: "강서구", aliases: ["Gangseo-gu", "Magok-dong"] },
+  ],
+  경기: [
+    { area: "경기", city: "경기", label: "판교·분당", value: "분당구", aliases: ["Bundang-gu", "Pangyo", "판교", "분당"] },
+    { area: "경기", city: "경기", label: "수원·광교", value: "영통구", aliases: ["영통구", "광교동", "수원", "광교"] },
+    { area: "경기", city: "경기", label: "용인·수지", value: "수지구", aliases: ["수지구", "용인", "수지"] },
+    { area: "경기", city: "경기", label: "고양·일산", value: "일산동구", aliases: ["일산동구", "일산", "고양"] },
+    { area: "경기", city: "경기", label: "광명", value: "광명시", aliases: ["광명시", "광명"] },
+    { area: "경기", city: "경기", label: "안양", value: "동안구", aliases: ["동안구", "안양"] },
+    { area: "경기", city: "경기", label: "하남", value: "하남시", aliases: ["하남시", "하남"] },
+    { area: "경기", city: "경기", label: "부천", value: "부천시", aliases: ["부천시", "부천"] },
+  ],
+  인천: [
+    { area: "인천", city: "인천", label: "송도·연수", value: "연수구", aliases: ["연수구", "송도동", "송도"] },
+    { area: "인천", city: "인천", label: "부평구", value: "부평구", aliases: ["부평구", "부평"] },
+    { area: "인천", city: "인천", label: "남동구", value: "남동구", aliases: ["남동구", "구월동"] },
+    { area: "인천", city: "인천", label: "계양구", value: "계양구", aliases: ["계양구"] },
+    { area: "인천", city: "인천", label: "미추홀구", value: "미추홀구", aliases: ["미추홀구"] },
+    { area: "인천", city: "인천", label: "서구·청라", value: "서구", aliases: ["인천 서구", "청라동", "청라"] },
+  ],
+};
+
+export const DISTRICT_OPTIONS: readonly ServiceDistrictOption[] = [
+  ...DISTRICTS_BY_AREA.서울,
+  ...DISTRICTS_BY_AREA.경기,
+  ...DISTRICTS_BY_AREA.인천,
+];
 
 export const NEIGHBORHOOD_OPTIONS = {
   강남구: [{ label: "역삼동", value: "Yeoksam-dong" }],
@@ -141,40 +136,12 @@ export function districtAliases(district: string): string[] {
 }
 
 export const WORKPLACE_PRESETS = [
-  {
-    label: "강남·역삼",
-    query: "강남·역삼",
-    district: "강남구",
-    region: "Yeoksam-dong",
-  },
-  {
-    label: "여의도",
-    query: "여의도",
-    district: "영등포구",
-    region: "Yeouido",
-  },
-  {
-    label: "판교",
-    query: "판교",
-    district: "분당구",
-    region: "Pangyo",
-  },
-  {
-    label: "광화문·종로",
-    query: "광화문·종로",
-    district: "종로구",
-    region: "Jongno-gu",
-  },
-  {
-    label: "구로·가산",
-    query: "구로·가산",
-    district: "구로구",
-    region: "Gasan-dong",
-  },
-  {
-    label: "성수",
-    query: "성수",
-    district: "성동구",
-    region: "Seongsu-dong",
-  },
+  { area: "서울", label: "강남·역삼", query: "역삼", district: "강남구", region: "" },
+  { area: "서울", label: "여의도", query: "여의도", district: "영등포구", region: "" },
+  { area: "경기", label: "판교·분당", query: "판교", district: "분당구", region: "" },
+  { area: "서울", label: "광화문·종로", query: "광화문", district: "종로구", region: "" },
+  { area: "서울", label: "구로·가산", query: "가산", district: "구로구", region: "" },
+  { area: "서울", label: "성수", query: "성수", district: "성동구", region: "" },
+  { area: "서울", label: "마곡", query: "마곡", district: "강서구", region: "" },
+  { area: "인천", label: "송도", query: "송도", district: "연수구", region: "" },
 ] as const;
