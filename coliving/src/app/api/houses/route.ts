@@ -40,6 +40,18 @@ function buildingTypeOf(house: House): BuildingType {
 
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
+
+  // 단일 숙소 조회 (상세페이지용) — id가 있으면 목록 대신 하나만 반환한다.
+  const id = p.get("id");
+  if (id) {
+    const houses = await loadHouses();
+    const house = houses.find((h) => h.id === id);
+    if (!house) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+    return NextResponse.json(house);
+  }
+
   const q = (p.get("q") ?? "").toLowerCase().trim();
   const rentalUnits = csv<RentalUnit>(p.get("rentalUnits"));
   const buildingTypes = csv<BuildingType>(p.get("buildingTypes"));
