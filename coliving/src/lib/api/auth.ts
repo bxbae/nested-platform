@@ -238,6 +238,15 @@ export async function becomeHost(): Promise<AuthUser> {
   return res.user;
 }
 
+// POST /auth/relinquish-host — HOST → GUEST. 등록한 숙소 중 예약·리뷰 이력이
+// 없는 것은 삭제되고, 이력이 있는 것은 비공개로 전환된다. 진행 중인 예약이
+// 있으면 서버가 400(HOST_HAS_ACTIVE_RESERVATIONS)으로 막는다.
+export async function relinquishHost(): Promise<AuthUser> {
+  const res = await api.post<AuthTokens>("/auth/relinquish-host");
+  authStore.set(res);
+  return res.user;
+}
+
 export async function deleteAccount(): Promise<void> {
   await api.delete("/auth/me");
   logout();
