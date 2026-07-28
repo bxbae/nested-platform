@@ -67,6 +67,13 @@ const couponCreateSchema = z.object({
   usageLimit: z.number().int().positive().nullable().optional(),
 });
 
+// 코드(code)는 발급 후 바꾸면 이미 공유된 쿠폰 코드가 깨지니 수정 대상에서
+// 뺐다. kind/ownerId도 뺐다 — 이 CRUD는 관리자가 만드는 공용(GENERAL)
+// 쿠폰 전용이고(createCoupon이 항상 kind: "GENERAL", ownerId: null로
+// 생성한다), 생일 쿠폰(BIRTHDAY)은 별도 시스템(birthday-coupon.module.ts)이
+// 발급하는 것이라 여기서 종류를 바꿔치기할 수 있게 열어두면 안 된다.
+const couponUpdateSchema = couponCreateSchema.omit({ code: true }).partial();
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -1117,6 +1124,75 @@ export class AdminService {
     });
   }
 
+  async updateCoupon(
+    id: string,
+    data: {
+      type?: "FIXED" | "PERCENT";
+      value?: number;
+      maxDiscount?: number | null;
+      minSpend?: number;
+      validFrom?: string;
+      validTo?: string;
+      usageLimit?: number | null;
+    },
+  ) {
+    const found = await this.prisma.coupon.findUnique({
+      where: { id },
+      select: { id: true, usedCount: true, kind: true },
+    });
+    if (!found) {
+      throw new NotFoundException({
+        code: "COUPON_NOT_FOUND",
+        message: "쿠폰을 찾을 수 없습니다.",
+      });
+    }
+    // 이 화면은 관리자가 만드는 공용(GENERAL) 쿠폰 전용이다 — 생일 쿠폰은
+    // birthday-coupon.module.ts가 개인별로 발급하는 것이라 여기서 잘못
+    // 건드리면 안 된다.
+    if (found.kind !== "GENERAL") {
+      throw new BadRequestException({
+        code: "NOT_A_GENERAL_COUPON",
+        message: "공용 쿠폰만 여기서 수정할 수 있어요.",
+      });
+    }
+    // 사용 한도를 이미 쓰인 횟수보다 낮게 줄이면 "usedCount > usageLimit"인
+    // 모순된 상태가 되고, active 판정(listCoupons)이 헷갈리게 된다.
+    if (
+      data.usageLimit != null &&
+      data.usageLimit < found.usedCount
+    ) {
+      throw new BadRequestException({
+        code: "USAGE_LIMIT_BELOW_USED",
+        message: `이미 ${found.usedCount}명이 사용해서, 그보다 낮은 한도로는 줄일 수 없어요.`,
+      });
+    }
+    const updated = await this.prisma.coupon.update({
+      where: { id },
+      data: {
+        ...(data.type !== undefined && { type: data.type }),
+        ...(data.value !== undefined && { value: data.value }),
+        ...(data.maxDiscount !== undefined && { maxDiscount: data.maxDiscount }),
+        ...(data.minSpend !== undefined && { minSpend: data.minSpend }),
+        ...(data.validFrom !== undefined && { validFrom: new Date(data.validFrom) }),
+        ...(data.validTo !== undefined && { validTo: new Date(data.validTo) }),
+        ...(data.usageLimit !== undefined && { usageLimit: data.usageLimit }),
+      },
+    });
+    // listCoupons()랑 같은 파생(derived) 필드를 붙여서 리턴한다 — 프론트가
+    // 이 응답으로 목록의 해당 항목을 그대로 교체하는데, active가 없으면
+    // (undefined는 falsy라서) 방금 수정한 쿠폰이 무조건 "만료/소진"으로
+    // 보였다. prisma.coupon.update()는 원본 컬럼만 주지, listCoupons()가
+    // 계산해서 붙이는 active 같은 파생 필드는 안 준다.
+    const now = new Date();
+    return {
+      ...updated,
+      active:
+        now >= updated.validFrom &&
+        now <= updated.validTo &&
+        (updated.usageLimit == null || updated.usedCount < updated.usageLimit),
+    };
+  }
+
   async deleteCoupon(id: string) {
     const found = await this.prisma.coupon.findUnique({
       where: { id },
@@ -1361,6 +1437,15 @@ export class AdminController {
     dto: z.infer<typeof couponCreateSchema>,
   ) {
     return this.admin.createCoupon(dto);
+  }
+
+  @Patch("coupons/:id")
+  updateCoupon(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(couponUpdateSchema))
+    dto: z.infer<typeof couponUpdateSchema>,
+  ) {
+    return this.admin.updateCoupon(id, dto);
   }
 
   @Delete("coupons/:id")

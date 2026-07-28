@@ -490,6 +490,23 @@ export async function createCoupon(input: {
   return api.post<AdminCoupon>("/admin/coupons", input);
 }
 
+// PATCH /admin/coupons/:id — 코드(code)는 수정 불가 (발급 후 코드가 바뀌면
+// 이미 공유된 쿠폰이 깨진다). 코드 자체를 바꿔야 하면 삭제 후 재생성.
+export async function updateCoupon(
+  id: string,
+  input: Partial<{
+    type: "FIXED" | "PERCENT";
+    value: number;
+    maxDiscount: number | null;
+    minSpend: number;
+    validFrom: string;
+    validTo: string;
+    usageLimit: number | null;
+  }>,
+): Promise<AdminCoupon> {
+  return api.patch<AdminCoupon>(`/admin/coupons/${id}`, input);
+}
+
 // DELETE /admin/coupons/:id
 export async function deleteCoupon(id: string): Promise<void> {
   await api.delete(`/admin/coupons/${id}`);
