@@ -38,28 +38,63 @@ export interface PublishedListing extends PendingListing {
   reviewCount: number;
 }
 
+// 필터/검색/페이징 쿼리 파라미터
+export interface PublishedRoomsQuery {
+  buildingType?: string;
+  rentalUnit?: string;
+  nickname?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+// 페이징 응답 형태 (백엔드 admin.module.ts의 반환 형태와 동일)
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 // GET /admin/rooms/published — 게시중 숙소, 별점 낮은 순
-export async function listPublishedRooms(): Promise<PublishedListing[]> {
-  const rows = await api.get<
-    (ApiRoom & {
+export async function listPublishedRooms(
+  query: PublishedRoomsQuery = {},
+): Promise<PaginatedResult<PublishedListing>> {
+  const params = new URLSearchParams();
+  if (query.buildingType) params.set("buildingType", query.buildingType);
+  if (query.rentalUnit) params.set("rentalUnit", query.rentalUnit);
+  if (query.nickname) params.set("nickname", query.nickname);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("pageSize", String(query.pageSize));
+  const qs = params.toString();
+
+  const res = await api.get<{
+    items: (ApiRoom & {
       address?: string | null;
       verifiedByHost?: boolean;
       createdAt: string;
       host?: { name?: string };
       rating: number;
       reviewCount: number;
-    })[]
-  >("/admin/rooms/published");
+    })[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>(`/admin/rooms/published${qs ? `?${qs}` : ""}`);
 
-  return rows.map((r) => ({
-    ...apiRoomToHouse(r),
-    address: r.address ?? null,
-    verifiedByHost: r.verifiedByHost ?? false,
-    hostName: r.host?.name ?? "호스트",
-    submittedAt: r.createdAt,
-    rating: r.rating,
-    reviewCount: r.reviewCount,
-  }));
+  return {
+    items: res.items.map((r) => ({
+      ...apiRoomToHouse(r),
+      address: r.address ?? null,
+      verifiedByHost: r.verifiedByHost ?? false,
+      hostName: r.host?.name ?? "호스트",
+      submittedAt: r.createdAt,
+      rating: r.rating,
+      reviewCount: r.reviewCount,
+    })),
+    total: res.total,
+    page: res.page,
+    pageSize: res.pageSize,
+  };
 }
 
 // 후기가 3건 이상 쌓였고 평균이 3.0 미만이면 검토 대상으로 봅니다.
