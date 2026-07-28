@@ -35,8 +35,8 @@ export const translations = {
       findByPurpose: "목적으로 찾기",
 
       commuteSearchDescription: "통근 시간 짧은 순으로 검색",
-      verifiedHomes: "검증된 숙소",
-      verifiedHomesDescription: "호스트 확인·관리자 승인 숙소",
+      verifiedHomes: "베스트 숙소",
+      verifiedHomesDescription: "리뷰와 평점을 기준으로 좋은 평가를 받은 숙소",
     },
   },
 
@@ -76,8 +76,8 @@ export const translations = {
       findByPurpose: "Browse by purpose",
 
       commuteSearchDescription: "Find homes with shorter commutes",
-      verifiedHomes: "Verified homes",
-      verifiedHomesDescription: "Host-verified and admin-approved homes",
+      verifiedHomes: "Top-rated homes",
+      verifiedHomesDescription: "Homes ranked by guest ratings and reviews",
     },
   },
 } as const;

@@ -74,7 +74,8 @@ function deriveLegacyRoomType(
   if (!rentalUnit || !buildingType) return undefined;
   if (rentalUnit !== "WHOLE") return "SHARE_ROOM";
   if (buildingType === "STUDIO") return "ONE_ROOM";
-  if (buildingType === "APARTMENT" || buildingType === "OFFICETEL") return "APARTMENT";
+  if (buildingType === "APARTMENT" || buildingType === "OFFICETEL")
+    return "APARTMENT";
   return "WHOLE_HOUSE";
 }
 
@@ -127,7 +128,9 @@ function withOccupancy<T extends { reservations?: OccupancyReservation[] }>(
     if (r.bookingMode === "BED" || r.bookingMode === "WHOLE_ROOM") {
       return sum + Math.max(1, r.reservedSpots);
     }
-    return sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0);
+    return (
+      sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0)
+    );
   }, 0);
 
   // 가장 늦게 끝나는 예약이 곧 다시 입주 가능한 시점이다.
@@ -167,10 +170,7 @@ export class RoomsService {
     const where: any = { published: true };
     // NESTED_METRO_LOCATION_FILTER_V5
     const appendLocationClause = (condition: any) => {
-      where.AND = [
-        ...(Array.isArray(where.AND) ? where.AND : []),
-        condition,
-      ];
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), condition];
     };
 
     const locationFieldsFor = (term: string) => [
@@ -188,24 +188,11 @@ export class RoomsService {
       분당구: ["성남시", "분당구", "판교", "분당"],
       영통구: ["수원시", "영통구", "광교", "수원"],
       수지구: ["용인시", "수지구", "수지", "용인"],
-      일산동구: [
-        "고양시",
-        "일산동구",
-        "일산서구",
-        "일산",
-        "고양",
-      ],
+      일산동구: ["고양시", "일산동구", "일산서구", "일산", "고양"],
       광명시: ["광명시", "광명"],
       동안구: ["안양시", "동안구", "만안구", "안양"],
       하남시: ["하남시", "하남"],
-      부천시: [
-        "부천시",
-        "부천",
-        "원미구",
-        "소사구",
-        "오정구",
-        "소사본동",
-      ],
+      부천시: ["부천시", "부천", "원미구", "소사구", "오정구", "소사본동"],
 
       // 인천
       연수구: ["연수구", "송도", "연수"],
@@ -232,12 +219,7 @@ export class RoomsService {
       용산구: ["용산구", "Yongsan-gu", "Itaewon"],
       영등포구: ["영등포구", "Yeongdeungpo-gu", "Yeouido"],
       종로구: ["종로구", "Jongno-gu", "Hyehwa-dong"],
-      관악구: [
-        "관악구",
-        "Gwanak-gu",
-        "Sillim",
-        "Bongcheon-dong",
-      ],
+      관악구: ["관악구", "Gwanak-gu", "Sillim", "Bongcheon-dong"],
       구로구: ["구로구", "Guro-gu", "Gasan-dong"],
       강서구: ["강서구", "Gangseo-gu", "Magok-dong"],
     };
@@ -301,7 +283,7 @@ export class RoomsService {
         OR: locationFieldsFor(term),
       });
     }
-if (query.verifiedByHost) where.verifiedByHost = true;
+    if (query.verifiedByHost) where.verifiedByHost = true;
 
     // roomType (single) or roomTypes (multi-select) → Prisma `in`
     const types = query.roomTypes?.length
@@ -401,7 +383,13 @@ if (query.verifiedByHost) where.verifiedByHost = true;
     // path (see searchByRating) that reuses this same `where` filter. Every
     // other sort maps to a plain column and keeps id-based cursor pagination.
     if (query.sort === "rating") {
-      return this.searchByRating(where, take, query.cursor, query.currentUserId, query);
+      return this.searchByRating(
+        where,
+        take,
+        query.cursor,
+        query.currentUserId,
+        query,
+      );
     }
 
     // recommended is default (createdAt desc as proxy)
@@ -456,9 +444,7 @@ if (query.verifiedByHost) where.verifiedByHost = true;
     const hasCheckIn = Boolean(query.checkIn);
     const hasCheckOut = Boolean(query.checkOut);
     if (hasCheckIn !== hasCheckOut) {
-      throw new BadRequestException(
-        "입주일과 퇴실일을 모두 선택해주세요.",
-      );
+      throw new BadRequestException("입주일과 퇴실일을 모두 선택해주세요.");
     }
     if (!query.checkIn || !query.checkOut) return null;
 
@@ -501,6 +487,7 @@ if (query.verifiedByHost) where.verifiedByHost = true;
         images: { orderBy: { order: "asc" }, take: 1 },
       },
     });
+
     const visible = await this.attachInventoryState(rows, query);
 
     // 선택 기간이 마감된 숙소도 검색 결과에 남긴다.
@@ -534,10 +521,10 @@ if (query.verifiedByHost) where.verifiedByHost = true;
     const requestedTo = query.checkOut ? new Date(query.checkOut) : null;
     const hasRequestedWindow = Boolean(
       requestedFrom &&
-        requestedTo &&
-        !Number.isNaN(requestedFrom.getTime()) &&
-        !Number.isNaN(requestedTo.getTime()) &&
-        requestedFrom < requestedTo,
+      requestedTo &&
+      !Number.isNaN(requestedFrom.getTime()) &&
+      !Number.isNaN(requestedTo.getTime()) &&
+      requestedFrom < requestedTo,
     );
     const inventoryFrom = hasRequestedWindow ? requestedFrom! : today;
     const inventoryTo = hasRequestedWindow ? requestedTo! : tomorrow;
@@ -567,7 +554,10 @@ if (query.verifiedByHost) where.verifiedByHost = true;
         where: {
           roomId: { in: roomIds },
           blocked: true,
-          date: { gte: atUtcDayStart(inventoryFrom), lt: atUtcDayStart(inventoryTo) },
+          date: {
+            gte: atUtcDayStart(inventoryFrom),
+            lt: atUtcDayStart(inventoryTo),
+          },
         },
         select: { roomId: true, date: true },
       }),
@@ -594,10 +584,13 @@ if (query.verifiedByHost) where.verifiedByHost = true;
         if (r.bookingMode === "BED" || r.bookingMode === "WHOLE_ROOM") {
           return sum + Math.max(1, r.reservedSpots);
         }
-        return sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0);
+        return (
+          sum + 1 + (r.companionId && r.companionStatus === "ACCEPTED" ? 1 : 0)
+        );
       }, 0);
       const availableAgainFrom = current.reduce<Date | null>(
-        (latest, r) => latest === null || r.checkOut > latest ? r.checkOut : latest,
+        (latest, r) =>
+          latest === null || r.checkOut > latest ? r.checkOut : latest,
         null,
       );
 
@@ -644,14 +637,25 @@ if (query.verifiedByHost) where.verifiedByHost = true;
           checkIn: { lt: monthEnd },
           checkOut: { gt: monthStart },
         },
-        select: { checkIn: true, checkOut: true, bookingMode: true, reservedSpots: true },
+        select: {
+          checkIn: true,
+          checkOut: true,
+          bookingMode: true,
+          reservedSpots: true,
+        },
       }),
       this.prisma.calendarBlock.findMany({
-        where: { roomId: id, blocked: true, date: { gte: monthStart, lt: monthEnd } },
+        where: {
+          roomId: id,
+          blocked: true,
+          date: { gte: monthStart, lt: monthEnd },
+        },
         select: { date: true, reason: true },
       }),
     ]);
-    const blockMap = new Map(blocks.map((block) => [isoDate(block.date), block.reason ?? null]));
+    const blockMap = new Map(
+      blocks.map((block) => [isoDate(block.date), block.reason ?? null]),
+    );
     const days = [];
     const today = atUtcDayStart(new Date());
 
@@ -722,17 +726,44 @@ if (query.verifiedByHost) where.verifiedByHost = true;
       };
     }
 
-    // 2) Rank those ids by average rating (desc), then newest as a tiebreak.
-    //    NULLS LAST puts review-less rooms at the bottom. Parameterised via
-    //    Prisma.join to stay injection-safe.
+    // 2) Rank rooms using a Bayesian weighted rating.
+    //
+    // A room with one 5-star review should not automatically outrank a room
+    // with many consistently high reviews.
+    //
+    // weighted score =
+    //   (reviewCount / (reviewCount + 5)) * averageRating
+    //   + (5 / (reviewCount + 5)) * 4.0
+    //
+    // Rooms without reviews are excluded from the top-rated results.
     const ranked = await this.prisma.$queryRaw<{ id: string }[]>`
-      SELECT r."id"
-      FROM "Room" r
-      LEFT JOIN "Review" rv ON rv."roomId" = r."id"
-      WHERE r."id" IN (${Prisma.join(ids)})
-      GROUP BY r."id", r."createdAt"
-      ORDER BY AVG(rv."rating") DESC NULLS LAST, r."createdAt" DESC
-    `;
+  SELECT r."id"
+  FROM "Room" r
+  LEFT JOIN "Review" rv ON rv."roomId" = r."id"
+  WHERE r."id" IN (${Prisma.join(ids)})
+  GROUP BY r."id", r."createdAt"
+  HAVING COUNT(rv."id") > 0
+  ORDER BY
+    CASE
+      WHEN COUNT(rv."id") = 0 THEN NULL
+      ELSE (
+        (
+          COUNT(rv."id")::double precision
+          / (COUNT(rv."id")::double precision + 5)
+        )
+        * AVG(rv."rating")::double precision
+        +
+        (
+          5.0
+          / (COUNT(rv."id")::double precision + 5)
+        )
+        * 4.0
+      )
+    END DESC NULLS LAST,
+    COUNT(rv."id") DESC,
+    AVG(rv."rating") DESC NULLS LAST,
+    r."createdAt" DESC
+`;
 
     const rankedIds = ranked.map((row) => row.id);
     // 평점순에서도 마감 숙소를 제거하지 않는다. 최종 조회 단계에서
@@ -895,7 +926,8 @@ if (query.verifiedByHost) where.verifiedByHost = true;
           current.flatMap((reservation) => [
             reservation.guest?.name ?? "게스트",
             ...reservation.companions.map((member) => member.user.name),
-            ...(reservation.companions.length === 0 && reservation.companion?.name
+            ...(reservation.companions.length === 0 &&
+            reservation.companion?.name
               ? [reservation.companion.name]
               : []),
           ]),
@@ -934,7 +966,7 @@ if (query.verifiedByHost) where.verifiedByHost = true;
           nextCheckOut:
             currentCheckOuts.length > 0
               ? new Date(Math.min(...currentCheckOuts.map((date) => +date)))
-              : next?.checkOut ?? null,
+              : (next?.checkOut ?? null),
         },
         upcomingInventory:
           next && upcomingInventory
@@ -1043,7 +1075,7 @@ if (query.verifiedByHost) where.verifiedByHost = true;
               userId: admin.id,
               type: "SYSTEM",
               title: "새 숙소가 등록되었어요",
-              body: `"${room.name}" 숙소가 승인을 기다리고 있습니다.`,
+              body: `"${room.name}" 새로운 숙소가 등록 되었습니다.`,
               targetUrl: "/admin/approvals",
             },
           }),
@@ -1072,11 +1104,14 @@ if (query.verifiedByHost) where.verifiedByHost = true;
     const nextRentalUnit = rest.rentalUnit ?? room.rentalUnit;
     const nextBuildingType = rest.buildingType ?? room.buildingType;
     const nextSharedFacilities = rest.sharedFacilities ?? room.sharedFacilities;
-    const nextCapacity = rest.capacity !== undefined ? rest.capacity : room.capacity;
+    const nextCapacity =
+      rest.capacity !== undefined ? rest.capacity : room.capacity;
 
     if (nextRentalUnit || nextBuildingType) {
       if (!nextRentalUnit || !nextBuildingType) {
-        throw new BadRequestException("예약 공간과 건물 유형을 모두 선택해주세요.");
+        throw new BadRequestException(
+          "예약 공간과 건물 유형을 모두 선택해주세요.",
+        );
       }
       if (
         nextRentalUnit === "BED" &&
@@ -1087,7 +1122,9 @@ if (query.verifiedByHost) where.verifiedByHost = true;
         );
       }
       if (nextRentalUnit === "WHOLE" && nextSharedFacilities.length > 0) {
-        throw new BadRequestException("전체 숙소는 공유 시설을 선택하지 않습니다.");
+        throw new BadRequestException(
+          "전체 숙소는 공유 시설을 선택하지 않습니다.",
+        );
       }
       if (nextRentalUnit !== "WHOLE" && nextSharedFacilities.length === 0) {
         throw new BadRequestException("공유 시설을 하나 이상 선택해주세요.");
@@ -1331,8 +1368,7 @@ if (query.verifiedByHost) where.verifiedByHost = true;
 
     if (!me?.birthDate) return { rooms: [], ageGroup: null };
 
-    const age =
-      new Date().getFullYear() - new Date(me.birthDate).getFullYear();
+    const age = new Date().getFullYear() - new Date(me.birthDate).getFullYear();
     // 10년 단위로 내림. 10대 미만/80대 이상은 의미가 없어 제외한다.
     const decade = Math.floor(age / 10) * 10;
     if (decade < 10 || decade > 70) return { rooms: [], ageGroup: null };
@@ -1361,7 +1397,11 @@ if (query.verifiedByHost) where.verifiedByHost = true;
 
     const rooms = await this.prisma.room.findMany({
       where: { published: true },
-      include: { images: true, ...occupancyInclude(), _count: { select: { favorites: true } } },
+      include: {
+        images: true,
+        ...occupancyInclude(),
+        _count: { select: { favorites: true } },
+      },
     });
 
     const picked = rooms

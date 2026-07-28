@@ -99,7 +99,7 @@ export default function RootLayout({
                         lineHeight: 1.6,
                       }}
                     >
-                      20~40대 직장인과 장기 거주자를 위한 공유주거 플랫폼.
+                      직장인 · 학생 · 장기 거주자를 위한 공유주거 플랫폼.
                     </p>
                   </div>
                   <FooterCol
