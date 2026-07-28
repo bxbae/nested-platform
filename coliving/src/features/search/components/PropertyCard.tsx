@@ -104,12 +104,16 @@ export function PropertyCard({
                 }}
               >
                 {inventory.blocked
-                  ? "호스트 예약 불가"
+                  ? inventory.scope === "SELECTED_DATES"
+                    ? "선택 기간 호스트 차단"
+                    : "오늘 호스트 차단"
                   : inventory.fullyBooked
                     ? inventory.scope === "SELECTED_DATES"
-                      ? "예약 마감"
-                      : "현재 만실"
-                    : `잔여 ${inventory.remainingSpots}자리`}
+                      ? "선택 기간 예약 마감"
+                      : "현재 예약 마감"
+                    : inventory.scope === "SELECTED_DATES"
+                      ? `선택 기간 잔여 ${inventory.remainingSpots}자리`
+                      : `오늘 잔여 ${inventory.remainingSpots}자리`}
               </span>
             )}
           </div>

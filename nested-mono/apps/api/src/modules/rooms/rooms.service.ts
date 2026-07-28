@@ -11,10 +11,11 @@ import { RedisService } from "../../redis/redis.module";
 import { GeocodingService } from "./geocoding.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 import {
-  INVENTORY_HOLDING_STATUSES,
+  INVENTORY_QUERY_STATUSES,
   addUtcDays,
   atUtcDayStart,
   calculateInventory,
+  calculateRangeInventory,
   isoDate,
   overlaps,
 } from "../reservations/reservation-inventory.util";
@@ -60,7 +61,7 @@ export interface RoomSearchQuery {
 // 오늘 날짜가 어떤 예약의 checkIn~checkOut 사이에 있으면 지금 누군가 살고 있는
 // 방이다. 목록에서 "입주 중"으로 표시해 헛걸음을 줄인다. 방을 목록에서 빼지는
 // 않는다 — 나중 날짜로는 들어갈 수 있기 때문이다.
-const OCCUPYING_STATUSES = INVENTORY_HOLDING_STATUSES;
+const OCCUPYING_STATUSES = INVENTORY_QUERY_STATUSES;
 
 function appendAnd(where: Record<string, any>, clause: Record<string, any>) {
   where.AND = [...(Array.isArray(where.AND) ? where.AND : []), clause];
@@ -486,14 +487,16 @@ export class RoomsService {
         images: { orderBy: { order: "asc" }, take: 1 },
       },
     });
-    const enriched = await this.attachInventoryState(rows, query);
-    const available = enriched.filter((room) => !room.inventory?.fullyBooked);
 
+    const visible = await this.attachInventoryState(rows, query);
+
+    // 선택 기간이 마감된 숙소도 검색 결과에 남긴다.
+    // 상세 달력에서 다른 입주 가능 날짜를 확인할 수 있어야 하기 때문이다.
     const cursorIndex = query.cursor
-      ? available.findIndex((room) => room.id === query.cursor)
+      ? visible.findIndex((room) => room.id === query.cursor)
       : -1;
     const offset = cursorIndex >= 0 ? cursorIndex + 1 : 0;
-    const window = available.slice(offset, offset + take + 1);
+    const window = visible.slice(offset, offset + take + 1);
     const hasMore = window.length > take;
     const page = hasMore ? window.slice(0, take) : window;
 
@@ -505,7 +508,7 @@ export class RoomsService {
           : false,
       })),
       nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
-      ...(!query.cursor ? { total: available.length } : {}),
+      ...(!query.cursor ? { total: visible.length } : {}),
     };
   }
 
@@ -533,7 +536,7 @@ export class RoomsService {
       this.prisma.reservation.findMany({
         where: {
           roomId: { in: roomIds },
-          status: { in: INVENTORY_HOLDING_STATUSES },
+          status: { in: INVENTORY_QUERY_STATUSES },
           checkIn: { lt: queryTo },
           checkOut: { gt: queryFrom },
         },
@@ -569,10 +572,12 @@ export class RoomsService {
         overlaps(r.checkIn, r.checkOut, inventoryFrom, inventoryTo),
       );
       const blocked = blocks.some((block) => block.roomId === room.id);
-      const inventory = calculateInventory(
+      const inventory = calculateRangeInventory(
         room.rentalUnit,
         room.capacity,
         selected,
+        inventoryFrom,
+        inventoryTo,
         blocked,
       );
       const residents = current.reduce((sum, r) => {
@@ -628,7 +633,7 @@ export class RoomsService {
       this.prisma.reservation.findMany({
         where: {
           roomId: id,
-          status: { in: INVENTORY_HOLDING_STATUSES },
+          status: { in: INVENTORY_QUERY_STATUSES },
           checkIn: { lt: monthEnd },
           checkOut: { gt: monthStart },
         },
@@ -761,23 +766,9 @@ export class RoomsService {
 `;
 
     const rankedIds = ranked.map((row) => row.id);
-    let availableIds = rankedIds;
-
-    if (query.checkIn && query.checkOut) {
-      const allRows = await this.prisma.room.findMany({
-        where: { id: { in: rankedIds } },
-        include: {
-          images: { orderBy: { order: "asc" }, take: 1 },
-        },
-      });
-      const enriched = await this.attachInventoryState(allRows, query);
-      const availableSet = new Set(
-        enriched
-          .filter((room) => !room.inventory?.fullyBooked)
-          .map((room) => room.id),
-      );
-      availableIds = rankedIds.filter((id) => availableSet.has(id));
-    }
+    // 평점순에서도 마감 숙소를 제거하지 않는다. 최종 조회 단계에서
+    // inventory를 붙여 카드에 "선택 기간 예약 마감"으로 표시한다.
+    const availableIds = rankedIds;
 
     // 3) Offset slice (+1 to detect a next page), decoding the offset cursor.
     const offset = cursor ? Number(cursor) || 0 : 0;
@@ -809,10 +800,6 @@ export class RoomsService {
 
   // ── Read one ──
   async findOne(id: string) {
-    const cacheKey = `room:${id}`;
-    const cached = await this.redis.cacheGet(cacheKey);
-    if (cached) return cached;
-
     const room = await this.prisma.room.findUnique({
       where: { id },
       include: {
@@ -860,8 +847,8 @@ export class RoomsService {
       zipCode: _zipCode,
       ...publicRoom
     } = room;
-    // 현재 거주 인원 · 입주 가능 여부를 얹는다. 캐시가 60초라 예약 직후
-    // 잠깐은 이전 값이 보일 수 있지만, 그 정도 지연은 감수할 만하다.
+    // 현재 거주 인원 · 입주 가능 여부는 예약 직후 즉시 보여야 하므로
+    // 동적 상세 응답은 캐시하지 않는다.
     // rating/reviewCount는 여기서 다시 계산 안 한다 — withOccupancy()가
     // Room.avgRating을 그대로 실어주고, reviewCount도 raw 컬럼이 이미
     // publicRoom 안에 있다. 검색 목록과 상세 페이지가 같은 캐시 값을
@@ -872,7 +859,6 @@ export class RoomsService {
       // reviewCount,
       reviewList: room.reviews,
     };
-    await this.redis.cacheSet(cacheKey, result, 60);
     return result;
   }
 
@@ -893,7 +879,7 @@ export class RoomsService {
     const reservations = await this.prisma.reservation.findMany({
       where: {
         roomId: { in: rooms.map((room) => room.id) },
-        status: { in: INVENTORY_HOLDING_STATUSES },
+        status: { in: INVENTORY_QUERY_STATUSES },
         checkOut: { gt: today },
       },
       select: {
@@ -949,6 +935,25 @@ export class RoomsService {
       ];
       const currentCheckOuts = current.map((r) => r.checkOut);
       const next = future[0];
+      const nextWindowReservations = next
+        ? roomReservations.filter((reservation) =>
+            overlaps(
+              reservation.checkIn,
+              reservation.checkOut,
+              next.checkIn,
+              next.checkOut,
+            ),
+          )
+        : [];
+      const upcomingInventory = next
+        ? calculateRangeInventory(
+            room.rentalUnit,
+            room.capacity,
+            nextWindowReservations,
+            next.checkIn,
+            next.checkOut,
+          )
+        : null;
 
       return {
         ...room,
@@ -963,6 +968,15 @@ export class RoomsService {
               ? new Date(Math.min(...currentCheckOuts.map((date) => +date)))
               : (next?.checkOut ?? null),
         },
+        upcomingInventory:
+          next && upcomingInventory
+            ? {
+                ...upcomingInventory,
+                reservationCount: nextWindowReservations.length,
+                checkIn: next.checkIn,
+                checkOut: next.checkOut,
+              }
+            : null,
       };
     });
   }
@@ -1163,7 +1177,7 @@ export class RoomsService {
     const active = await this.prisma.reservation.count({
       where: {
         roomId: id,
-        status: { in: INVENTORY_HOLDING_STATUSES },
+        status: { in: INVENTORY_QUERY_STATUSES },
       },
     });
     if (active > 0) {

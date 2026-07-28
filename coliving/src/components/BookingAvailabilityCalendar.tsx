@@ -199,14 +199,16 @@ export function BookingAvailabilityCalendar({
           const disabled = selectingCheckIn
             ? !state?.available
             : date < minimumCheckOut;
+          const unavailableDay = Boolean(state && !state.available);
           const selectedCheckIn = date === checkIn;
           const selectedCheckOut = date === checkOut;
           const inRange = date > checkIn && date < checkOut;
+          const dayStatus = availabilityLabel(state);
           const status = selectingCheckIn
-            ? availabilityLabel(state)
+            ? dayStatus
             : date < minimumCheckOut
               ? `최소 퇴실일 ${minimumCheckOut}`
-              : "퇴실일 선택 가능";
+              : `${dayStatus} · 퇴실일 후보`;
 
           return (
             <button
@@ -228,13 +230,13 @@ export function BookingAvailabilityCalendar({
                     ? "var(--primary-soft)"
                     : inRange
                       ? "var(--secondary-soft)"
-                      : disabled
+                      : disabled || unavailableDay
                         ? "var(--bg-2)"
                         : "#fff",
                 color:
                   selectedCheckIn || selectedCheckOut || inRange
                     ? "#ffffff"
-                    : disabled
+                    : disabled || unavailableDay
                       ? "#9ca3af"
                       : "#18181b",
                 opacity: 1,
@@ -246,7 +248,7 @@ export function BookingAvailabilityCalendar({
               <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>
                 {day}
               </span>
-              {selectingCheckIn && state?.remainingSpots != null && (
+              {state?.remainingSpots != null && (
                 <span
                   style={{
                     display: "block",
@@ -260,7 +262,12 @@ export function BookingAvailabilityCalendar({
                     : "마감"}
                 </span>
               )}
-              {selectingCheckIn && state?.blocked && (
+              {state?.remainingSpots == null && state?.fullyBooked && (
+                <span style={{ display: "block", marginTop: 2, fontSize: 8.5 }}>
+                  마감
+                </span>
+              )}
+              {state?.blocked && (
                 <span style={{ display: "block", marginTop: 2, fontSize: 8.5 }}>
                   차단
                 </span>

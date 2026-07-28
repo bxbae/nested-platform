@@ -37,7 +37,7 @@ import type {
 } from "./dto/reservation.dto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
-import { calculateInventory } from "./reservation-inventory.util";
+import { calculateRangeInventory } from "./reservation-inventory.util";
 
 // DI tokens for the ports (bound to Prisma/PSP impls in the module).
 export const RESERVATION_REPO = Symbol("RESERVATION_REPO");
@@ -87,7 +87,13 @@ export class ReservationsService {
       this.repo.findBlockedDates(dto.roomId, dto.checkIn, checkOut),
     ]);
     this.assertNoHostBlocks(blockedDates);
-    const remainingSpots = this.assertInventoryAvailable(room, overlaps, booking);
+    const remainingSpots = this.assertInventoryAvailable(
+      room,
+      overlaps,
+      booking,
+      dto.checkIn,
+      checkOut,
+    );
 
     const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
     const pricingInput = this.scaledPricing(room, units);
@@ -190,7 +196,13 @@ export class ReservationsService {
       this.repo.findBlockedDates(dto.roomId, dto.checkIn, checkOut),
     ]);
     this.assertNoHostBlocks(blockedDates);
-    this.assertInventoryAvailable(room, overlaps, booking);
+    this.assertInventoryAvailable(
+      room,
+      overlaps,
+      booking,
+      dto.checkIn,
+      checkOut,
+    );
 
     const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
     const pricingInput = this.scaledPricing(room, units);
@@ -1065,11 +1077,19 @@ export class ReservationsService {
       });
     }
 
-    if (status === "COMPLETED" && reservation.status !== "CONFIRMED") {
-      throw new BadRequestException({
-        code: "INVALID_COMPLETED_STATUS",
-        message: "확정된 예약만 이용 완료 처리할 수 있습니다.",
-      });
+    if (status === "COMPLETED") {
+      if (reservation.status !== "CONFIRMED") {
+        throw new BadRequestException({
+          code: "INVALID_COMPLETED_STATUS",
+          message: "확정된 예약만 이용 완료 처리할 수 있습니다.",
+        });
+      }
+      if (stripTime(reservation.checkOut) > stripTime(new Date())) {
+        throw new BadRequestException({
+          code: "CHECKOUT_NOT_REACHED",
+          message: `퇴실일 ${reservation.checkOut.toISOString().slice(0, 10)} 이후에 이용 완료 처리할 수 있습니다.`,
+        });
+      }
     }
 
     const updated = await this.repo.updateStatus(id, status);
@@ -1308,6 +1328,8 @@ export class ReservationsService {
         bookingMode: reservation.bookingMode,
         reservedSpots: reservation.reservedSpots,
       },
+      currentCheckOut,
+      target,
     );
 
     const additionalRent = stayCharge(
@@ -1493,11 +1515,15 @@ export class ReservationsService {
     room: RoomRecord,
     overlaps: ReservationRecord[],
     booking: { bookingMode: BookingMode; reservedSpots: number },
+    rangeStart: Date,
+    rangeEnd: Date,
   ): number | null {
-    const inventory = calculateInventory(
+    const inventory = calculateRangeInventory(
       room.rentalUnit,
       room.capacity,
       overlaps,
+      rangeStart,
+      rangeEnd,
     );
 
     if (room.rentalUnit !== "BED") {

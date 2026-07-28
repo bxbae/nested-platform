@@ -103,37 +103,39 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
 // GET /rooms/mine — my listings, including ones still awaiting approval.
 // Search only ever returns published rooms, so this is the only way a host can
 // see a listing they just submitted.
+export interface HostInventorySummary {
+  reservationCount: number;
+  reservedSpots: number;
+  remainingSpots: number | null;
+  fullyBooked: boolean;
+  blocked: boolean;
+}
+
+export interface HostCurrentInventory extends HostInventorySummary {
+  representativeGuestName: string | null;
+  additionalGuestCount: number;
+  nextCheckIn: string | null;
+  nextCheckOut: string | null;
+}
+
+export interface HostUpcomingInventory extends HostInventorySummary {
+  checkIn: string;
+  checkOut: string;
+}
+
 export interface HostListing extends House {
   published: boolean;
   reservationCount: number;
-  currentInventory?: {
-    reservationCount: number;
-    reservedSpots: number;
-    remainingSpots: number | null;
-    fullyBooked: boolean;
-    blocked: boolean;
-    representativeGuestName: string | null;
-    additionalGuestCount: number;
-    nextCheckIn: string | null;
-    nextCheckOut: string | null;
-  };
+  currentInventory?: HostCurrentInventory;
+  upcomingInventory?: HostUpcomingInventory | null;
 }
 
 export async function listMyRooms(): Promise<HostListing[]> {
   const rows = await api.get<(ApiRoom & {
     published: boolean;
     _count?: { reservations: number };
-    currentInventory?: {
-      reservationCount: number;
-      reservedSpots: number;
-      remainingSpots: number | null;
-      fullyBooked: boolean;
-      blocked: boolean;
-      representativeGuestName: string | null;
-      additionalGuestCount: number;
-      nextCheckIn: string | null;
-      nextCheckOut: string | null;
-    };
+    currentInventory?: HostCurrentInventory;
+    upcomingInventory?: HostUpcomingInventory | null;
   })[]>("/rooms/mine");
   return rows.map((r) => ({
     ...apiRoomToHouse(r),
@@ -146,6 +148,13 @@ export async function listMyRooms(): Promise<HostListing[]> {
           nextCheckOut: r.currentInventory.nextCheckOut?.slice(0, 10) ?? null,
         }
       : undefined,
+    upcomingInventory: r.upcomingInventory
+      ? {
+          ...r.upcomingInventory,
+          checkIn: r.upcomingInventory.checkIn.slice(0, 10),
+          checkOut: r.upcomingInventory.checkOut.slice(0, 10),
+        }
+      : null,
   }));
 }
 

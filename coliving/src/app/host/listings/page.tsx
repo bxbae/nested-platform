@@ -581,18 +581,27 @@ export default function HostListings() {
 }
 
 function getReservationBadge(h: HostListing): { label: string; color: string } {
-  const inventory = h.currentInventory;
-  if (!inventory) return { label: "예약 확인 중", color: "var(--text-2)" };
-  if (inventory.blocked) return { label: "예약 불가", color: "var(--warning)" };
-  if (inventory.fullyBooked) return { label: "예약 마감", color: "#4b4b52" };
-  if (h.rentalUnit === "bed" && inventory.remainingSpots != null) {
-    return { label: `잔여 ${inventory.remainingSpots}자리`, color: "var(--secondary)" };
+  const current = h.currentInventory;
+  const upcoming = h.upcomingInventory;
+  if (!current) return { label: "예약 확인 중", color: "var(--text-2)" };
+  if (current.blocked) return { label: "오늘 예약 불가", color: "var(--warning)" };
+  if (current.fullyBooked) return { label: "현재 예약 마감", color: "#4b4b52" };
+
+  if (upcoming) {
+    if (upcoming.fullyBooked) {
+      return { label: "예정 기간 예약 마감", color: "#4b4b52" };
+    }
+    if (h.rentalUnit === "bed" && upcoming.remainingSpots != null) {
+      return {
+        label: `예정 잔여 ${upcoming.remainingSpots}자리`,
+        color: "var(--secondary)",
+      };
+    }
+    return { label: "예약 예정", color: "var(--warning)" };
   }
-  if (inventory.reservationCount > 0) {
-    return { label: "예약 중", color: "var(--secondary)" };
-  }
-  if (inventory.nextCheckIn) {
-    return { label: "다음 예약 예정", color: "var(--warning)" };
+
+  if (h.rentalUnit === "bed" && current.remainingSpots != null) {
+    return { label: `오늘 잔여 ${current.remainingSpots}자리`, color: "var(--secondary)" };
   }
   return { label: "예약 가능", color: "var(--secondary)" };
 }
@@ -601,26 +610,54 @@ function getInventorySummary(h: HostListing): string {
   const inventory = h.currentInventory;
   if (!inventory) return "현재 예약 현황을 확인 중입니다.";
   if (inventory.blocked) return "오늘은 호스트 지정 예약 불가";
+
   if (h.rentalUnit === "bed") {
     const capacity = Math.max(2, h.capacity ?? 2);
-    const remaining = inventory.remainingSpots ?? Math.max(0, capacity - inventory.reservedSpots);
-    return `현재 ${inventory.reservedSpots}/${capacity}자리 예약${remaining > 0 ? ` · 잔여 ${remaining}자리` : " · 예약 마감"}`;
+    const remaining =
+      inventory.remainingSpots ??
+      Math.max(0, capacity - inventory.reservedSpots);
+    return `오늘 현재 ${inventory.reservedSpots}/${capacity}자리 이용 · ${
+      remaining > 0 ? `잔여 ${remaining}자리` : "예약 마감"
+    }`;
   }
-  return inventory.reservationCount > 0 ? "현재 예약 중" : "현재 예약 가능";
+
+  return inventory.reservationCount > 0
+    ? "오늘 현재 예약 중 · 예약 마감"
+    : "오늘 현재 공실 · 예약 가능";
 }
 
 function getGuestSummary(h: HostListing): string {
   const inventory = h.currentInventory;
   if (!inventory?.representativeGuestName) return "";
-  return `${inventory.representativeGuestName}${inventory.additionalGuestCount > 0 ? ` 외 ${inventory.additionalGuestCount}명` : ""}`;
+  return `${inventory.representativeGuestName}${
+    inventory.additionalGuestCount > 0
+      ? ` 외 ${inventory.additionalGuestCount}명`
+      : ""
+  }`;
 }
 
 function getScheduleSummary(h: HostListing): string {
-  const inventory = h.currentInventory;
-  if (!inventory) return "";
-  if (inventory.reservationCount > 0 && inventory.nextCheckOut) {
-    return `다음 퇴실 예정 ${inventory.nextCheckOut}`;
+  const current = h.currentInventory;
+  const upcoming = h.upcomingInventory;
+  if (!current) return "";
+
+  if (upcoming) {
+    if (h.rentalUnit === "bed") {
+      const capacity = Math.max(2, h.capacity ?? 2);
+      const remaining =
+        upcoming.remainingSpots ??
+        Math.max(0, capacity - upcoming.reservedSpots);
+      return `${upcoming.checkIn} ~ ${upcoming.checkOut} 예약 ${
+        upcoming.reservedSpots
+      }/${capacity}자리 · ${
+        remaining > 0 ? `잔여 ${remaining}자리` : "예약 마감"
+      }`;
+    }
+    return `${upcoming.checkIn} ~ ${upcoming.checkOut} 예약 예정 · 해당 기간 예약 마감`;
   }
-  if (inventory.nextCheckIn) return `다음 입주 예정 ${inventory.nextCheckIn}`;
+
+  if (current.reservationCount > 0 && current.nextCheckOut) {
+    return `다음 퇴실 예정 ${current.nextCheckOut}`;
+  }
   return "다음 예약 없음";
 }

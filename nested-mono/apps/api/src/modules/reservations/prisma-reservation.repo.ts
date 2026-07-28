@@ -11,9 +11,9 @@ import type {
   CompanionStatus,
 } from "./ports";
 import {
-  INVENTORY_HOLDING_STATUSES,
+  INVENTORY_QUERY_STATUSES,
   atUtcDayStart,
-  calculateInventory,
+  calculateRangeInventory,
 } from "./reservation-inventory.util";
 
 // Prisma-backed implementation of the ReservationRepo port.
@@ -65,7 +65,7 @@ export class PrismaReservationRepo implements ReservationRepo {
     return this.prisma.reservation.findMany({
       where: {
         roomId,
-        status: { in: INVENTORY_HOLDING_STATUSES },
+        status: { in: INVENTORY_QUERY_STATUSES },
         // overlap: existing.checkIn < newCheckOut AND existing.checkOut > newCheckIn
         checkIn: { lt: checkOut },
         checkOut: { gt: checkIn },
@@ -116,11 +116,16 @@ export class PrismaReservationRepo implements ReservationRepo {
           tx.reservation.findMany({
             where: {
               roomId: reservationData.roomId,
-              status: { in: INVENTORY_HOLDING_STATUSES },
+              status: { in: INVENTORY_QUERY_STATUSES },
               checkIn: { lt: reservationData.checkOut },
               checkOut: { gt: reservationData.checkIn },
             },
-            select: { bookingMode: true, reservedSpots: true },
+            select: {
+              checkIn: true,
+              checkOut: true,
+              bookingMode: true,
+              reservedSpots: true,
+            },
           }),
           tx.calendarBlock.findMany({
             where: {
@@ -144,6 +149,8 @@ export class PrismaReservationRepo implements ReservationRepo {
           overlaps,
           reservationData.bookingMode,
           reservationData.reservedSpots,
+          reservationData.checkIn,
+          reservationData.checkOut,
         );
 
         return tx.reservation.create({
@@ -473,11 +480,16 @@ export class PrismaReservationRepo implements ReservationRepo {
             where: {
               id: { not: id },
               roomId: current.roomId,
-              status: { in: INVENTORY_HOLDING_STATUSES },
+              status: { in: INVENTORY_QUERY_STATUSES },
               checkIn: { lt: newCheckOut },
               checkOut: { gt: current.checkOut },
             },
-            select: { bookingMode: true, reservedSpots: true },
+            select: {
+              checkIn: true,
+              checkOut: true,
+              bookingMode: true,
+              reservedSpots: true,
+            },
           }),
           tx.calendarBlock.findMany({
             where: {
@@ -499,6 +511,8 @@ export class PrismaReservationRepo implements ReservationRepo {
           overlaps,
           current.bookingMode,
           current.reservedSpots,
+          current.checkOut,
+          newCheckOut,
         );
 
         return tx.reservation.update({
@@ -535,14 +549,23 @@ export class PrismaReservationRepo implements ReservationRepo {
 function assertInventoryAvailable(
   rentalUnit: "WHOLE" | "PRIVATE_ROOM" | "BED" | null,
   capacityValue: number | null,
-  overlaps: Array<{ bookingMode: BookingMode; reservedSpots: number }>,
+  overlaps: Array<{
+    checkIn: Date;
+    checkOut: Date;
+    bookingMode: BookingMode;
+    reservedSpots: number;
+  }>,
   requestedMode: BookingMode,
   requestedSpots: number,
+  rangeStart: Date,
+  rangeEnd: Date,
 ): void {
-  const inventory = calculateInventory(
+  const inventory = calculateRangeInventory(
     rentalUnit,
     capacityValue,
     overlaps,
+    rangeStart,
+    rangeEnd,
   );
 
   if (rentalUnit !== "BED") {

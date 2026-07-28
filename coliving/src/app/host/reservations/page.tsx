@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { won } from "@/lib/format";
-import { formatStayDuration } from "@/lib/stay-dates";
+import { formatStayDuration, toLocalISODate } from "@/lib/stay-dates";
 import { reviewTenant } from "@/lib/api/badges";
 import {
   listHostReservations,
@@ -181,6 +181,7 @@ export default function HostReservations() {
     }
   }
 
+  const today = toLocalISODate(new Date());
   const shown = rows.filter((r) => {
     if (filter === "all") return true;
     if (filter === "done") return ["COMPLETED", "NO_SHOW", "CANCELLED_BY_GUEST", "CANCELLED_BY_HOST"].includes(r.status);
@@ -287,8 +288,18 @@ export default function HostReservations() {
               {/* Confirmed → complete / no-show / overdue notice */}
               {b.status === "CONFIRMED" && (
                 <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
-                  <button className="btn btn-ghost press" style={{ fontSize: 13, padding: "8px 16px" }} disabled={busyId === b.id} onClick={() => act(b.id, "COMPLETED")}>
-                    이용 완료 처리
+                  <button
+                    className="btn btn-ghost press"
+                    style={{ fontSize: 13, padding: "8px 16px" }}
+                    disabled={busyId === b.id || b.checkOut > today}
+                    title={
+                      b.checkOut > today
+                        ? `퇴실일 ${b.checkOut} 이후에 이용 완료 처리할 수 있습니다.`
+                        : "이용 완료 처리"
+                    }
+                    onClick={() => act(b.id, "COMPLETED")}
+                  >
+                    {b.checkOut > today ? `퇴실일 ${b.checkOut} 이후 완료` : "이용 완료 처리"}
                   </button>
                   <button
                     className="btn btn-ghost press"
