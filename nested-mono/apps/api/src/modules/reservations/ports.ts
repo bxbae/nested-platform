@@ -67,13 +67,20 @@ export interface RoomRecord {
   capacity: number | null;
 }
 
-export type CompanionStatus = "PENDING" | "ACCEPTED" | "DECLINED";
+export type CompanionStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "PAYMENT_PENDING"
+  | "PAID"
+  | "EXPIRED";
 
 export interface ReservationRecord {
   id: string;
   roomId: string;
   guestId: string;
-  // 공동 예약: 함께 살 상대. guest 가 결제자이고 companion 은 수락만 한다.
+  // 공동 예약 대표자와 첫 번째 초대자 호환 필드.
+  // 신규 초대자는 ReservationCompanionMember에서 각자 결제한다.
   companionId: string | null;
   companionStatus: CompanionStatus | null;
   companionRespondedAt: Date | null;
@@ -115,8 +122,21 @@ export interface CouponRecord {
 }
 
 // Repository port
+export type CompanionPriceData = {
+  monthlyRent: number;
+  deposit: number;
+  cleaningFee: number;
+  maintenanceFee: number;
+  serviceFee: number;
+  discount: number;
+  totalDueNow: number;
+};
+
 export type CreateHoldData = Omit<ReservationRecord, "id" | "createdAt"> & {
   companionIds?: string[];
+  companionInviteExpiresAt?: Date | null;
+  companionPrice?: CompanionPriceData;
+  companionRequiresIndividualPayment?: boolean;
 };
 
 export interface ReservationRepo {
@@ -183,6 +203,16 @@ export interface ReservationWithRoom extends ReservationRecord {
     status: string;
     createdAt: Date;
   } | null;
+  companions?: {
+    status: CompanionStatus;
+    requiresIndividualPayment?: boolean;
+    inviteExpiresAt?: Date | null;
+    paymentDeadline?: Date | null;
+    paidAt?: Date | null;
+    expiredAt?: Date | null;
+    totalDueNow?: number;
+    user: { id: string; name: string; avatarColor: string };
+  }[];
 }
 
 // Reservation joined with room + guest context, for the host's "received
@@ -199,6 +229,12 @@ export interface ReservationForHost extends ReservationRecord {
   guest: { id: string; name: string; avatarColor: string };
   companions?: {
     status: CompanionStatus;
+    requiresIndividualPayment?: boolean;
+    inviteExpiresAt?: Date | null;
+    paymentDeadline?: Date | null;
+    paidAt?: Date | null;
+    expiredAt?: Date | null;
+    totalDueNow?: number;
     user: { id: string; name: string; avatarColor: string };
   }[];
 }

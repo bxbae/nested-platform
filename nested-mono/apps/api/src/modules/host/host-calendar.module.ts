@@ -18,6 +18,7 @@ import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
+import { expireCompanionInvites } from "../reservations/companion-invite-expiration";
 import {
   INVENTORY_HOLDING_STATUSES,
   addUtcDays,
@@ -103,6 +104,7 @@ export class HostCalendarService {
     year: number,
     month: number,
   ): Promise<CalendarMonth> {
+    await expireCompanionInvites(this.prisma);
     const room = await this.ownedRoom(hostId, roomId);
     const monthStart = new Date(Date.UTC(year, month - 1, 1));
     const monthEnd = new Date(Date.UTC(year, month, 1));

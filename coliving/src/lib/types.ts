@@ -248,6 +248,20 @@ export interface Booking {
   checkOut?: string;  // YYYY-MM-DD — used for the contract D-day countdown
   extensionMonths?: number | null; // pending extension request, if any
   latestContractChange?: ContractChangeRequest | null;
+  companions?: {
+    name: string;
+    requiresIndividualPayment?: boolean;
+    status:
+      | "PENDING"
+      | "ACCEPTED"
+      | "DECLINED"
+      | "PAYMENT_PENDING"
+      | "PAID"
+      | "EXPIRED";
+    paymentDeadline?: string | null;
+    paidAt?: string | null;
+    totalDueNow?: number;
+  }[];
   createdAt: string;
 }
 

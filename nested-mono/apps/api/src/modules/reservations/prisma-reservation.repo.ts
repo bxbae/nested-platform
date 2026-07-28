@@ -90,7 +90,13 @@ export class PrismaReservationRepo implements ReservationRepo {
   }
 
   async createHold(data: CreateHoldData): Promise<ReservationRecord> {
-    const { companionIds = [], ...reservationData } = data;
+    const {
+      companionIds = [],
+      companionInviteExpiresAt = null,
+      companionPrice,
+      companionRequiresIndividualPayment = false,
+      ...reservationData
+    } = data;
     // 같은 숙소 행을 먼저 잠가서, 다인실의 남은 자리 계산과 예약 생성이
     // 하나의 임계 구역에서 수행되도록 한다. 단순 overlap 검사만으로는
     // 동시에 들어온 두 건이 남은 한 자리를 모두 확보할 수 있다.
@@ -159,7 +165,19 @@ export class PrismaReservationRepo implements ReservationRepo {
             ...(companionIds.length > 0
               ? {
                   companions: {
-                    create: companionIds.map((userId) => ({ userId })),
+                    create: companionIds.map((userId) => ({
+                      userId,
+                      requiresIndividualPayment:
+                        companionRequiresIndividualPayment,
+                      inviteExpiresAt: companionInviteExpiresAt,
+                      monthlyRent: companionPrice?.monthlyRent ?? 0,
+                      deposit: companionPrice?.deposit ?? 0,
+                      cleaningFee: companionPrice?.cleaningFee ?? 0,
+                      maintenanceFee: companionPrice?.maintenanceFee ?? 0,
+                      serviceFee: companionPrice?.serviceFee ?? 0,
+                      discount: companionPrice?.discount ?? 0,
+                      totalDueNow: companionPrice?.totalDueNow ?? 0,
+                    })),
                   },
                 }
               : {}),
@@ -199,6 +217,24 @@ export class PrismaReservationRepo implements ReservationRepo {
             amount: true,
             status: true,
             createdAt: true,
+          },
+        },
+        companions: {
+          select: {
+            status: true,
+            requiresIndividualPayment: true,
+            inviteExpiresAt: true,
+            paymentDeadline: true,
+            paidAt: true,
+            expiredAt: true,
+            totalDueNow: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatarColor: true,
+              },
+            },
           },
         },
         contractChanges: {
@@ -243,6 +279,12 @@ export class PrismaReservationRepo implements ReservationRepo {
         companions: {
           select: {
             status: true,
+            requiresIndividualPayment: true,
+            inviteExpiresAt: true,
+            paymentDeadline: true,
+            paidAt: true,
+            expiredAt: true,
+            totalDueNow: true,
             user: { select: { id: true, name: true, avatarColor: true } },
           },
         },
@@ -338,10 +380,33 @@ export class PrismaReservationRepo implements ReservationRepo {
             },
           },
         },
+        guest: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         companions: {
           where: { userId: companionId },
           take: 1,
-          select: { status: true, respondedAt: true },
+          select: {
+            status: true,
+            respondedAt: true,
+            requiresIndividualPayment: true,
+            inviteExpiresAt: true,
+            paymentDeadline: true,
+            paidAt: true,
+            expiredAt: true,
+            monthlyRent: true,
+            deposit: true,
+            cleaningFee: true,
+            maintenanceFee: true,
+            serviceFee: true,
+            discount: true,
+            totalDueNow: true,
+            paymentProvider: true,
+            paymentTxnId: true,
+          },
         },
         payment: {
           select: {
@@ -362,6 +427,30 @@ export class PrismaReservationRepo implements ReservationRepo {
         companionId: companionId,
         companionStatus: membership?.status ?? r.companionStatus,
         companionRespondedAt: membership?.respondedAt ?? r.companionRespondedAt,
+        requiresIndividualPayment:
+          membership?.requiresIndividualPayment ?? false,
+        inviteExpiresAt: membership?.inviteExpiresAt ?? null,
+        paymentDeadline: membership?.paymentDeadline ?? null,
+        paidAt: membership?.paidAt ?? null,
+        expiredAt: membership?.expiredAt ?? null,
+        individualPayment: membership
+          ? {
+              monthlyRent: membership.monthlyRent,
+              deposit: membership.deposit,
+              cleaningFee: membership.cleaningFee,
+              maintenanceFee: membership.maintenanceFee,
+              serviceFee: membership.serviceFee,
+              discount: membership.discount,
+              totalDueNow: membership.totalDueNow,
+              provider: membership.paymentProvider,
+              providerTxnId: membership.paymentTxnId,
+            }
+          : null,
+        inviter: {
+          id: r.guest.id,
+          name: r.guest.name,
+        },
+        reservationStatus: r.status,
         room: {
           id: r.room.id,
           name: r.room.name,

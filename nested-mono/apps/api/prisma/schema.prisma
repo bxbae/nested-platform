@@ -83,6 +83,9 @@ enum CompanionStatus {
   PENDING
   ACCEPTED
   DECLINED
+  PAYMENT_PENDING
+  PAID
+  EXPIRED
 }
 
 enum ReservationStatus {
@@ -379,8 +382,8 @@ model Reservation {
   guestId              String
   guest                User                         @relation(fields: [guestId], references: [id])
   // ── 공동 예약 (룸메이트와 함께 방 예약) ──
-  // guest 가 대표자이자 결제자다. companion 은 함께 살 상대이며, 비용은
-  // 대표자가 전액 결제하고 둘 사이 정산은 서비스 밖에서 이뤄진다.
+  // guest 는 대표 예약자다. 신규 다인실 친구 초대는 대표자와 초대자가
+  // 각각 본인 1자리 금액을 결제하고, 기존 단일 초대는 호환용으로 유지한다.
   companionId          String?
   companion            User?                        @relation("ReservationCompanion", fields: [companionId], references: [id])
   companionStatus      CompanionStatus?
@@ -463,10 +466,31 @@ model ReservationCompanionMember {
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   status        CompanionStatus @default(PENDING)
   respondedAt   DateTime?
+  // true 인 신규 다인실 초대만 개별 결제·자동 만료 흐름을 사용한다.
+  // 기존 초대 데이터는 false 로 유지해 이중 결제를 방지한다.
+  requiresIndividualPayment Boolean @default(false)
+  inviteExpiresAt DateTime?
+  paymentDeadline DateTime?
+  paidAt        DateTime?
+  expiredAt     DateTime?
+
+  // 초대받은 사용자가 결제할 1자리 금액. 대표 예약자의 결제액과 분리한다.
+  monthlyRent    Int @default(0)
+  deposit        Int @default(0)
+  cleaningFee    Int @default(0)
+  maintenanceFee Int @default(0)
+  serviceFee     Int @default(0)
+  discount       Int @default(0)
+  totalDueNow    Int @default(0)
+  paymentProvider String?
+  paymentTxnId    String?
+
   createdAt     DateTime        @default(now())
 
   @@unique([reservationId, userId])
   @@index([userId, status])
+  @@index([status, inviteExpiresAt])
+  @@index([status, paymentDeadline])
 }
 
 model Payment {
