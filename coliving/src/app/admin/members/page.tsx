@@ -25,36 +25,75 @@ const ROLE_LABEL: Record<string, string> = {
   ADMIN: "관리자",
 };
 
+// 헤더와 데이터 행이 항상 같은 값을 쓰도록 상수 하나로 관리.
+// (이전 버그: 헤더/데이터 행 각각 하드코딩되어 있어서 마지막 칸이 150px/120px로 어긋났었음)
+const MEMBER_GRID_COLUMNS =
+  "minmax(160px, 1.8fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(70px, 0.7fr) minmax(55px, 0.6fr) minmax(150px, 1.1fr)";
+
 export default function AdminMembers() {
   const { user } = useAuth();
   const [members, setMembers] = useState<AdminMember[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // id of the row whose suspend toggle is in flight — disables just that button.
   const [busyId, setBusyId] = useState<string | null>(null);
-  // id awaiting a second click before we actually suspend.
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  // id of the row whose role dropdown is in flight.
   const [roleBusyId, setRoleBusyId] = useState<string | null>(null);
 
-  const load = useCallback(async (search: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      setMembers(await listMembers(search));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "회원 목록을 불러오지 못했어요.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // 필터/정렬/페이징 상태
+  const [role, setRole] = useState<MemberRole | "">("");
+  const [tier, setTier] = useState<"" | "SEED" | "REGULAR" | "TRUSTED">("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
+
+  const load = useCallback(
+    async (search: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await listMembers({
+          q: search,
+          role: role || undefined,
+          tier: tier || undefined,
+          sortBy,
+          sortOrder,
+          page,
+          pageSize,
+        });
+        setMembers(res.items);
+        setTotal(res.total);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "회원 목록을 불러오지 못했어요.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [role, tier, sortBy, sortOrder, page],
+  );
+
+  // 필터/정렬 바뀌면 페이지 1로 초기화
+  useEffect(() => {
+    setPage(1);
+  }, [role, tier, sortBy, sortOrder]);
 
   // Debounce: wait 300ms after the last keystroke before searching.
   useEffect(() => {
     const t = setTimeout(() => load(q), 300);
     return () => clearTimeout(t);
   }, [q, load]);
+
+  // 헤더 클릭 정렬 핸들러 — 같은 컬럼 재클릭 시 asc/desc 토글, 다른 컬럼은 asc로 초기화
+  function handleSort(column: string) {
+    if (sortBy === column) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(column);
+      setSortOrder("asc");
+    }
+  }
 
   // Flip the identity-verified badge. Optimistic: the row updates immediately
   // and reverts by refetching if the request fails.
@@ -148,9 +187,78 @@ export default function AdminMembers() {
         <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 12 }}>{error}</p>
       )}
 
+      {/* 신규 — 역할/등급 필터 탭 */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {([
+            ["", "전체 역할"],
+            ["GUEST", "게스트"],
+            ["HOST", "호스트"],
+            ["ADMIN", "관리자"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              className="btn press"
+              style={{
+                fontSize: 12,
+                padding: "6px 12px",
+                background: role === value ? "var(--text)" : "transparent",
+                color: role === value ? "var(--bg)" : "var(--text-2)",
+                border: role === value ? "none" : "1px solid var(--border)",
+              }}
+              onClick={() => setRole(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {([
+            ["", "전체 등급"],
+            ["SEED", "새싹"],
+            ["REGULAR", "일반"],
+            ["TRUSTED", "우수"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              className="btn press"
+              style={{
+                fontSize: 12,
+                padding: "6px 12px",
+                background: tier === value ? "var(--text)" : "transparent",
+                color: tier === value ? "var(--bg)" : "var(--text-2)",
+                border: tier === value ? "none" : "1px solid var(--border)",
+              }}
+              onClick={() => setTier(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="card" style={{ overflow: "hidden" }}>
-      <div className="admin-table-head" style={{ gridTemplateColumns: "minmax(160px, 1.8fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(70px, 0.7fr) minmax(55px, 0.6fr) minmax(150px, 1.1fr)" }}>
-      <span>회원</span><span style={{ textAlign: "center" }}>역할</span><span style={{ textAlign: "center" }}>가입일</span><span style={{ textAlign: "center" }}>상태</span><span style={{ textAlign: "center" }}>평균 별점</span><span style={{ textAlign: "center" }}>신고</span><span></span>
+      {/* grid-template-columns를 상수화해서 헤더/데이터 행이 항상 같은 값을 쓰도록 함
+          (기존 버그: 헤더 마지막 칸 150px, 데이터 행 마지막 칸 120px로 서로 달랐음) */}
+      <div className="admin-table-head" style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}>
+      <span onClick={() => handleSort("name")} style={{ cursor: "pointer" }}>
+        회원 {sortBy === "name" && (sortOrder === "asc" ? "▲" : "▼")}
+      </span>
+      <span onClick={() => handleSort("role")} style={{ textAlign: "center", cursor: "pointer" }}>
+        역할 {sortBy === "role" && (sortOrder === "asc" ? "▲" : "▼")}
+      </span>
+      <span onClick={() => handleSort("createdAt")} style={{ textAlign: "center", cursor: "pointer" }}>
+        가입일 {sortBy === "createdAt" && (sortOrder === "asc" ? "▲" : "▼")}
+      </span>
+      <span style={{ textAlign: "center" }}>상태</span>
+      <span onClick={() => handleSort("avgRating")} style={{ textAlign: "center", cursor: "pointer" }}>
+        평균 별점 {sortBy === "avgRating" && (sortOrder === "asc" ? "▲" : "▼")}
+      </span>
+      <span onClick={() => handleSort("reportCount")} style={{ textAlign: "center", cursor: "pointer" }}>
+        신고 {sortBy === "reportCount" && (sortOrder === "asc" ? "▲" : "▼")}
+      </span>
+      <span></span>
         </div>
 
         {!loading && members.length === 0 && (
@@ -162,7 +270,7 @@ export default function AdminMembers() {
         {members.map((m) => {
           const isSelf = m.id === user?.id;
           return (
-            <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: "minmax(160px, 1.8fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(70px, 0.7fr) minmax(55px, 0.6fr) minmax(120px, 1.1fr)" }}>
+            <div key={m.id} className="admin-table-row" style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}>
               <span style={{ minWidth: 0 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {m.name}{isSelf && <span style={{ color: "var(--text-2)", fontWeight: 400 }}> (나)</span>}
@@ -248,10 +356,10 @@ export default function AdminMembers() {
                 {m.reportCount > 0 ? `${m.reportCount}건` : "—"}
               </span>
 
-              <span style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-                <button
+              <span style={{ display: "flex", gap: 4, justifyContent: "flex-end", flexWrap: "nowrap" }}>
+              <button
                   className="btn btn-ghost press"
-                  style={{ fontSize: 12, padding: "5px 10px" }}
+                  style={{ fontSize: 12, padding: "5px 10px", whiteSpace: "nowrap" }}
                   onClick={() => toggleVerify(m)}
                   title={m.verified ? "인증 해제" : "신원 확인 처리"}
                 >
@@ -265,6 +373,7 @@ export default function AdminMembers() {
                     className="btn btn-ghost press"
                     style={{
                       fontSize: 12, padding: "6px 12px",
+                      whiteSpace: "nowrap",
                       color: confirmId === m.id ? "#fff" : undefined,
                       background: confirmId === m.id ? "var(--primary)" : undefined,
                       borderColor: confirmId === m.id ? "var(--primary)" : undefined,
@@ -283,10 +392,35 @@ export default function AdminMembers() {
                   </button>
                 )}
               </span>
-            </div>
+              </div>
           );
         })}
       </div>
+
+      {/* 신규 — 페이지네이션 */}
+      {total > pageSize && (
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, marginTop: 20 }}>
+          <button
+            className="btn btn-ghost press"
+            style={{ fontSize: 13, padding: "6px 14px" }}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+          >
+            이전
+          </button>
+          <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+            {page} / {Math.max(1, Math.ceil(total / pageSize))} 페이지 (총 {total}명)
+          </span>
+          <button
+            className="btn btn-ghost press"
+            style={{ fontSize: 13, padding: "6px 14px" }}
+            onClick={() => setPage((p) => (p * pageSize < total ? p + 1 : p))}
+            disabled={page * pageSize >= total}
+          >
+            다음
+          </button>
+        </div>
+      )}
     </div>
   );
 }
