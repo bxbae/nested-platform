@@ -323,6 +323,29 @@ export class ReservationsService {
       guestId,
     );
 
+    // 결제 검증(verify)까지 통과했는데도 Payment 테이블엔 아무것도 안 남기고
+    // Reservation.status만 CONFIRMED로 바꾸고 끝났었다 — 관리자 매출 관리
+    // 화면(총 거래액/수수료/환불액)이 전부 이 테이블만 보고 계산하는데,
+    // 쓰는 코드가 아예 없어서 실제 확정된 예약이 있어도 항상 0으로 나왔다.
+    // reservationId가 @unique라 이미 있으면(멱등 재호출) 에러 없이 건너뜀.
+    if (this.prisma) {
+      const existingPayment = await this.prisma.payment.findUnique({
+        where: { reservationId: reservation.id },
+        select: { id: true },
+      });
+      if (!existingPayment) {
+        await this.prisma.payment.create({
+          data: {
+            reservationId: reservation.id,
+            provider: dto.provider,
+            providerTxnId: dto.paymentKey,
+            amount: reservation.totalDueNow,
+            status: "PAID",
+          },
+        });
+      }
+    }
+
     if (room.hostId !== guestId && this.prisma && this.notificationsGateway) {
       const notification = await this.prisma.notification.create({
         data: {
