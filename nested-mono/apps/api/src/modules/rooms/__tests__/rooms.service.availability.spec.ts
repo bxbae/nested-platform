@@ -37,7 +37,7 @@ describe("RoomsService — 날짜 기반 가용성 검색", () => {
     images: [],
   };
 
-  it("선택한 전체 기간에 예약 가능한 숙소만 반환한다", async () => {
+  it("선택 기간이 마감된 숙소도 상태와 함께 반환한다", async () => {
     const rooms = [
       { ...baseRoom, id: "open-room", rentalUnit: "WHOLE" },
       { ...baseRoom, id: "closed-room", rentalUnit: "PRIVATE_ROOM" },
@@ -60,8 +60,12 @@ describe("RoomsService — 날짜 기반 가용성 검색", () => {
       checkOut: "2026-09-20",
     });
 
-    expect(result.items.map((room: any) => room.id)).toEqual(["open-room"]);
-    expect(result.total).toBe(1);
+    expect(result.items.map((room: any) => room.id)).toEqual([
+      "open-room",
+      "closed-room",
+    ]);
+    expect(result.items[1]?.inventory.fullyBooked).toBe(true);
+    expect(result.total).toBe(2);
     expect(calls[0]?.where.availableFrom.lte).toEqual(
       new Date("2026-08-04"),
     );
@@ -100,7 +104,48 @@ describe("RoomsService — 날짜 기반 가용성 검색", () => {
     expect(result.items[0]?.inventory.fullyBooked).toBe(false);
   });
 
-  it("호스트가 막은 날짜가 포함되면 날짜 검색 결과에서 제외한다", async () => {
+  it("서로 겹치지 않는 다인실 예약은 합산하지 않고 최대 동시 점유만 계산한다", async () => {
+    const rooms = [
+      {
+        ...baseRoom,
+        id: "bed-room",
+        rentalUnit: "BED",
+        capacity: 6,
+      },
+    ];
+    const reservations = [
+      {
+        roomId: "bed-room",
+        checkIn: new Date("2026-08-01T00:00:00.000Z"),
+        checkOut: new Date("2026-09-01T00:00:00.000Z"),
+        bookingMode: "BED",
+        reservedSpots: 3,
+        companionId: null,
+        companionStatus: null,
+      },
+      {
+        roomId: "bed-room",
+        checkIn: new Date("2026-09-01T00:00:00.000Z"),
+        checkOut: new Date("2026-10-01T00:00:00.000Z"),
+        bookingMode: "BED",
+        reservedSpots: 3,
+        companionId: null,
+        companionStatus: null,
+      },
+    ];
+
+    const { svc } = makeService(rooms, reservations);
+    const result = await svc.search({
+      checkIn: "2026-08-01",
+      checkOut: "2026-10-01",
+    });
+
+    expect(result.items[0]?.inventory.reservedSpots).toBe(3);
+    expect(result.items[0]?.inventory.remainingSpots).toBe(3);
+    expect(result.items[0]?.inventory.fullyBooked).toBe(false);
+  });
+
+  it("호스트가 막은 날짜가 포함돼도 마감 상태로 반환한다", async () => {
     const rooms = [{ ...baseRoom, id: "blocked-room", rentalUnit: "WHOLE" }];
     const blocks = [
       { roomId: "blocked-room", date: new Date("2026-08-20T00:00:00.000Z") },
@@ -112,8 +157,10 @@ describe("RoomsService — 날짜 기반 가용성 검색", () => {
       checkOut: "2026-09-20",
     });
 
-    expect(result.items).toHaveLength(0);
-    expect(result.total).toBe(0);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.inventory.blocked).toBe(true);
+    expect(result.items[0]?.inventory.fullyBooked).toBe(true);
+    expect(result.total).toBe(1);
   });
 
   it("플랫폼 최소 1개월보다 짧은 검색은 거부한다", async () => {
