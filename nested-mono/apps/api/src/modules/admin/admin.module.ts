@@ -971,6 +971,21 @@ export class AdminService {
       ORDER BY 1
     `;
 
+    // 쿠폰 할인액 — 실제로 결제가 완료된(PAID) 예약 중, 쿠폰이 적용된
+    // 건들의 discount 합계. 사이트가 대신 부담하는 금액이라, GMV/수수료
+    // 랑 구분해서 따로 보여준다. Reservation에 쿠폰 사용 시점의 할인
+    // 금액이 이미 저장돼 있어서(discount 컬럼) 새 집계 테이블 없이도
+    // 바로 합산할 수 있다.
+    const couponAgg = await this.prisma.$queryRaw<{ total: bigint | null }[]>`
+      SELECT SUM(r."discount") AS total
+      FROM "Reservation" r
+      JOIN "Payment" p ON p."reservationId" = r.id
+      WHERE p.status = 'PAID'
+        AND r."couponId" IS NOT NULL
+        AND r."createdAt" >= ${start}
+    `;
+    const couponDiscount = couponAgg[0]?.total ? Number(couponAgg[0].total) : 0;
+
     // Index DB results by "YYYY-M" so we can zero-fill missing months.
     const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}`;
     const revByMonth = new Map(
@@ -1007,6 +1022,7 @@ export class AdminService {
       commission,
       payouts: gmv - commission,
       refunds,
+      couponDiscount,
       trend,
     };
   }

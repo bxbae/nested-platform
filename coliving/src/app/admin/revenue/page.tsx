@@ -59,28 +59,71 @@ export default function AdminRevenue() {
         <Stat label="환불액" value={won(data.refunds)} />
       </div>
 
+      {/* 쿠폰 할인액 — GMV/수수료랑 성격이 달라서(매출이 아니라 사이트가
+          대신 부담하는 비용) stat-row 그리드에 안 끼워넣고 따로 뺐다.
+          옆에는 "수수료 수익에서 쿠폰 할인액을 뺀, 관리자에게 실제로
+          남는 돈"을 바로 대조해서 보여준다. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 14, marginTop: 14 }}>
+        <div className="card" style={{ padding: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <strong style={{ fontSize: 15 }}>쿠폰 할인액 (사이트 부담)</strong>
+        </div>
+        <div className="display" style={{ fontSize: 22, fontWeight: 700, color: "var(--primary)" }}>
+          -{won(data.couponDiscount)}
+        </div>
+      </div>
+
+        <div className="card" style={{ padding: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <strong style={{ fontSize: 15 }}>실제 순수익</strong>
+            <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 3 }}>
+              사이트 순 수익 = 수수료 수익 - 쿠폰 할인액(사이트 부담)
+            </div>
+          </div>
+          <div className="display" style={{ fontSize: 22, fontWeight: 700, color: "var(--secondary)" }}>
+            {won(data.commission - data.couponDiscount)}
+          </div>
+        </div>
+      </div>
+
       {/* 매출 추이 차트 */}
       <div className="card" style={{ padding: 22, marginTop: 20 }}>
         <strong style={{ fontSize: 15 }}>최근 6개월 거래액 추이</strong>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 14, height: 180, marginTop: 20 }}>
-          {data.trend.map((t) => (
-            <div key={t.month} style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "var(--text-2)", marginBottom: 6 }}>
-                {t.revenue > 0 ? `${Math.round(t.revenue / 10000)}만` : "0"}
-              </div>
-              <div
-                style={{
-                  height: `${(t.revenue / maxRevenue) * 130}px`,
-                  minHeight: t.revenue > 0 ? 4 : 0,
-                  background: t.revenue === maxRevenue ? "var(--primary)" : "var(--secondary)",
-                  opacity: t.revenue === maxRevenue ? 1 : 0.5,
-                  borderRadius: "8px 8px 0 0",
-                }}
+        {(() => {
+          const W = 600;
+          const H = 200;
+          const PAD_X = 30;
+          const PAD_TOP = 34; // 점 위 숫자 라벨이 잘리지 않게 여유를 둔다
+          const PAD_BOTTOM = 28;
+          const n = data.trend.length;
+          const stepX = n > 1 ? (W - PAD_X * 2) / (n - 1) : 0;
+          const xAt = (i: number) => PAD_X + stepX * i;
+          const yAt = (v: number) =>
+            PAD_TOP + (1 - v / maxRevenue) * (H - PAD_TOP - PAD_BOTTOM);
+          const points = data.trend.map((t, i) => ({ ...t, x: xAt(i), y: yAt(t.revenue) }));
+          const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+
+          return (
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, marginTop: 12 }}>
+              <line
+                x1={PAD_X} y1={H - PAD_BOTTOM} x2={W - PAD_X} y2={H - PAD_BOTTOM}
+                stroke="var(--border)" strokeWidth={1}
               />
-              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 8 }}>{t.month}</div>
-            </div>
+              <path d={linePath} fill="none" stroke="var(--primary)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+              {points.map((p) => (
+                <g key={p.month}>
+                  <circle cx={p.x} cy={p.y} r={4} fill="var(--primary)" />
+                  <text x={p.x} y={p.y - 12} textAnchor="middle" fontSize={12} fontWeight={600} fill="var(--text)">
+                    {p.revenue > 0 ? `${Math.round(p.revenue / 10000)}만` : "0"}
+                  </text>
+                  <text x={p.x} y={H - 8} textAnchor="middle" fontSize={12} fill="var(--text-2)">
+                    {p.month}
+                  </text>
+                </g>
           ))}
-        </div>
+            </svg>
+          );
+        })()}
       </div>
 
       {/* 예약 건수 추이 차트 */}
