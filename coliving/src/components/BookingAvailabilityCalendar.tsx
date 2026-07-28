@@ -68,13 +68,15 @@ export function BookingAvailabilityCalendar({
   }, [roomId, year, month, requestedSpots]);
 
   useEffect(() => {
+    if (selectionTarget !== "checkIn") return;
+
     const selected = parseISODate(checkIn);
     if (selected.getFullYear() !== year || selected.getMonth() !== month) {
       setCursor(new Date(selected.getFullYear(), selected.getMonth(), 1));
     }
     // cursor is deliberately omitted: manual month navigation must remain.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkIn]);
+  }, [checkIn, selectionTarget]);
 
   const byDate = useMemo(
     () => new Map(days.map((day) => [day.date, day])),
@@ -98,6 +100,10 @@ export function BookingAvailabilityCalendar({
         checkIn: date,
         checkOut: checkOut >= nextMinimum ? checkOut : nextMinimum,
       });
+      const minimumDate = parseISODate(nextMinimum);
+      setCursor(
+        new Date(minimumDate.getFullYear(), minimumDate.getMonth(), 1),
+      );
       setSelectionTarget("checkOut");
       return;
     }
@@ -128,7 +134,13 @@ export function BookingAvailabilityCalendar({
           type="button"
           className="chip press"
           data-active={selectionTarget === "checkIn"}
-          onClick={() => setSelectionTarget("checkIn")}
+          onClick={() => {
+            const selected = parseISODate(checkIn);
+            setCursor(
+              new Date(selected.getFullYear(), selected.getMonth(), 1),
+            );
+            setSelectionTarget("checkIn");
+          }}
         >
           입주일 {checkIn}
         </button>
@@ -136,7 +148,13 @@ export function BookingAvailabilityCalendar({
           type="button"
           className="chip press"
           data-active={selectionTarget === "checkOut"}
-          onClick={() => setSelectionTarget("checkOut")}
+          onClick={() => {
+            const minimumDate = parseISODate(minimumCheckOut);
+            setCursor(
+              new Date(minimumDate.getFullYear(), minimumDate.getMonth(), 1),
+            );
+            setSelectionTarget("checkOut");
+          }}
         >
           퇴실일 {checkOut}
         </button>
@@ -200,6 +218,8 @@ export function BookingAvailabilityCalendar({
             ? !state?.available
             : date < minimumCheckOut;
           const unavailableDay = Boolean(state && !state.available);
+          const hideAvailabilityForMinimumStay =
+            !selectingCheckIn && date < minimumCheckOut;
           const selectedCheckIn = date === checkIn;
           const selectedCheckOut = date === checkOut;
           const inRange = date > checkIn && date < checkOut;
@@ -248,7 +268,8 @@ export function BookingAvailabilityCalendar({
               <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>
                 {day}
               </span>
-              {state?.remainingSpots != null && (
+              {!hideAvailabilityForMinimumStay &&
+                state?.remainingSpots != null && (
                 <span
                   style={{
                     display: "block",
@@ -262,12 +283,14 @@ export function BookingAvailabilityCalendar({
                     : "마감"}
                 </span>
               )}
-              {state?.remainingSpots == null && state?.fullyBooked && (
+              {!hideAvailabilityForMinimumStay &&
+                state?.remainingSpots == null &&
+                state?.fullyBooked && (
                 <span style={{ display: "block", marginTop: 2, fontSize: 8.5 }}>
                   마감
                 </span>
               )}
-              {state?.blocked && (
+              {!hideAvailabilityForMinimumStay && state?.blocked && (
                 <span style={{ display: "block", marginTop: 2, fontSize: 8.5 }}>
                   차단
                 </span>
