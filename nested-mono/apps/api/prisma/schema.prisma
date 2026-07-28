@@ -58,6 +58,18 @@ enum Gender {
   OTHER
 }
 
+enum GenderVisibility {
+  PUBLIC
+  MATCHED_ONLY
+  PRIVATE
+}
+
+enum RoommateGenderPreference {
+  ANY
+  MALE
+  FEMALE
+}
+
 enum GenderPolicy {
   ANY
   MALE_ONLY
@@ -84,7 +96,6 @@ enum ReservationStatus {
   EARLY_CHECKOUT_APPROVED
   EXTENSION_REQUESTED
 }
-
 
 enum ContractChangeType {
   EARLY_CHECKOUT
@@ -114,39 +125,41 @@ enum UserLocale {
 }
 
 model User {
-  id                String     @id @default(cuid())
-  email             String     @unique
-  passwordHash      String? // null for OAuth-only accounts
-  name              String // 공개용 닉네임
-  nicknameCompleted Boolean    @default(false)
-  role              Role       @default(GUEST)
-  provider          String? // "google" | null
-  providerId        String?
-  avatarColor       String     @default("#FF5A5F")
+  id                       String                   @id @default(cuid())
+  email                    String                   @unique
+  passwordHash             String? // null for OAuth-only accounts
+  name                     String // 공개용 닉네임
+  nicknameCompleted        Boolean                  @default(false)
+  role                     Role                     @default(GUEST)
+  provider                 String? // "google" | null
+  providerId               String?
+  avatarColor              String                   @default("#FF5A5F")
   // Profile photo (S3 URL). null → fall back to the avatarColor circle.
-  avatarUrl         String?
-  bio               String? // self-introduction (스토리보드 1-1 자기소개)
-  birthDate         DateTime? // 생년월일. 연령대 표시(20/30/40대)와 생일 쿠폰 판단에 사용
-  job               String? // optional occupation label (e.g. "학생")
-  suspended         Boolean    @default(false)
+  avatarUrl                String?
+  bio                      String? // self-introduction (스토리보드 1-1 자기소개)
+  birthDate                DateTime? // 생년월일. 연령대 표시(20/30/40대)와 생일 쿠폰 판단에 사용
+  job                      String? // optional occupation label (e.g. "학생")
+  suspended                Boolean                  @default(false)
   // Timestamp of email ownership confirmation. null = unverified.
   // Login is blocked while null (when a mail provider is configured).
-  emailVerified     DateTime?
+  emailVerified            DateTime?
   // Set by an admin once identity has been checked (신분증·연락처 확인).
   // Distinct from emailVerified, which only proves the address works.
-  verifiedAt        DateTime?
+  verifiedAt               DateTime?
   // Set when the user deletes their own account. Distinct from `suspended`,
   // which is an admin action. Non-null means the account is gone: login is
   // blocked and the personal fields above have been anonymised.
-  deletedAt         DateTime?
-  createdAt         DateTime   @default(now())
-  gender            Gender     @default(OTHER)
-  preferredLocale   UserLocale @default(KO)
+  deletedAt                DateTime?
+  createdAt                DateTime                 @default(now())
+  gender                   Gender                   @default(OTHER)
+  genderVisibility         GenderVisibility         @default(MATCHED_ONLY)
+  roommateGenderPreference RoommateGenderPreference @default(ANY)
+  preferredLocale          UserLocale               @default(KO)
 
-  listings              Room[]                   @relation("HostRooms")
+  listings              Room[]                       @relation("HostRooms")
   reservations          Reservation[]
   // 내가 동반자로 초대된 예약들
-  companionReservations Reservation[]            @relation("ReservationCompanion")
+  companionReservations Reservation[]                @relation("ReservationCompanion")
   reservationCompanions ReservationCompanionMember[]
   reviews               Review[]
   messages              Message[]
@@ -154,28 +167,28 @@ model User {
   resetTokens           PasswordResetToken[]
   verificationTokens    EmailVerificationToken[]
   hostProfile           HostProfile?
-  properties            Property[]               @relation("HostProperties")
+  properties            Property[]                   @relation("HostProperties")
   notifications         Notification[]
   wishlists             Wishlist[]
   favorites             Favorite[]
-  reportsMade           Report[]                 @relation("Reporter")
-  reportsReceived       Report[]                 @relation("ReportedUser")
-  chatRooms             ChatRoom[]               @relation("GuestChatRooms")
-  hostChatRooms         ChatRoom[]               @relation("HostChatRooms")
+  reportsMade           Report[]                     @relation("Reporter")
+  reportsReceived       Report[]                     @relation("ReportedUser")
+  chatRooms             ChatRoom[]                   @relation("GuestChatRooms")
+  hostChatRooms         ChatRoom[]                   @relation("HostChatRooms")
   settlements           Settlement[]
   posts                 Post[]
   comments              Comment[]
   preference            RoommatePreference?
-  inquiries             Inquiry[]                @relation("InquiryAuthor")
-  tenantReviewsWritten  TenantReview[]           @relation("TenantReviewAuthor")
-  tenantReviewsReceived TenantReview[]           @relation("TenantReviewTenant")
+  inquiries             Inquiry[]                    @relation("InquiryAuthor")
+  tenantReviewsWritten  TenantReview[]               @relation("TenantReviewAuthor")
+  tenantReviewsReceived TenantReview[]               @relation("TenantReviewTenant")
 
   friendshipsA         Friendship[]         @relation("FriendshipUserA")
   friendshipsB         Friendship[]         @relation("FriendshipUserB")
   directConversationsA DirectConversation[] @relation("DirectParticipantA")
   directConversationsB DirectConversation[] @relation("DirectParticipantB")
   directMessages       DirectMessage[]      @relation("DirectMessageSender")
-  ownedCoupons        Coupon[]             @relation("CouponOwner")
+  ownedCoupons         Coupon[]             @relation("CouponOwner")
 
   @@index([provider, providerId])
 }
@@ -269,9 +282,9 @@ model Room {
   roomType RoomType
 
   // 신규 분류 3축. 기존 데이터는 일부가 애매하므로 nullable로 시작한다.
-  rentalUnit                  RentalUnit?
-  buildingType                BuildingType?
-  sharedFacilities            SharedFacility[] @default([])
+  rentalUnit                   RentalUnit?
+  buildingType                 BuildingType?
+  sharedFacilities             SharedFacility[] @default([])
   classificationReviewRequired Boolean          @default(false)
 
   // 함께 지낼 수 있는 최대 인원입니다. 신규 숙소는 전체 숙소도 포함해 필수로 받는다.
@@ -360,16 +373,16 @@ model Image {
 }
 
 model Reservation {
-  id                   String            @id @default(cuid())
+  id                   String                       @id @default(cuid())
   roomId               String
-  room                 Room              @relation(fields: [roomId], references: [id])
+  room                 Room                         @relation(fields: [roomId], references: [id])
   guestId              String
-  guest                User              @relation(fields: [guestId], references: [id])
+  guest                User                         @relation(fields: [guestId], references: [id])
   // ── 공동 예약 (룸메이트와 함께 방 예약) ──
   // guest 가 대표자이자 결제자다. companion 은 함께 살 상대이며, 비용은
   // 대표자가 전액 결제하고 둘 사이 정산은 서비스 밖에서 이뤄진다.
   companionId          String?
-  companion            User?             @relation("ReservationCompanion", fields: [companionId], references: [id])
+  companion            User?                        @relation("ReservationCompanion", fields: [companionId], references: [id])
   companionStatus      CompanionStatus?
   companionRespondedAt DateTime?
   checkIn              DateTime
@@ -379,20 +392,20 @@ model Reservation {
   // 실제 퇴실 처리가 끝난 날짜. 계약 종료 예정일(checkOut)과 구분한다.
   actualCheckOut       DateTime?
   months               Int
-  status               ReservationStatus @default(PENDING_PAYMENT)
+  status               ReservationStatus            @default(PENDING_PAYMENT)
   // 대표 결제자가 확보한 예약 단위와 자리 수. 기존 예약은 UNIT/1로 안전하게 유지된다.
-  bookingMode          BookingMode        @default(UNIT)
-  reservedSpots        Int                @default(1)
+  bookingMode          BookingMode                  @default(UNIT)
+  reservedSpots        Int                          @default(1)
   monthlyRent          Int
   deposit              Int
   cleaningFee          Int
   maintenanceFee       Int
   serviceFee           Int
-  discount             Int               @default(0)
+  discount             Int                          @default(0)
   totalDueNow          Int
   // 선택한 쿠폰. 할인은 첫 달 월세에만 적용되고, 결제 확정 시 사용 처리된다.
   couponId             String?
-  coupon               Coupon?            @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  coupon               Coupon?                      @relation(fields: [couponId], references: [id], onDelete: SetNull)
   payment              Payment?
   settlement           Settlement?
   // 게스트가 요청한 연장 개월 수 (승인 대기 중에만 값이 있음)
@@ -400,7 +413,7 @@ model Reservation {
   tenantReview         TenantReview?
   companions           ReservationCompanionMember[]
   contractChanges      ContractChangeRequest[]
-  createdAt            DateTime          @default(now())
+  createdAt            DateTime                     @default(now())
 
   // 기간 중복과 다인실 잔여 자리는 예약 서비스가 숙소 행 잠금 및
   // serializable transaction 안에서 검증한다.
@@ -409,7 +422,6 @@ model Reservation {
   @@index([companionId])
   @@index([couponId])
 }
-
 
 model ContractChangeRequest {
   id                    String               @id @default(cuid())
@@ -673,9 +685,9 @@ model Inquiry {
 }
 
 enum InquiryStatus {
-  RECEIVED    // 대기 중
+  RECEIVED // 대기 중
   IN_PROGRESS // 처리 중
-  RESOLVED    // 완료
+  RESOLVED // 완료
 }
 
 model Report {

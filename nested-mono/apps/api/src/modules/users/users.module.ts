@@ -1,5 +1,12 @@
 // 배치 위치: src/modules/users/users.module.ts
-import { Controller, Get, Param, NotFoundException, Injectable, Module } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Param,
+  NotFoundException,
+  Injectable,
+  Module,
+} from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { toBadges } from "../../common/activity-tier";
 import { ageGroup } from "../../common/age-group";
@@ -22,7 +29,7 @@ export interface PublicProfile {
   avatarColor: string;
   avatarUrl: string | null;
   bio: string | null;
-  gender: "MALE" | "FEMALE" | "OTHER";
+  gender: "MALE" | "FEMALE" | null;
   // 생년월일 원본은 타인에게 노출하지 않고 연령대만 내보낸다.
   ageGroup: number | null;
   joinedYear: number;
@@ -47,6 +54,7 @@ export class UsersService {
         avatarUrl: true,
         bio: true,
         gender: true,
+        genderVisibility: true,
         birthDate: true,
         createdAt: true,
         deletedAt: true,
@@ -79,7 +87,12 @@ export class UsersService {
       avatarColor: user.avatarColor,
       avatarUrl: user.avatarUrl,
       bio: user.bio,
-      gender: user.gender,
+
+      gender:
+        user.genderVisibility === "PUBLIC" && user.gender !== "OTHER"
+          ? user.gender
+          : null,
+
       ageGroup: ageGroup(user.birthDate),
       joinedYear: user.createdAt.getFullYear(),
       ...badges,

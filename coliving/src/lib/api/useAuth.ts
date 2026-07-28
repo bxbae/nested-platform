@@ -28,7 +28,7 @@ export function useAuth() {
       email: string,
       password: string,
       name: string,
-      gender: "MALE" | "FEMALE" | "OTHER",
+      gender: "MALE" | "FEMALE",
       preferredLocale: "KO" | "EN",
     ) => registerApi(email, password, name, gender, preferredLocale),
     [],
