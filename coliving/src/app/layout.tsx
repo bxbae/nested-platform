@@ -121,6 +121,7 @@ export default function RootLayout({
                     title="회사"
                     links={[
                       ["서비스 소개", "/about"],
+                      ["문의하기", "/support"],
                       // ["이용약관", "/"],
                       // ["개인정보처리방침", "/"],
                     ]}

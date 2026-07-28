@@ -11,6 +11,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -53,12 +54,18 @@ export class InquiriesService {
   }
 
   // 내 문의 목록 — 답변 여부를 바로 볼 수 있게 답변도 함께 내려준다.
-  async listMine(authorId: string) {
-    return this.prisma.inquiry.findMany({
-      where: { authorId },
+  async listMine(authorId: string, take = 10, skip = 0) {
+    const where = { authorId };
+    const [rows, total] = await Promise.all([
+      this.prisma.inquiry.findMany({
+        where,
       orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+        take,
+        skip,
+      }),
+      this.prisma.inquiry.count({ where }),
+    ]);
+    return { rows, total, take, skip };
   }
 
   // 관리자용 전체 목록
@@ -153,8 +160,16 @@ export class InquiriesController {
 
   @Get("mine")
   @UseGuards(JwtAuthGuard)
-  mine(@Req() req: any) {
-    return this.inquiries.listMine(req.user.id);
+  mine(
+    @Req() req: any,
+    @Query("take") take?: string,
+    @Query("skip") skip?: string,
+  ) {
+    return this.inquiries.listMine(
+      req.user.id,
+      take ? Number(take) : undefined,
+      skip ? Number(skip) : undefined,
+    );
   }
 }
 
