@@ -149,7 +149,7 @@ export default function AdminMembers() {
       )}
 
       <div className="card" style={{ overflow: "hidden" }}>
-      <div className="admin-table-head" style={{ gridTemplateColumns: "minmax(160px, 1.8fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(70px, 0.7fr) minmax(55px, 0.6fr) minmax(120px, 1.1fr)" }}>
+      <div className="admin-table-head" style={{ gridTemplateColumns: "minmax(160px, 1.8fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(70px, 0.7fr) minmax(55px, 0.6fr) minmax(150px, 1.1fr)" }}>
       <span>회원</span><span style={{ textAlign: "center" }}>역할</span><span style={{ textAlign: "center" }}>가입일</span><span style={{ textAlign: "center" }}>상태</span><span style={{ textAlign: "center" }}>평균 별점</span><span style={{ textAlign: "center" }}>신고</span><span></span>
         </div>
 
