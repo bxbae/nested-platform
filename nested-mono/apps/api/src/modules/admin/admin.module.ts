@@ -67,6 +67,13 @@ const couponCreateSchema = z.object({
   usageLimit: z.number().int().positive().nullable().optional(),
 });
 
+// 코드(code)는 발급 후 바꾸면 이미 공유된 쿠폰 코드가 깨지니 수정 대상에서
+// 뺐다. kind/ownerId도 뺐다 — 이 CRUD는 관리자가 만드는 공용(GENERAL)
+// 쿠폰 전용이고(createCoupon이 항상 kind: "GENERAL", ownerId: null로
+// 생성한다), 생일 쿠폰(BIRTHDAY)은 별도 시스템(birthday-coupon.module.ts)이
+// 발급하는 것이라 여기서 종류를 바꿔치기할 수 있게 열어두면 안 된다.
+const couponUpdateSchema = couponCreateSchema.omit({ code: true }).partial();
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -371,24 +378,103 @@ export class AdminService {
   }
 
   // reports (신고 관리)
-  async reports(status?: string) {
-    const rows = await this.prisma.report.findMany({
-      where: status ? { status: status as any } : {},
+  async reports(status?: string, take = 20, skip = 0) {
+    const where = status ? { status: status as any } : {};
+    const [rows, total] = await Promise.all([
+      this.prisma.report.findMany({
+        where,
       orderBy: { createdAt: "desc" },
       include: { reporter: { select: { name: true } } },
-      take: 200,
-    });
+        take,
+        skip,
+      }),
+      this.prisma.report.count({ where }),
+    ]);
+
+    // targetId는 신고 종류마다 다른 테이블을 가리키는 다형(polymorphic)
+    // 참조라 Report에 직접 관계(relation)를 걸 수가 없다. 그래서 종류별로
+    // id를 묶어뒀다가, 타입당 쿼리 한 번씩(최대 6번)만 날려서 이름을
+    // 채운다 — row마다 따로 조회하면 N+1이 된다.
+    const idsByType: Record<
+      "ROOM" | "REVIEW" | "USER" | "MESSAGE" | "COMMUNITY_POST" | "COMMUNITY_COMMENT",
+      string[]
+    > = {
+      ROOM: [], REVIEW: [], USER: [], MESSAGE: [], COMMUNITY_POST: [], COMMUNITY_COMMENT: [],
+    };
+    for (const r of rows) idsByType[r.targetType as keyof typeof idsByType]?.push(r.targetId);
+
+    const nameOf = new Map<string, string>();
+
+    const [rooms, reviews, users, posts, comments, chatMessages, directMessages] = await Promise.all([
+      // 방 자체엔 "닉네임"이 없으니, 신고당한 대상을 사람으로 통일하기
+      // 위해 그 방 호스트의 닉네임을 보여준다.
+      idsByType.ROOM.length
+        ? this.prisma.room.findMany({
+            where: { id: { in: idsByType.ROOM } },
+            select: { id: true, host: { select: { name: true } } },
+          })
+        : [],
+      idsByType.REVIEW.length
+        ? this.prisma.review.findMany({
+            where: { id: { in: idsByType.REVIEW } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      idsByType.USER.length
+        ? this.prisma.user.findMany({ where: { id: { in: idsByType.USER } }, select: { id: true, name: true } })
+        : [],
+      idsByType.COMMUNITY_POST.length
+        ? this.prisma.post.findMany({
+            where: { id: { in: idsByType.COMMUNITY_POST } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      idsByType.COMMUNITY_COMMENT.length
+        ? this.prisma.comment.findMany({
+            where: { id: { in: idsByType.COMMUNITY_COMMENT } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      // MESSAGE는 채팅방 메시지(Message)일 수도, 1:1 다이렉트 메시지
+      // (DirectMessage)일 수도 있다 — reportedUserId()와 같은 이유로
+      // 두 테이블 다 조회해서 먼저 걸리는 쪽을 쓴다.
+      idsByType.MESSAGE.length
+        ? this.prisma.message.findMany({
+            where: { id: { in: idsByType.MESSAGE } },
+            select: { id: true, sender: { select: { name: true } } },
+          })
+        : [],
+      idsByType.MESSAGE.length
+        ? this.prisma.directMessage.findMany({
+            where: { id: { in: idsByType.MESSAGE } },
+            select: { id: true, sender: { select: { name: true } } },
+          })
+        : [],
+    ]);
+
+    rooms.forEach((x) => nameOf.set(x.id, x.host?.name ?? "알 수 없음"));
+    reviews.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    users.forEach((x) => nameOf.set(x.id, x.name));
+    posts.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    comments.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    chatMessages.forEach((x) => nameOf.set(x.id, x.sender?.name ?? "알 수 없음"));
+    directMessages.forEach((x) => nameOf.set(x.id, x.sender?.name ?? "알 수 없음"));
+
     // Flatten the reporter relation so the client gets a plain name string.
-    return rows.map((r: (typeof rows)[number]) => ({
+    const items = rows.map((r: (typeof rows)[number]) => ({
       id: r.id,
       targetType: r.targetType,
       targetId: r.targetId,
+      // null이면 대상이 이미 삭제됐거나(탈퇴 회원 등) 못 찾은 것 — 프론트가
+      // 이 경우 targetId를 대신 보여주도록 남겨둔다.
+      targetName: nameOf.get(r.targetId) ?? null,
       reason: r.reason,
       status: r.status,
       createdAt: r.createdAt,
       reporterId: r.reporterId,
       reporterName: r.reporter?.name ?? "알 수 없음",
     }));
+    return { rows: items, total, take, skip };
   }
   // ── 휴지통 (소프트 삭제된 커뮤니티 콘텐츠) ──
   // 삭제는 deletedAt 을 찍어두기만 하므로, 여기서 목록을 보여주고 되돌린다.
@@ -1117,6 +1203,75 @@ export class AdminService {
     });
   }
 
+  async updateCoupon(
+    id: string,
+    data: {
+      type?: "FIXED" | "PERCENT";
+      value?: number;
+      maxDiscount?: number | null;
+      minSpend?: number;
+      validFrom?: string;
+      validTo?: string;
+      usageLimit?: number | null;
+    },
+  ) {
+    const found = await this.prisma.coupon.findUnique({
+      where: { id },
+      select: { id: true, usedCount: true, kind: true },
+    });
+    if (!found) {
+      throw new NotFoundException({
+        code: "COUPON_NOT_FOUND",
+        message: "쿠폰을 찾을 수 없습니다.",
+      });
+    }
+    // 이 화면은 관리자가 만드는 공용(GENERAL) 쿠폰 전용이다 — 생일 쿠폰은
+    // birthday-coupon.module.ts가 개인별로 발급하는 것이라 여기서 잘못
+    // 건드리면 안 된다.
+    if (found.kind !== "GENERAL") {
+      throw new BadRequestException({
+        code: "NOT_A_GENERAL_COUPON",
+        message: "공용 쿠폰만 여기서 수정할 수 있어요.",
+      });
+    }
+    // 사용 한도를 이미 쓰인 횟수보다 낮게 줄이면 "usedCount > usageLimit"인
+    // 모순된 상태가 되고, active 판정(listCoupons)이 헷갈리게 된다.
+    if (
+      data.usageLimit != null &&
+      data.usageLimit < found.usedCount
+    ) {
+      throw new BadRequestException({
+        code: "USAGE_LIMIT_BELOW_USED",
+        message: `이미 ${found.usedCount}명이 사용해서, 그보다 낮은 한도로는 줄일 수 없어요.`,
+      });
+    }
+    const updated = await this.prisma.coupon.update({
+      where: { id },
+      data: {
+        ...(data.type !== undefined && { type: data.type }),
+        ...(data.value !== undefined && { value: data.value }),
+        ...(data.maxDiscount !== undefined && { maxDiscount: data.maxDiscount }),
+        ...(data.minSpend !== undefined && { minSpend: data.minSpend }),
+        ...(data.validFrom !== undefined && { validFrom: new Date(data.validFrom) }),
+        ...(data.validTo !== undefined && { validTo: new Date(data.validTo) }),
+        ...(data.usageLimit !== undefined && { usageLimit: data.usageLimit }),
+      },
+    });
+    // listCoupons()랑 같은 파생(derived) 필드를 붙여서 리턴한다 — 프론트가
+    // 이 응답으로 목록의 해당 항목을 그대로 교체하는데, active가 없으면
+    // (undefined는 falsy라서) 방금 수정한 쿠폰이 무조건 "만료/소진"으로
+    // 보였다. prisma.coupon.update()는 원본 컬럼만 주지, listCoupons()가
+    // 계산해서 붙이는 active 같은 파생 필드는 안 준다.
+    const now = new Date();
+    return {
+      ...updated,
+      active:
+        now >= updated.validFrom &&
+        now <= updated.validTo &&
+        (updated.usageLimit == null || updated.usedCount < updated.usageLimit),
+    };
+  }
+
   async deleteCoupon(id: string) {
     const found = await this.prisma.coupon.findUnique({
       where: { id },
@@ -1233,8 +1388,16 @@ export class AdminController {
   }
 
   @Get("reports")
-  reports(@Query("status") status?: string) {
-    return this.admin.reports(status);
+  reports(
+    @Query("status") status?: string,
+    @Query("take") take?: string,
+    @Query("skip") skip?: string,
+  ) {
+    return this.admin.reports(
+      status,
+      take ? Number(take) : undefined,
+      skip ? Number(skip) : undefined,
+    );
   }
 
   @Patch("reports/:id")
@@ -1361,6 +1524,15 @@ export class AdminController {
     dto: z.infer<typeof couponCreateSchema>,
   ) {
     return this.admin.createCoupon(dto);
+  }
+
+  @Patch("coupons/:id")
+  updateCoupon(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(couponUpdateSchema))
+    dto: z.infer<typeof couponUpdateSchema>,
+  ) {
+    return this.admin.updateCoupon(id, dto);
   }
 
   @Delete("coupons/:id")

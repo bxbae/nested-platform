@@ -142,6 +142,11 @@ export interface AdminReport {
   id: string;
   targetType: ReportTargetType;
   targetId: string;
+  // 신고 대상을 나타내는 사람의 닉네임 (ROOM은 그 방 호스트, REVIEW/
+  // COMMUNITY_POST/COMMUNITY_COMMENT는 작성자, MESSAGE는 보낸 사람,
+  // USER는 그 사용자 본인). 대상이 삭제됐거나 못 찾으면 null — 그때는
+  // 프론트가 targetId를 대신 보여준다.
+  targetName: string | null;
   reason: string;
   status: ReportStatus;
   createdAt: string;
@@ -149,10 +154,24 @@ export interface AdminReport {
   reporterName: string;
 }
 
-// GET /admin/reports?status= — omit status for all.
-export async function listReports(status?: ReportStatus): Promise<AdminReport[]> {
-  const query = status ? `?status=${status}` : "";
-  return api.get<AdminReport[]>(`/admin/reports${query}`);
+export interface AdminReportPage {
+  rows: AdminReport[];
+  total: number;
+  take: number;
+  skip: number;
+}
+
+// GET /admin/reports?status=&take=&skip= — status 생략하면 전체.
+export async function listReports(
+  status?: ReportStatus,
+  take = 5,
+  skip = 0,
+): Promise<AdminReportPage> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("take", String(take));
+  params.set("skip", String(skip));
+  return api.get<AdminReportPage>(`/admin/reports?${params.toString()}`);
 }
 
 // PATCH /admin/reports/:id — move a report through RECEIVED → IN_REVIEW → RESOLVED.
@@ -488,6 +507,23 @@ export async function createCoupon(input: {
   usageLimit?: number | null;
 }): Promise<AdminCoupon> {
   return api.post<AdminCoupon>("/admin/coupons", input);
+}
+
+// PATCH /admin/coupons/:id — 코드(code)는 수정 불가 (발급 후 코드가 바뀌면
+// 이미 공유된 쿠폰이 깨진다). 코드 자체를 바꿔야 하면 삭제 후 재생성.
+export async function updateCoupon(
+  id: string,
+  input: Partial<{
+    type: "FIXED" | "PERCENT";
+    value: number;
+    maxDiscount: number | null;
+    minSpend: number;
+    validFrom: string;
+    validTo: string;
+    usageLimit: number | null;
+  }>,
+): Promise<AdminCoupon> {
+  return api.patch<AdminCoupon>(`/admin/coupons/${id}`, input);
 }
 
 // DELETE /admin/coupons/:id
