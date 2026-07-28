@@ -238,6 +238,14 @@ export class AuthController {
     return this.auth.becomeHost(req.user.id);
   }
 
+  // POST /auth/relinquish-host — HOST 계정이 스스로 GUEST로 돌아간다.
+  @Post("relinquish-host")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  relinquishHost(@Req() req: any) {
+    return this.auth.relinquishHost(req.user.id);
+  }
+
   @Delete("me")
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)

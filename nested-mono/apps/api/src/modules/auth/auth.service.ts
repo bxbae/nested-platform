@@ -12,6 +12,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { MailService } from "./mail.service";
 import type { ReservationStatus } from "@prisma/client";
 import { toBadges } from "../../common/activity-tier";
+import { INVENTORY_HOLDING_STATUSES } from "../reservations/reservation-inventory.util";
 
 export interface JwtPayload {
   sub: string;
@@ -503,6 +504,100 @@ export class AuthService {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { role: "HOST" },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    return this.issueTokens(
+      updated.id,
+      updated.email,
+      updated.role,
+      updated.name,
+      updated.createdAt,
+    );
+  }
+
+  // POST /auth/relinquish-host — HOST → GUEST. becomeHost()의 반대 방향.
+  //
+  // 등록한 숙소가 있으면 함께 정리한다:
+  //   - 진행 중인 예약이 하나라도 있으면 전체 요청을 막는다(개별 숙소 삭제와
+  //     동일한 정책). 게스트가 이미 결제하고 입주를 기다리는 상태에서 숙소가
+  //     사라지면 안 되기 때문이다.
+  //   - Reservation·Review·ChatRoom은 Room을 onDelete: Cascade 없이 참조한다.
+  //     이력이 있는 방을 그대로 delete()하면 FK 제약 위반으로 전체가 실패하고,
+  //     설사 스키마를 바꿔 cascade를 건다 해도 게스트의 예약·리뷰 기록이
+  //     통째로 사라지는 건 더 나쁘다. 그래서 이력이 없는 방만 실제로 삭제하고,
+  //     이력이 있는 방은 비공개(published: false) 처리만 한다.
+  async relinquishHost(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+        deletedAt: true,
+      },
+    });
+    if (!user || user.deletedAt) {
+      throw new NotFoundException({
+        code: "USER_NOT_FOUND",
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+    if (user.role !== "HOST") {
+      throw new BadRequestException({
+        code: "NOT_A_HOST",
+        message: "호스트 계정만 포기할 수 있어요.",
+      });
+    }
+
+    const rooms = await this.prisma.room.findMany({
+      where: { hostId: userId },
+      select: { id: true },
+    });
+    const roomIds = rooms.map((r) => r.id);
+
+    if (roomIds.length > 0) {
+      const active = await this.prisma.reservation.count({
+        where: {
+          roomId: { in: roomIds },
+          status: { in: INVENTORY_HOLDING_STATUSES },
+        },
+      });
+      if (active > 0) {
+        throw new BadRequestException({
+          code: "HOST_HAS_ACTIVE_RESERVATIONS",
+          message: `등록한 숙소에 진행 중인 예약이 ${active}건 있어 포기할 수 없습니다. 예약을 먼저 정리해주세요.`,
+        });
+      }
+    }
+
+    for (const roomId of roomIds) {
+      const [reservationCount, reviewCount, chatRoomCount] = await Promise.all([
+        this.prisma.reservation.count({ where: { roomId } }),
+        this.prisma.review.count({ where: { roomId } }),
+        this.prisma.chatRoom.count({ where: { roomId } }),
+      ]);
+      if (reservationCount === 0 && reviewCount === 0 && chatRoomCount === 0) {
+        await this.prisma.room.delete({ where: { id: roomId } });
+      } else {
+        await this.prisma.room.update({
+          where: { id: roomId },
+          data: { published: false },
+        });
+      }
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { role: "GUEST" },
       select: {
         id: true,
         email: true,

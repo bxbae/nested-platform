@@ -38,6 +38,19 @@ const SHARED_FACILITIES: SharedFacility[] = [
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
 const AMENITIES = ["Rooftop", "Coworking room", "Laundry", "Fiber wifi", "Weekly cleaning", "Gym", "Garden", "Parcel locker"];
 
+function todayISOInKorea(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(
+    parts.map(({ type, value }) => [type, value]),
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 // ── Zod schema (validation source of truth) ──
 const listingSchema = z.object({
   name: z.string().min(2, "숙소 이름을 2자 이상 입력하세요."),
@@ -137,7 +150,7 @@ export default function NewListing() {
     defaultValues: {
       name: "", city: "", district: "", neighborhood: "", legalDongCode: "", roadAddress: "", jibunAddress: "", detailAddress: "", zipCode: "", rentalUnit: "whole", buildingType: "studio", sharedFacilities: [], gender: "any", capacity: 2,
       monthlyRent: 700000, deposit: 3000000, cleaningFee: 70000, maintenanceFee: 50000, minStay: 3,
-      availableFrom: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
+      availableFrom: todayISOInKorea(),
       verifiedByHost: false as unknown as true,
     },
   });
