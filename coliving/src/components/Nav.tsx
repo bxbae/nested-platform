@@ -63,7 +63,7 @@ export function Nav() {
     {
       label: t.verifiedHomes,
       description: t.verifiedHomesDescription,
-      href: "/search?verified=true",
+      href: "/search?sort=rating",
     },
   ];
 
@@ -153,7 +153,7 @@ export function Nav() {
                   padding: "8px 13px",
                   borderRadius: 999,
                   color: active ? "var(--text)" : "var(--text-2)",
-                  background: active ? "var(--surface)" : "transparent",   // 다크모드에서 자동으로 어두운 회색(#202024)이 됨
+                  background: active ? "var(--surface)" : "transparent", // 다크모드에서 자동으로 어두운 회색(#202024)이 됨
                   border: active
                     ? "1px solid var(--border)"
                     : "1px solid transparent",
@@ -197,13 +197,17 @@ export function Nav() {
                         borderRadius: 18,
                         boxShadow: "0 18px 48px rgba(0,0,0,.14)",
                         display: "grid",
-                        gridTemplateColumns: "minmax(0, 1.35fr) minmax(240px, .85fr)",
+                        gridTemplateColumns:
+                          "minmax(0, 1.35fr) minmax(240px, .85fr)",
                         alignItems: "stretch",
                         gap: 18,
                         background: "var(--surface)",
                       }}
                     >
-                      <div className="nav-search-section nav-search-room-section" style={{ minWidth: 0 }}>
+                      <div
+                        className="nav-search-section nav-search-room-section"
+                        style={{ minWidth: 0 }}
+                      >
                         <div
                           style={{
                             fontSize: 12,
@@ -289,7 +293,10 @@ export function Nav() {
                           {t.findByPurpose}
                         </div>
 
-                        <div className="nav-search-feature-list" style={{ display: "grid", gap: 8 }}>
+                        <div
+                          className="nav-search-feature-list"
+                          style={{ display: "grid", gap: 8 }}
+                        >
                           {featureLinks.map((item) => (
                             <Link
                               key={item.href}
