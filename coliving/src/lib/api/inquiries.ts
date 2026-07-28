@@ -34,9 +34,16 @@ export async function createInquiry(input: {
   return api.post<Inquiry>("/inquiries", input);
 }
 
-// GET /inquiries/mine
-export async function listMyInquiries(): Promise<Inquiry[]> {
-  return api.get<Inquiry[]>("/inquiries/mine");
+export interface MyInquiryPage {
+  rows: Inquiry[];
+  total: number;
+  take: number;
+  skip: number;
+}
+
+// GET /inquiries/mine?take=&skip=
+export async function listMyInquiries(take = 10, skip = 0): Promise<MyInquiryPage> {
+  return api.get<MyInquiryPage>(`/inquiries/mine?take=${take}&skip=${skip}`);
 }
 
 // GET /admin/inquiries?status=
