@@ -325,9 +325,36 @@ export async function verifyMember(id: string, verified: boolean): Promise<void>
 }
 
 // GET /admin/members?q= — search by name/email (omit q for all).
-export async function listMembers(q?: string): Promise<AdminMember[]> {
-  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-  return api.get<AdminMember[]>(`/admin/members${query}`);
+export interface ListMembersQuery {
+  q?: string;
+  role?: MemberRole;
+  tier?: "SEED" | "REGULAR" | "TRUSTED";
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listMembers(
+  query: ListMembersQuery = {},
+): Promise<PaginatedResult<AdminMember>> {
+  const params = new URLSearchParams();
+  if (query.q?.trim()) params.set("q", query.q.trim());
+  if (query.role) params.set("role", query.role);
+  if (query.tier) params.set("tier", query.tier);
+  if (query.sortBy) params.set("sortBy", query.sortBy);
+  if (query.sortOrder) params.set("sortOrder", query.sortOrder);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("pageSize", String(query.pageSize));
+  const qs = params.toString();
+  return api.get<PaginatedResult<AdminMember>>(`/admin/members${qs ? `?${qs}` : ""}`);
+}
+// 페이징 응답 형태
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 // PATCH /admin/members/:id/suspend — toggle a member's suspension.

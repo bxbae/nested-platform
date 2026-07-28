@@ -19,7 +19,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
-import { activityTier, TIER_LABEL } from "../../common/activity-tier";
+import { activityTier, TIER_LABEL, type ActivityTier } from "../../common/activity-tier";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 
@@ -81,13 +81,35 @@ export class AdminService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  async members(q?: string) {
+  // role 필터는 DB where에서 처리하고, tier(등급)는 계산 필드라
+  // JS에서 필터/정렬/페이징한다. 기존에 있던 take: 100 상한선은 페이징이
+  // 생기면서 제거한다 (안 그러면 101번째부터는 아예 조회가 안 됨).
+  async members(query: {
+    q?: string;
+    role?: "GUEST" | "HOST" | "ADMIN";
+    tier?: "SEED" | "REGULAR" | "TRUSTED";
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+    page?: number;
+    pageSize?: number;
+  }) {
+    const {
+      q,
+      role,
+      tier: tierFilter,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = 1,
+      pageSize = 20,
+    } = query;
+
     const rows = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
         ...(q
           ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] }
           : {}),
+        ...(role ? { role } : {}),
       },
       select: {
         id: true,
@@ -104,8 +126,6 @@ export class AdminService {
         // 바로 못 구해주기 때문).
         tenantReviewsReceived: { select: { rating: true } },
       },
-      orderBy: { createdAt: "desc" },
-      take: 100,
     });
 
     // 신고 건수는 관계로 못 가져오므로 별도 집계.
@@ -121,7 +141,7 @@ export class AdminService {
       reportGroups.map((g) => [g.targetId, g._count.targetId]),
     );
 
-    return rows.map(({ _count, reservations, tenantReviewsReceived, ...u }) => {
+    let enriched = rows.map(({ _count, reservations, tenantReviewsReceived, ...u }) => {
       const completedStays = reservations.length;
       const reviewsWritten = _count.reviews;
       const tier = activityTier(completedStays, reviewsWritten);
@@ -146,6 +166,50 @@ export class AdminService {
         reportCount: reportCountMap.get(u.id) ?? 0,
       };
     });
+
+    // 등급 필터 (계산 필드라 JS에서 처리)
+    if (tierFilter) {
+      enriched = enriched.filter((u) => u.tier === tierFilter);
+    }
+
+    // 헤더 클릭 정렬 — tier는 순서가 있는 값이라 랭크로 변환해서 비교
+    const TIER_RANK: Record<ActivityTier, number> = { SEED: 0, REGULAR: 1, TRUSTED: 2 };
+    enriched.sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case "name":
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case "role":
+          cmp = a.role.localeCompare(b.role);
+          break;
+        case "tier":
+          cmp = TIER_RANK[a.tier] - TIER_RANK[b.tier];
+          break;
+        case "completedStays":
+          cmp = a.completedStays - b.completedStays;
+          break;
+        case "reviewsWritten":
+          cmp = a.reviewsWritten - b.reviewsWritten;
+          break;
+        case "avgRating":
+          cmp = (a.avgRating ?? -1) - (b.avgRating ?? -1);
+          break;
+        case "reportCount":
+          cmp = a.reportCount - b.reportCount;
+          break;
+        case "createdAt":
+        default:
+          cmp = a.createdAt.getTime() - b.createdAt.getTime();
+      }
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+
+    const total = enriched.length;
+    const start = (page - 1) * pageSize;
+    const items = enriched.slice(start, start + pageSize);
+
+    return { items, total, page, pageSize };
   }
 
   // Admin marks identity as checked (or revokes it). Separate from
@@ -1355,9 +1419,18 @@ export class AdminController {
     return this.admin.stats();
   }
 
+  // 쿼리: q(이름/이메일 검색), role, tier, sortBy, sortOrder, page, pageSize
   @Get("members")
-  members(@Query("q") q?: string) {
-    return this.admin.members(q);
+  members(@Query() query: any) {
+    return this.admin.members({
+      q: query.q,
+      role: query.role,
+      tier: query.tier,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
+      page: query.page ? Number(query.page) : undefined,
+      pageSize: query.pageSize ? Number(query.pageSize) : undefined,
+    });
   }
 
   // PATCH /admin/members/:id/verify — 신원 확인 표시 토글
