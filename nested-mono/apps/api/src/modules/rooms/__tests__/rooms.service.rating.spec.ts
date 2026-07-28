@@ -37,6 +37,9 @@ describe("RoomsService — rating 정렬", () => {
       reservation: {
         findMany: jest.fn(async () => []),
       },
+      reservationCompanionMember: {
+        findMany: jest.fn(async () => []),
+      },
 
       calendarBlock: {
         findMany: jest.fn(async () => []),
