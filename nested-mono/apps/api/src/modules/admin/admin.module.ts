@@ -99,7 +99,7 @@ export class AdminService {
         verifiedAt: true,
         _count: { select: { reviews: true } },
         reservations: { where: { status: "COMPLETED" }, select: { id: true } },
-        // 신규 — 입주자로서 받은 평가(TenantReview)의 별점 목록. 평균은
+        // 입주자로서 받은 평가(TenantReview)의 별점 목록. 평균은
         // 아래에서 JS로 계산한다 (Prisma가 관계의 평균을 select 안에서
         // 바로 못 구해주기 때문).
         tenantReviewsReceived: { select: { rating: true } },
@@ -108,7 +108,7 @@ export class AdminService {
       take: 100,
     });
 
-    // 신규 — 신고 건수는 관계로 못 가져오므로 별도 집계.
+    // 신고 건수는 관계로 못 가져오므로 별도 집계.
     // targetType이 "USER"인 신고만 모아서, targetId(=회원 id)별로 개수를
     // 센다. 회원 전체를 한 번의 쿼리로 처리해 N+1을 피한다.
     const userIds = rows.map((u) => u.id);
@@ -235,9 +235,30 @@ export class AdminService {
   }
   // 게시중인 숙소 — 별점이 낮은 순으로 정렬해 관리자가 문제 매물을 먼저 보게 합니다.
   // 후기가 적으면 평균이 흔들리므로 reviewCount를 함께 내려 UI에서 판단하게 합니다.
-  async publishedRooms() {
+  //
+  // 신규 — 유형(buildingType)/형태·인실(rentalUnit) 필터, 호스트 닉네임 검색,
+  // 페이징을 추가한다. 정렬 규칙("무후기는 맨 뒤")이 DB orderBy만으로 표현이
+  // 안 되므로, 지금 규모(관리자용 전체 게시 숙소)에서는 전체를 가져와 JS에서
+  // 정렬한 뒤 메모리에서 페이지를 자른다. 숙소 수가 크게 늘어나면 이 방식은
+  // 성능 이슈가 될 수 있어 raw SQL(CASE WHEN) 기반 DB 정렬로 바꾸는 걸 고려할 것.
+  async publishedRooms(query: {
+    buildingType?: string;
+    rentalUnit?: string;
+    nickname?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const { buildingType, rentalUnit, nickname, page = 1, pageSize = 20 } = query;
+
     const rooms = await this.prisma.room.findMany({
-      where: { published: true },
+      where: {
+        published: true,
+        ...(buildingType ? { buildingType: buildingType as any } : {}),
+        ...(rentalUnit ? { rentalUnit: rentalUnit as any } : {}),
+        ...(nickname
+          ? { host: { name: { contains: nickname, mode: "insensitive" } } }
+          : {}),
+      },
       orderBy: { createdAt: "desc" },
       include: {
         host: { select: { name: true } },
@@ -246,7 +267,7 @@ export class AdminService {
       },
     });
 
-    return rooms
+    const sorted = rooms
       .map((room) => {
         const ratings = room.reviews.map((r) => r.rating);
         const reviewCount = ratings.length;
@@ -263,6 +284,12 @@ export class AdminService {
         if (!b.reviewCount) return -1;
         return a.rating - b.rating;
       });
+
+    const total = sorted.length;
+    const start = (page - 1) * pageSize;
+    const items = sorted.slice(start, start + pageSize);
+
+    return { items, total, page, pageSize };
   }
 
   async setPublished(id: string, published: boolean) {
@@ -1368,9 +1395,16 @@ export class AdminController {
   }
 
   // GET /admin/rooms/published — 게시중 숙소 (별점 낮은 순)
+  // 쿼리: buildingType, rentalUnit, nickname(호스트 검색), page, pageSize
   @Get("rooms/published")
-  publishedList() {
-    return this.admin.publishedRooms();
+  publishedList(@Query() q: any) {
+    return this.admin.publishedRooms({
+      buildingType: q.buildingType,
+      rentalUnit: q.rentalUnit,
+      nickname: q.nickname,
+      page: q.page ? Number(q.page) : undefined,
+      pageSize: q.pageSize ? Number(q.pageSize) : undefined,
+    });
   }
 
   @Patch("rooms/:id/publish")
