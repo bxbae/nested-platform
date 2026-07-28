@@ -385,11 +385,84 @@ export class AdminService {
       include: { reporter: { select: { name: true } } },
       take: 200,
     });
+
+    // targetId는 신고 종류마다 다른 테이블을 가리키는 다형(polymorphic)
+    // 참조라 Report에 직접 관계(relation)를 걸 수가 없다. 그래서 종류별로
+    // id를 묶어뒀다가, 타입당 쿼리 한 번씩(최대 6번)만 날려서 이름을
+    // 채운다 — row마다 따로 조회하면 N+1이 된다.
+    const idsByType: Record<
+      "ROOM" | "REVIEW" | "USER" | "MESSAGE" | "COMMUNITY_POST" | "COMMUNITY_COMMENT",
+      string[]
+    > = {
+      ROOM: [], REVIEW: [], USER: [], MESSAGE: [], COMMUNITY_POST: [], COMMUNITY_COMMENT: [],
+    };
+    for (const r of rows) idsByType[r.targetType as keyof typeof idsByType]?.push(r.targetId);
+
+    const nameOf = new Map<string, string>();
+
+    const [rooms, reviews, users, posts, comments, chatMessages, directMessages] = await Promise.all([
+      // 방 자체엔 "닉네임"이 없으니, 신고당한 대상을 사람으로 통일하기
+      // 위해 그 방 호스트의 닉네임을 보여준다.
+      idsByType.ROOM.length
+        ? this.prisma.room.findMany({
+            where: { id: { in: idsByType.ROOM } },
+            select: { id: true, host: { select: { name: true } } },
+          })
+        : [],
+      idsByType.REVIEW.length
+        ? this.prisma.review.findMany({
+            where: { id: { in: idsByType.REVIEW } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      idsByType.USER.length
+        ? this.prisma.user.findMany({ where: { id: { in: idsByType.USER } }, select: { id: true, name: true } })
+        : [],
+      idsByType.COMMUNITY_POST.length
+        ? this.prisma.post.findMany({
+            where: { id: { in: idsByType.COMMUNITY_POST } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      idsByType.COMMUNITY_COMMENT.length
+        ? this.prisma.comment.findMany({
+            where: { id: { in: idsByType.COMMUNITY_COMMENT } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      // MESSAGE는 채팅방 메시지(Message)일 수도, 1:1 다이렉트 메시지
+      // (DirectMessage)일 수도 있다 — reportedUserId()와 같은 이유로
+      // 두 테이블 다 조회해서 먼저 걸리는 쪽을 쓴다.
+      idsByType.MESSAGE.length
+        ? this.prisma.message.findMany({
+            where: { id: { in: idsByType.MESSAGE } },
+            select: { id: true, sender: { select: { name: true } } },
+          })
+        : [],
+      idsByType.MESSAGE.length
+        ? this.prisma.directMessage.findMany({
+            where: { id: { in: idsByType.MESSAGE } },
+            select: { id: true, sender: { select: { name: true } } },
+          })
+        : [],
+    ]);
+
+    rooms.forEach((x) => nameOf.set(x.id, x.host?.name ?? "알 수 없음"));
+    reviews.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    users.forEach((x) => nameOf.set(x.id, x.name));
+    posts.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    comments.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    chatMessages.forEach((x) => nameOf.set(x.id, x.sender?.name ?? "알 수 없음"));
+    directMessages.forEach((x) => nameOf.set(x.id, x.sender?.name ?? "알 수 없음"));
+
     // Flatten the reporter relation so the client gets a plain name string.
     return rows.map((r: (typeof rows)[number]) => ({
       id: r.id,
       targetType: r.targetType,
       targetId: r.targetId,
+      // null이면 대상이 이미 삭제됐거나(탈퇴 회원 등) 못 찾은 것 — 프론트가
+      // 이 경우 targetId를 대신 보여주도록 남겨둔다.
+      targetName: nameOf.get(r.targetId) ?? null,
       reason: r.reason,
       status: r.status,
       createdAt: r.createdAt,

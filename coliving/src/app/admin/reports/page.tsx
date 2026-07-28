@@ -233,7 +233,7 @@ export default function AdminReports() {
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-                  신고자 {r.reporterName} · 대상 ID {r.targetId.slice(0, 8)}…
+                  <span style={{fontWeight: "bold"}}>신고자</span> &nbsp; {r.reporterName} &nbsp; | &nbsp; <span style={{fontWeight: "bold"}}>대상</span> &nbsp; {r.targetName ?? `ID ${r.targetId.slice(0, 8)}`}
                 </span>
                 {next ? (
                   <button

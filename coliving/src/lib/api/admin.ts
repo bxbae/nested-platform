@@ -142,6 +142,11 @@ export interface AdminReport {
   id: string;
   targetType: ReportTargetType;
   targetId: string;
+  // 신고 대상을 나타내는 사람의 닉네임 (ROOM은 그 방 호스트, REVIEW/
+  // COMMUNITY_POST/COMMUNITY_COMMENT는 작성자, MESSAGE는 보낸 사람,
+  // USER는 그 사용자 본인). 대상이 삭제됐거나 못 찾으면 null — 그때는
+  // 프론트가 targetId를 대신 보여준다.
+  targetName: string | null;
   reason: string;
   status: ReportStatus;
   createdAt: string;
