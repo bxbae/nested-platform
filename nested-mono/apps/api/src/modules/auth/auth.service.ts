@@ -46,6 +46,8 @@ export class AuthService {
         birthDate: true,
         job: true,
         gender: true,
+        genderVisibility: true,
+        roommateGenderPreference: true,
         preferredLocale: true,
         // Lets the client hide "change password" for OAuth-only accounts,
         // which have no password to change.
@@ -76,6 +78,8 @@ export class AuthService {
       birthDate: user.birthDate ? user.birthDate.toISOString() : null,
       job: user.job,
       gender: user.gender,
+      genderVisibility: user.genderVisibility,
+      roommateGenderPreference: user.roommateGenderPreference,
       preferredLocale: user.preferredLocale,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
@@ -99,7 +103,9 @@ export class AuthService {
       avatarUrl?: string | null;
       birthDate?: string | null;
       job?: string | null;
-      gender?: "MALE" | "FEMALE" | "OTHER";
+      gender?: "MALE" | "FEMALE";
+      genderVisibility?: "PUBLIC" | "MATCHED_ONLY" | "PRIVATE";
+      roommateGenderPreference?: "ANY" | "MALE" | "FEMALE";
     },
   ) {
     const user = await this.prisma.user.update({
@@ -118,6 +124,15 @@ export class AuthService {
           : {}),
         ...(data.job !== undefined ? { job: data.job } : {}),
         ...(data.gender !== undefined ? { gender: data.gender } : {}),
+        ...(data.genderVisibility !== undefined
+          ? { genderVisibility: data.genderVisibility }
+          : {}),
+
+        ...(data.roommateGenderPreference !== undefined
+          ? {
+              roommateGenderPreference: data.roommateGenderPreference,
+            }
+          : {}),
       },
       select: {
         id: true,
@@ -132,6 +147,8 @@ export class AuthService {
         birthDate: true,
         job: true,
         gender: true,
+        genderVisibility: true,
+        roommateGenderPreference: true,
         preferredLocale: true,
         passwordHash: true,
       },
@@ -148,6 +165,8 @@ export class AuthService {
       birthDate: user.birthDate ? user.birthDate.toISOString() : null,
       job: user.job,
       gender: user.gender,
+      genderVisibility: user.genderVisibility,
+      roommateGenderPreference: user.roommateGenderPreference,
       preferredLocale: user.preferredLocale,
       hasPassword: user.passwordHash !== null,
       createdAt: user.createdAt.toISOString(),
@@ -217,7 +236,7 @@ export class AuthService {
     email: string,
     password: string,
     name: string,
-    gender: "MALE" | "FEMALE" | "OTHER",
+    gender: "MALE" | "FEMALE",
     preferredLocale: "KO" | "EN",
   ) {
     const existing = await this.prisma.user.findUnique({ where: { email } });

@@ -11,6 +11,10 @@ import {
   relinquishHost,
 } from "@/lib/api/auth";
 import { useLanguage, type Locale } from "@/contexts/LanguageContext";
+import type {
+  GenderVisibility,
+  RoommateGenderPreference,
+} from "@/lib/api/auth-store";
 
 // 설정 — profile edit + password change, wired to the API.
 //
@@ -26,7 +30,13 @@ export default function Settings() {
   const [languageError, setLanguageError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
-  const [gender, setGender] = useState<"MALE" | "FEMALE" | "OTHER">("OTHER");
+  const [gender, setGender] = useState<"MALE" | "FEMALE" | "">("");
+
+  const [genderVisibility, setGenderVisibility] =
+    useState<GenderVisibility>("MATCHED_ONLY");
+
+  const [roommateGenderPreference, setRoommateGenderPreference] =
+    useState<RoommateGenderPreference>("ANY");
   // <input type="date">가 쓰는 YYYY-MM-DD 형식. 빈 문자열이면 미입력.
   const [birthDate, setBirthDate] = useState("");
   const [saving, setSaving] = useState(false);
@@ -36,7 +46,28 @@ export default function Settings() {
   useEffect(() => {
     if (user?.name) setName(user.name);
     setBio(user?.bio ?? "");
-    if (user?.gender) setGender(user.gender);
+    if (user?.gender === "MALE" || user?.gender === "FEMALE") {
+      setGender(user.gender);
+    } else {
+      setGender("");
+    }
+    setBirthDate(user?.birthDate ? user.birthDate.slice(0, 10) : "");
+  }, [user]);
+
+  useEffect(() => {
+    if (user?.name) setName(user.name);
+    setBio(user?.bio ?? "");
+
+    if (user?.gender === "MALE" || user?.gender === "FEMALE") {
+      setGender(user.gender);
+    } else {
+      setGender("");
+    }
+
+    setGenderVisibility(user?.genderVisibility ?? "MATCHED_ONLY");
+
+    setRoommateGenderPreference(user?.roommateGenderPreference ?? "ANY");
+
     setBirthDate(user?.birthDate ? user.birthDate.slice(0, 10) : "");
   }, [user]);
 
@@ -47,6 +78,11 @@ export default function Settings() {
       setError("닉네임은 2자 이상 입력해주세요.");
       return;
     }
+
+    if (!gender) {
+      setError("성별을 선택해주세요.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -54,7 +90,9 @@ export default function Settings() {
         name: nickname,
         bio: bio.trim(),
         gender,
-        birthDate: birthDate ? birthDate : null,
+        genderVisibility,
+        roommateGenderPreference,
+        birthDate: birthDate || null,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -174,40 +212,108 @@ export default function Settings() {
           </Field>
 
           <Field label="성별">
-            <div style={{ display: "flex", gap: 8 }}>
-              {(
-                [
-                  ["MALE", "남성"],
-                  ["FEMALE", "여성"],
-                  ["OTHER", "기타"],
-                ] as const
-              ).map(([val, label]) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setGender(val)}
-                  style={{
-                    flex: 1,
-                    padding: "10px 0",
-                    borderRadius: "var(--r-sm)",
-                    border:
-                      gender === val
-                        ? "1.5px solid var(--primary)"
-                        : "1px solid var(--border)",
-                    background:
-                      gender === val
-                        ? "rgba(255,90,95,0.08)"
-                        : "var(--surface)",
-                    color: gender === val ? "var(--primary)" : "var(--text)",
-                    fontWeight: gender === val ? 600 : 400,
-                    cursor: "pointer",
-                    fontSize: 14,
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--text-2)",
+                marginBottom: 7,
+                lineHeight: 1.5,
+              }}
+            >
+              룸메이트 매칭과 숙소 추천에 활용됩니다.
+            </p>
+
+            <select
+              value={gender}
+              onChange={(e) =>
+                setGender(e.target.value as "MALE" | "FEMALE" | "")
+              }
+              style={{
+                width: "100%",
+                padding: "11px 12px",
+                borderRadius: "var(--r-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--surface)",
+                color: "var(--text)",
+                fontSize: 14,
+              }}
+            >
+              <option value="" disabled>
+                성별을 선택해주세요
+              </option>
+              <option value="MALE">남성</option>
+              <option value="FEMALE">여성</option>
+            </select>
+          </Field>
+
+          <Field label="성별 공개 범위">
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--text-2)",
+                marginBottom: 7,
+                lineHeight: 1.5,
+              }}
+            >
+              프로필에서 성별을 확인할 수 있는 사용자를 선택합니다.
+            </p>
+
+            <select
+              value={genderVisibility}
+              onChange={(e) =>
+                setGenderVisibility(e.target.value as GenderVisibility)
+              }
+              style={{
+                width: "100%",
+                padding: "11px 12px",
+                borderRadius: "var(--r-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--surface)",
+                color: "var(--text)",
+                fontSize: 14,
+              }}
+            >
+              <option value="PUBLIC">전체 공개</option>
+
+              <option value="MATCHED_ONLY">매칭된 사용자에게만 공개</option>
+
+              <option value="PRIVATE">비공개</option>
+            </select>
+          </Field>
+
+          <Field label="룸메이트 성별 선호">
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--text-2)",
+                marginBottom: 7,
+                lineHeight: 1.5,
+              }}
+            >
+              함께 거주하고 싶은 룸메이트의 성별을 선택합니다.
+            </p>
+
+            <select
+              value={roommateGenderPreference}
+              onChange={(e) =>
+                setRoommateGenderPreference(
+                  e.target.value as RoommateGenderPreference,
+                )
+              }
+              style={{
+                width: "100%",
+                padding: "11px 12px",
+                borderRadius: "var(--r-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--surface)",
+                color: "var(--text)",
+                fontSize: 14,
+              }}
+            >
+              <option value="ANY">성별 무관</option>
+              <option value="MALE">남성</option>
+              <option value="FEMALE">여성</option>
+            </select>
           </Field>
 
           <Field label="생년월일">
@@ -218,7 +324,8 @@ export default function Settings() {
               onChange={(e) => setBirthDate(e.target.value)}
             />
             <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 4 }}>
-              다른 사람에게는 20대·30대처럼 연령대만 보여요. 생일에는 쿠폰을 받을 수 있어요.
+              다른 사람에게는 20대·30대처럼 연령대만 보여요. 생일에는 쿠폰을
+              받을 수 있어요.
             </p>
           </Field>
         </div>

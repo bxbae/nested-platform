@@ -19,7 +19,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
-import { activityTier, TIER_LABEL } from "../../common/activity-tier";
+import { activityTier, TIER_LABEL, type ActivityTier } from "../../common/activity-tier";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 
@@ -81,13 +81,35 @@ export class AdminService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  async members(q?: string) {
+  // role 필터는 DB where에서 처리하고, tier(등급)는 계산 필드라
+  // JS에서 필터/정렬/페이징한다. 기존에 있던 take: 100 상한선은 페이징이
+  // 생기면서 제거한다 (안 그러면 101번째부터는 아예 조회가 안 됨).
+  async members(query: {
+    q?: string;
+    role?: "GUEST" | "HOST" | "ADMIN";
+    tier?: "SEED" | "REGULAR" | "TRUSTED";
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+    page?: number;
+    pageSize?: number;
+  }) {
+    const {
+      q,
+      role,
+      tier: tierFilter,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = 1,
+      pageSize = 20,
+    } = query;
+
     const rows = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
         ...(q
           ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] }
           : {}),
+        ...(role ? { role } : {}),
       },
       select: {
         id: true,
@@ -99,16 +121,14 @@ export class AdminService {
         verifiedAt: true,
         _count: { select: { reviews: true } },
         reservations: { where: { status: "COMPLETED" }, select: { id: true } },
-        // 신규 — 입주자로서 받은 평가(TenantReview)의 별점 목록. 평균은
+        // 입주자로서 받은 평가(TenantReview)의 별점 목록. 평균은
         // 아래에서 JS로 계산한다 (Prisma가 관계의 평균을 select 안에서
         // 바로 못 구해주기 때문).
         tenantReviewsReceived: { select: { rating: true } },
       },
-      orderBy: { createdAt: "desc" },
-      take: 100,
     });
 
-    // 신규 — 신고 건수는 관계로 못 가져오므로 별도 집계.
+    // 신고 건수는 관계로 못 가져오므로 별도 집계.
     // targetType이 "USER"인 신고만 모아서, targetId(=회원 id)별로 개수를
     // 센다. 회원 전체를 한 번의 쿼리로 처리해 N+1을 피한다.
     const userIds = rows.map((u) => u.id);
@@ -121,7 +141,7 @@ export class AdminService {
       reportGroups.map((g) => [g.targetId, g._count.targetId]),
     );
 
-    return rows.map(({ _count, reservations, tenantReviewsReceived, ...u }) => {
+    let enriched = rows.map(({ _count, reservations, tenantReviewsReceived, ...u }) => {
       const completedStays = reservations.length;
       const reviewsWritten = _count.reviews;
       const tier = activityTier(completedStays, reviewsWritten);
@@ -146,6 +166,50 @@ export class AdminService {
         reportCount: reportCountMap.get(u.id) ?? 0,
       };
     });
+
+    // 등급 필터 (계산 필드라 JS에서 처리)
+    if (tierFilter) {
+      enriched = enriched.filter((u) => u.tier === tierFilter);
+    }
+
+    // 헤더 클릭 정렬 — tier는 순서가 있는 값이라 랭크로 변환해서 비교
+    const TIER_RANK: Record<ActivityTier, number> = { SEED: 0, REGULAR: 1, TRUSTED: 2 };
+    enriched.sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case "name":
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case "role":
+          cmp = a.role.localeCompare(b.role);
+          break;
+        case "tier":
+          cmp = TIER_RANK[a.tier] - TIER_RANK[b.tier];
+          break;
+        case "completedStays":
+          cmp = a.completedStays - b.completedStays;
+          break;
+        case "reviewsWritten":
+          cmp = a.reviewsWritten - b.reviewsWritten;
+          break;
+        case "avgRating":
+          cmp = (a.avgRating ?? -1) - (b.avgRating ?? -1);
+          break;
+        case "reportCount":
+          cmp = a.reportCount - b.reportCount;
+          break;
+        case "createdAt":
+        default:
+          cmp = a.createdAt.getTime() - b.createdAt.getTime();
+      }
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+
+    const total = enriched.length;
+    const start = (page - 1) * pageSize;
+    const items = enriched.slice(start, start + pageSize);
+
+    return { items, total, page, pageSize };
   }
 
   // Admin marks identity as checked (or revokes it). Separate from
@@ -235,9 +299,30 @@ export class AdminService {
   }
   // 게시중인 숙소 — 별점이 낮은 순으로 정렬해 관리자가 문제 매물을 먼저 보게 합니다.
   // 후기가 적으면 평균이 흔들리므로 reviewCount를 함께 내려 UI에서 판단하게 합니다.
-  async publishedRooms() {
+  //
+  // 신규 — 유형(buildingType)/형태·인실(rentalUnit) 필터, 호스트 닉네임 검색,
+  // 페이징을 추가한다. 정렬 규칙("무후기는 맨 뒤")이 DB orderBy만으로 표현이
+  // 안 되므로, 지금 규모(관리자용 전체 게시 숙소)에서는 전체를 가져와 JS에서
+  // 정렬한 뒤 메모리에서 페이지를 자른다. 숙소 수가 크게 늘어나면 이 방식은
+  // 성능 이슈가 될 수 있어 raw SQL(CASE WHEN) 기반 DB 정렬로 바꾸는 걸 고려할 것.
+  async publishedRooms(query: {
+    buildingType?: string;
+    rentalUnit?: string;
+    nickname?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const { buildingType, rentalUnit, nickname, page = 1, pageSize = 20 } = query;
+
     const rooms = await this.prisma.room.findMany({
-      where: { published: true },
+      where: {
+        published: true,
+        ...(buildingType ? { buildingType: buildingType as any } : {}),
+        ...(rentalUnit ? { rentalUnit: rentalUnit as any } : {}),
+        ...(nickname
+          ? { host: { name: { contains: nickname, mode: "insensitive" } } }
+          : {}),
+      },
       orderBy: { createdAt: "desc" },
       include: {
         host: { select: { name: true } },
@@ -246,7 +331,7 @@ export class AdminService {
       },
     });
 
-    return rooms
+    const sorted = rooms
       .map((room) => {
         const ratings = room.reviews.map((r) => r.rating);
         const reviewCount = ratings.length;
@@ -263,6 +348,12 @@ export class AdminService {
         if (!b.reviewCount) return -1;
         return a.rating - b.rating;
       });
+
+    const total = sorted.length;
+    const start = (page - 1) * pageSize;
+    const items = sorted.slice(start, start + pageSize);
+
+    return { items, total, page, pageSize };
   }
 
   async setPublished(id: string, published: boolean) {
@@ -1328,9 +1419,18 @@ export class AdminController {
     return this.admin.stats();
   }
 
+  // 쿼리: q(이름/이메일 검색), role, tier, sortBy, sortOrder, page, pageSize
   @Get("members")
-  members(@Query("q") q?: string) {
-    return this.admin.members(q);
+  members(@Query() query: any) {
+    return this.admin.members({
+      q: query.q,
+      role: query.role,
+      tier: query.tier,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
+      page: query.page ? Number(query.page) : undefined,
+      pageSize: query.pageSize ? Number(query.pageSize) : undefined,
+    });
   }
 
   // PATCH /admin/members/:id/verify — 신원 확인 표시 토글
@@ -1368,9 +1468,16 @@ export class AdminController {
   }
 
   // GET /admin/rooms/published — 게시중 숙소 (별점 낮은 순)
+  // 쿼리: buildingType, rentalUnit, nickname(호스트 검색), page, pageSize
   @Get("rooms/published")
-  publishedList() {
-    return this.admin.publishedRooms();
+  publishedList(@Query() q: any) {
+    return this.admin.publishedRooms({
+      buildingType: q.buildingType,
+      rentalUnit: q.rentalUnit,
+      nickname: q.nickname,
+      page: q.page ? Number(q.page) : undefined,
+      pageSize: q.pageSize ? Number(q.pageSize) : undefined,
+    });
   }
 
   @Patch("rooms/:id/publish")

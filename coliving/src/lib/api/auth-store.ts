@@ -6,6 +6,11 @@
 // This is deliberately not a React hook so the plain fetch client can read
 // tokens synchronously. A tiny subscribe() lets React components re-render
 // on login/logout without pulling in a state library.
+export type Gender = "MALE" | "FEMALE" | "OTHER";
+
+export type GenderVisibility = "PUBLIC" | "MATCHED_ONLY" | "PRIVATE";
+
+export type RoommateGenderPreference = "ANY" | "MALE" | "FEMALE";
 
 export interface AuthUser {
   id: string;
@@ -17,7 +22,9 @@ export interface AuthUser {
   bio?: string | null;
   avatarColor?: string;
   avatarUrl?: string | null;
-  gender?: "MALE" | "FEMALE" | "OTHER";
+  gender?: Gender;
+  genderVisibility?: GenderVisibility;
+  roommateGenderPreference?: RoommateGenderPreference;
   // 생년월일(ISO). 본인 조회에만 내려온다 — 설정 화면 편집과 생일 쿠폰 판정용.
   birthDate?: string | null;
   preferredLocale?: "KO" | "EN";
