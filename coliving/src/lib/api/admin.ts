@@ -164,7 +164,7 @@ export interface AdminReportPage {
 // GET /admin/reports?status=&take=&skip= — status 생략하면 전체.
 export async function listReports(
   status?: ReportStatus,
-  take = 5,
+  take = 20,
   skip = 0,
 ): Promise<AdminReportPage> {
   const params = new URLSearchParams();
@@ -367,6 +367,8 @@ export interface RevenueTrend {
   commission: number;
   payouts: number;
   refunds: number;
+  // 사이트가 부담하는 쿠폰 할인 총액 — 매출이 아니라 비용이라 별도 표시.
+  couponDiscount: number;
   trend: MonthlyTrendPoint[];
 }
 
