@@ -41,14 +41,18 @@ export default function AdminDashboard() {
     (async () => {
       try {
         // Fetch in parallel — the three are independent.
+        // listReports()는 이제 { rows, total, ... } 페이지 객체를 리턴한다
+        // (신고 관리 페이지 페이징 처리 때문). 여기서는 "미처리 신고"
+        // 개수·미리보기용으로 쓰는 거라 페이지 개념 없이 넉넉히(200건)
+        // 한 번에 받아온다 — 예전에 하드코딩돼 있던 take: 200과 같은 값.
         const [s, p, r] = await Promise.all([
           getStats(),
           listPendingRooms(),
-          listReports(),
+          listReports(undefined, 200, 0),
         ]);
         setStats(s);
         setPending(p);
-        setReports(r);
+        setReports(r.rows);
       } catch (e) {
         setError(e instanceof Error ? e.message : "현황을 불러오지 못했어요.");
       } finally {

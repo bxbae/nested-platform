@@ -8,6 +8,7 @@ import {
   updatePreferredLocale,
   changePassword,
   deleteAccount,
+  relinquishHost,
 } from "@/lib/api/auth";
 import { useLanguage, type Locale } from "@/contexts/LanguageContext";
 import type {
@@ -449,8 +450,125 @@ export default function Settings() {
         {saving ? "저장 중…" : saved ? "저장되었습니다 ✓" : "변경사항 저장"}
       </button>
 
+      {user?.role === "HOST" && <HostRelinquishSection />}
       <DangerZone />
     </div>
+  );
+}
+
+// ── 호스트 권한 포기 ──
+// DangerZone(회원 탈퇴)과 같은 "입력해서 확인" 패턴을 그대로 재사용한다.
+// 되돌릴 수 없는 작업(숙소 일부 삭제 포함)이라 한 번의 실수 클릭으로
+// 실행되면 안 되기 때문이다.
+function HostRelinquishSection() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const CONFIRM = "포기";
+
+  async function relinquish() {
+    if (busy || confirmText !== CONFIRM) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await relinquishHost();
+      // authStore가 갱신되어 role이 GUEST로 바뀐다. 호스트 페이지는
+      // HostGate가 지키고 있으므로, 안전하게 홈으로 보낸다.
+      router.push("/");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "호스트 권한 포기에 실패했어요.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section
+      className="card"
+      style={{ padding: 22, marginTop: 28, border: "1px solid var(--border)" }}
+    >
+      <strong style={{ fontSize: 16, display: "block", marginBottom: 8 }}>
+        호스트 권한 포기
+      </strong>
+      <p
+        style={{
+          fontSize: 13.5,
+          lineHeight: 1.6,
+          color: "var(--text-2)",
+          marginBottom: 16,
+        }}
+      >
+        호스트 권한을 포기하면 게스트 계정으로 돌아갑니다. 등록한 숙소 중
+        예약·리뷰 이력이 없는 숙소는 삭제되고, 이력이 있는 숙소는 비공개로
+        전환됩니다(예약·리뷰 기록은 남아요). 진행 중인 예약이 있으면 먼저
+        정리해야 진행할 수 있어요. 이 작업은 되돌릴 수 없어요.
+      </p>
+
+      {!open ? (
+        <button className="btn btn-ghost press" onClick={() => setOpen(true)}>
+          호스트 권한 포기
+        </button>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "block" }}>
+            <div
+              style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 6 }}
+            >
+              계속하려면{" "}
+              <strong style={{ color: "var(--text)" }}>{CONFIRM}</strong> 를
+              입력하세요.
+            </div>
+            <input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={CONFIRM}
+              style={{
+                width: "100%",
+                padding: "11px 14px",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)",
+                background: "var(--surface)",
+                color: "var(--text)",
+              }}
+            />
+          </label>
+
+          {error && (
+            <p style={{ fontSize: 13, color: "var(--primary)" }}>{error}</p>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btn press"
+              style={{
+                flex: 1,
+                justifyContent: "center",
+                background: "var(--primary)",
+                color: "#fff",
+                opacity: confirmText === CONFIRM && !busy ? 1 : 0.5,
+              }}
+              onClick={relinquish}
+              disabled={busy || confirmText !== CONFIRM}
+            >
+              {busy ? "처리 중…" : "호스트 권한 포기하기"}
+            </button>
+            <button
+              className="btn btn-ghost press"
+              onClick={() => {
+                setOpen(false);
+                setConfirmText("");
+                setError(null);
+              }}
+              disabled={busy}
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

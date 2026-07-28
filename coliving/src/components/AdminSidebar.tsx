@@ -10,7 +10,7 @@ import { usePathname } from "next/navigation";
 const groups: { href: string; label: string; exact?: boolean }[][] = [
   [{ href: "/admin", label: "대시보드", exact: true }],
   [
-  { href: "/admin/stats", label: "통계"},
+  // { href: "/admin/stats", label: "통계"},
   { href: "/admin/revenue", label: "매출 관리"},
   { href: "/admin/coupons", label: "쿠폰 관리"},
   ],
@@ -23,7 +23,7 @@ const groups: { href: string; label: string; exact?: boolean }[][] = [
     { href: "/admin/trash", label: "휴지통"},
   ],
   [
-    { href: "/admin/notices", label: "공지사항"},
+    // { href: "/admin/notices", label: "공지사항"},
     { href: "/admin/banners", label: "배너 관리"},
   ],
 ];
