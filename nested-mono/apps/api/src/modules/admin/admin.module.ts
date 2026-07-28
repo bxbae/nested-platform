@@ -378,13 +378,18 @@ export class AdminService {
   }
 
   // reports (신고 관리)
-  async reports(status?: string) {
-    const rows = await this.prisma.report.findMany({
-      where: status ? { status: status as any } : {},
+  async reports(status?: string, take = 20, skip = 0) {
+    const where = status ? { status: status as any } : {};
+    const [rows, total] = await Promise.all([
+      this.prisma.report.findMany({
+        where,
       orderBy: { createdAt: "desc" },
       include: { reporter: { select: { name: true } } },
-      take: 200,
-    });
+        take,
+        skip,
+      }),
+      this.prisma.report.count({ where }),
+    ]);
 
     // targetId는 신고 종류마다 다른 테이블을 가리키는 다형(polymorphic)
     // 참조라 Report에 직접 관계(relation)를 걸 수가 없다. 그래서 종류별로
@@ -456,7 +461,7 @@ export class AdminService {
     directMessages.forEach((x) => nameOf.set(x.id, x.sender?.name ?? "알 수 없음"));
 
     // Flatten the reporter relation so the client gets a plain name string.
-    return rows.map((r: (typeof rows)[number]) => ({
+    const items = rows.map((r: (typeof rows)[number]) => ({
       id: r.id,
       targetType: r.targetType,
       targetId: r.targetId,
@@ -469,6 +474,7 @@ export class AdminService {
       reporterId: r.reporterId,
       reporterName: r.reporter?.name ?? "알 수 없음",
     }));
+    return { rows: items, total, take, skip };
   }
   // ── 휴지통 (소프트 삭제된 커뮤니티 콘텐츠) ──
   // 삭제는 deletedAt 을 찍어두기만 하므로, 여기서 목록을 보여주고 되돌린다.
@@ -1382,8 +1388,16 @@ export class AdminController {
   }
 
   @Get("reports")
-  reports(@Query("status") status?: string) {
-    return this.admin.reports(status);
+  reports(
+    @Query("status") status?: string,
+    @Query("take") take?: string,
+    @Query("skip") skip?: string,
+  ) {
+    return this.admin.reports(
+      status,
+      take ? Number(take) : undefined,
+      skip ? Number(skip) : undefined,
+    );
   }
 
   @Patch("reports/:id")

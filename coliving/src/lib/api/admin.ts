@@ -154,10 +154,24 @@ export interface AdminReport {
   reporterName: string;
 }
 
-// GET /admin/reports?status= — omit status for all.
-export async function listReports(status?: ReportStatus): Promise<AdminReport[]> {
-  const query = status ? `?status=${status}` : "";
-  return api.get<AdminReport[]>(`/admin/reports${query}`);
+export interface AdminReportPage {
+  rows: AdminReport[];
+  total: number;
+  take: number;
+  skip: number;
+}
+
+// GET /admin/reports?status=&take=&skip= — status 생략하면 전체.
+export async function listReports(
+  status?: ReportStatus,
+  take = 5,
+  skip = 0,
+): Promise<AdminReportPage> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("take", String(take));
+  params.set("skip", String(skip));
+  return api.get<AdminReportPage>(`/admin/reports?${params.toString()}`);
 }
 
 // PATCH /admin/reports/:id — move a report through RECEIVED → IN_REVIEW → RESOLVED.
