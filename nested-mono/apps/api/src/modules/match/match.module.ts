@@ -21,7 +21,6 @@ import type {
   Sociability,
   SharedSpaceStyle,
   DrinkingHabit,
-  Gender,
 } from "@prisma/client";
 import { ageGroup } from "../../common/age-group";
 
@@ -66,6 +65,68 @@ const ADJUSTMENT_REASONS: Record<Axis, string> = {
   sharedSpace: "공용공간 사용 방식에 차이가 있어요",
   drinking: "음주 습관에 차이가 있어요",
 };
+
+type UserGender = "MALE" | "FEMALE" | "OTHER";
+
+type GenderVisibilityValue = "PUBLIC" | "MATCHED_ONLY" | "PRIVATE";
+
+type VisibleGender = "MALE" | "FEMALE" | null;
+
+type RoommateGenderPreferenceValue = "ANY" | "MALE" | "FEMALE";
+
+interface GenderMatchProfile {
+  gender: UserGender;
+  roommateGenderPreference: RoommateGenderPreferenceValue;
+}
+
+export function acceptsGender(
+  preference: RoommateGenderPreferenceValue,
+  targetGender: UserGender,
+): boolean {
+  if (preference === "ANY") {
+    return true;
+  }
+
+  // 기존 OTHER 사용자는 성별을 다시 선택하기 전까지
+  // 남성 또는 여성 지정 선호와 일치시키지 않는다.
+  if (targetGender === "OTHER") {
+    return false;
+  }
+
+  return preference === targetGender;
+}
+
+export function isMutuallyGenderCompatible(
+  first: GenderMatchProfile,
+  second: GenderMatchProfile,
+): boolean {
+  return (
+    acceptsGender(first.roommateGenderPreference, second.gender) &&
+    acceptsGender(second.roommateGenderPreference, first.gender)
+  );
+}
+
+export function resolveVisibleGender(
+  gender: UserGender,
+  visibility: GenderVisibilityValue,
+  isMatched: boolean,
+): VisibleGender {
+  // 기존 OTHER 사용자는 남성 또는 여성을 다시 선택할 때까지
+  // 다른 사용자에게 성별을 공개하지 않는다.
+  if (gender === "OTHER") {
+    return null;
+  }
+
+  if (visibility === "PUBLIC") {
+    return gender;
+  }
+
+  if (visibility === "MATCHED_ONLY" && isMatched) {
+    return gender;
+  }
+
+  return null;
+}
 
 export interface PreferenceAnswers {
   noise: NoiseSensitivity;
@@ -136,7 +197,7 @@ export interface MatchCandidate {
   name: string;
   // 정확한 나이 대신 연령대(20/30/40)만 노출한다.
   ageGroup: number | null;
-  gender: Gender;
+  gender: VisibleGender;
   job: string | null;
   avatarColor: string;
   avatarUrl: string | null;
@@ -166,6 +227,14 @@ export class MatchService {
   async matchesFor(userId: string): Promise<MatchCandidate[]> {
     const me = await this.prisma.roommatePreference.findUnique({
       where: { userId },
+      include: {
+        user: {
+          select: {
+            gender: true,
+            roommateGenderPreference: true,
+          },
+        },
+      },
     });
 
     if (!me || !me.isCompleted) {
@@ -186,6 +255,8 @@ export class MatchService {
             name: true,
             birthDate: true,
             gender: true,
+            genderVisibility: true,
+            roommateGenderPreference: true,
             job: true,
             avatarColor: true,
             avatarUrl: true,
@@ -217,6 +288,21 @@ export class MatchService {
         continue;
       }
 
+      const genderCompatible = isMutuallyGenderCompatible(
+        {
+          gender: me.user.gender,
+          roommateGenderPreference: me.user.roommateGenderPreference,
+        },
+        {
+          gender: other.user.gender,
+          roommateGenderPreference: other.user.roommateGenderPreference,
+        },
+      );
+
+      if (!genderCompatible) {
+        continue;
+      }
+
       const result = scoreMatch(me, other);
 
       if (!result.compatible) {
@@ -233,7 +319,11 @@ export class MatchService {
         userId: other.user.id,
         name: other.user.name,
         ageGroup: ageGroup(other.user.birthDate),
-        gender: other.user.gender,
+        gender: resolveVisibleGender(
+          other.user.gender,
+          other.user.genderVisibility,
+          true,
+        ),
         job: other.user.job,
         avatarColor: other.user.avatarColor,
         avatarUrl: other.user.avatarUrl,
@@ -266,6 +356,14 @@ export class MatchService {
         where: {
           userId: currentUserId,
         },
+        include: {
+          user: {
+            select: {
+              gender: true,
+              roommateGenderPreference: true,
+            },
+          },
+        },
       }),
 
       this.prisma.roommatePreference.findUnique({
@@ -279,6 +377,8 @@ export class MatchService {
               name: true,
               birthDate: true,
               gender: true,
+              genderVisibility: true,
+              roommateGenderPreference: true,
               job: true,
               bio: true,
               avatarColor: true,
@@ -319,6 +419,23 @@ export class MatchService {
       throw new NotFoundException("매칭 사용자를 찾을 수 없습니다.");
     }
 
+    const genderCompatible = isMutuallyGenderCompatible(
+      {
+        gender: me.user.gender,
+        roommateGenderPreference: me.user.roommateGenderPreference,
+      },
+      {
+        gender: target.user.gender,
+        roommateGenderPreference: target.user.roommateGenderPreference,
+      },
+    );
+
+    if (!genderCompatible) {
+      throw new NotFoundException(
+        "서로의 룸메이트 성별 선호 조건에 맞지 않습니다.",
+      );
+    }
+
     const result = scoreMatch(me, target);
 
     if (!result.compatible) {
@@ -337,7 +454,11 @@ export class MatchService {
       userId: target.user.id,
       name: target.user.name,
       ageGroup: ageGroup(target.user.birthDate),
-      gender: target.user.gender,
+      gender: resolveVisibleGender(
+        target.user.gender,
+        target.user.genderVisibility,
+        true,
+      ),
       job: target.user.job,
       avatarColor: target.user.avatarColor,
       avatarUrl: target.user.avatarUrl,

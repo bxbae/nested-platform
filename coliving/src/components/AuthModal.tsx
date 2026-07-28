@@ -41,7 +41,7 @@ export function AuthModal({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [gender, setGender] = useState<"MALE" | "FEMALE" | "OTHER" | "">("");
+  const [gender, setGender] = useState<"MALE" | "FEMALE" | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // Set when registration returns "verification required" instead of a session:
@@ -55,50 +55,63 @@ export function AuthModal({
 
   async function submit() {
     setError("");
-    if (mode === "register" && name.trim().length < 2) {
-      setError("닉네임은 2자 이상 입력해주세요.");
-      return;
-    }
+
     if (!email.trim() || !password) {
       setError("이메일과 비밀번호를 입력해주세요.");
       return;
     }
-    if (mode === "register" && password.length < 8) {
-      setError("비밀번호는 8자 이상이어야 합니다.");
-      return;
+
+    // 회원가입에서만 검사하는 항목
+    if (mode === "register") {
+      if (name.trim().length < 2) {
+        setError("닉네임은 2자 이상 입력해주세요.");
+        return;
+      }
+
+      if (password.length < 8) {
+        setError("비밀번호는 8자 이상이어야 합니다.");
+        return;
+      }
+
+      if (!gender) {
+        setError("성별을 선택해주세요.");
+        return;
+      }
     }
-    if (mode === "register" && !gender) {
-      setError("성별을 선택해주세요.");
-      return;
-    }
+
     setBusy(true);
+
     try {
       if (mode === "login") {
-        await login(email, password);
+        await login(email.trim(), password);
       } else {
+        // 위에서 gender 빈 값 검사를 끝냈으므로 여기서는 MALE/FEMALE
+        if (!gender) return;
+
         const res = await register(
-          email,
+          email.trim(),
           password,
-          name,
-          gender as "MALE" | "FEMALE" | "OTHER",
+          name.trim(),
+          gender,
           locale === "ko" ? "KO" : "EN",
         );
-        // Real API with a mail provider: no session yet — prompt for email
-        // verification and keep the modal open.
+
         if ("verificationRequired" in res) {
           setNotice(res.message);
-          setBusy(false);
           return;
         }
       }
+
       onClose();
-      // reset for next open
+
       setName("");
       setEmail("");
       setPassword("");
+      setGender("");
+      setError("");
       setNotice("");
     } catch (e) {
-      setError((e as Error).message || "요청에 실패했습니다.");
+      setError(e instanceof Error ? e.message : "요청을 처리하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -203,7 +216,6 @@ export function AuthModal({
                 [
                   ["MALE", "남성"],
                   ["FEMALE", "여성"],
-                  ["OTHER", "기타"],
                 ] as const
               ).map(([val, label]) => (
                 <button
@@ -413,6 +425,7 @@ export function AuthModal({
             onClick={() => {
               setMode(mode === "login" ? "register" : "login");
               setError("");
+              setNotice("");
             }}
             style={{
               background: "transparent",

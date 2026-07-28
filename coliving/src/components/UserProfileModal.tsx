@@ -19,7 +19,7 @@ interface PublicProfile {
   avatarColor: string;
   avatarUrl: string | null;
   bio: string | null;
-  gender: "MALE" | "FEMALE" | "OTHER";
+  gender: "MALE" | "FEMALE" | null;
   // 서버가 생년월일에서 계산한 연령대. 생일 원본은 내려오지 않는다.
   ageGroup: number | null;
   joinedYear: number;
@@ -126,7 +126,9 @@ export function UserProfileModal({
         style={{ width: "min(380px, 100%)", padding: 24 }}
       >
         {loading && <p style={{ color: "var(--text-2)" }}>불러오는 중…</p>}
-        {error && !loading && <p style={{ color: "var(--primary)" }}>{error}</p>}
+        {error && !loading && (
+          <p style={{ color: "var(--primary)" }}>{error}</p>
+        )}
 
         {profile && !loading && (
           <>
@@ -151,7 +153,14 @@ export function UserProfileModal({
                 {!profile.avatarUrl && profile.name.charAt(0)}
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <strong style={{ fontSize: 17 }}>{profile.name}</strong>
                   <UserBadges
                     verified={profile.verified}
@@ -159,28 +168,57 @@ export function UserProfileModal({
                     tierLabel={profile.tierLabel}
                   />
                 </div>
-                <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: "var(--text-2)",
+                    marginTop: 3,
+                  }}
+                >
                   {profile.joinedYear}년 가입
                   {profile.ageGroup && ` · ${profile.ageGroup}대`}
-                  {profile.gender !== "OTHER" &&
-                    ` · ${profile.gender === "MALE" ? "남성" : "여성"}`}
+                  {profile.gender && (
+                    <>
+                      {" · "}
+                      {profile.gender === "MALE" ? "남성" : "여성"}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
             {profile.bio && (
-              <p style={{ fontSize: 14, lineHeight: 1.6, marginTop: 16, whiteSpace: "pre-wrap" }}>
+              <p
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  marginTop: 16,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
                 {profile.bio}
               </p>
             )}
 
             {profile.keywords.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 14 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                  marginTop: 14,
+                }}
+              >
                 {profile.keywords.slice(0, 6).map((k) => (
                   <span
                     key={k}
                     className="chip"
-                    style={{ fontSize: 11, background: "var(--bg-2)", color: "var(--primary)", border: "none" }}
+                    style={{
+                      fontSize: 11,
+                      background: "var(--bg-2)",
+                      color: "var(--primary)",
+                      border: "none",
+                    }}
                   >
                     {k}
                   </span>
@@ -192,7 +230,11 @@ export function UserProfileModal({
               {!isSelf && (
                 <button
                   className="btn btn-primary press"
-                  style={{ flex: 1, justifyContent: "center", opacity: starting ? 0.6 : 1 }}
+                  style={{
+                    flex: 1,
+                    justifyContent: "center",
+                    opacity: starting ? 0.6 : 1,
+                  }}
                   onClick={startChat}
                   disabled={starting}
                 >
@@ -201,7 +243,10 @@ export function UserProfileModal({
               )}
               <button
                 className="btn btn-ghost press"
-                style={{ flex: isSelf ? 1 : undefined, justifyContent: "center" }}
+                style={{
+                  flex: isSelf ? 1 : undefined,
+                  justifyContent: "center",
+                }}
                 onClick={onClose}
               >
                 닫기
