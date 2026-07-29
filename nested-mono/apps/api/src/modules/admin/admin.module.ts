@@ -139,7 +139,7 @@ export class AdminService {
         createdAt: true,
         verifiedAt: true,
         _count: { select: { reviews: true } },
-        reservations: { where: { status: "COMPLETED" }, select: { id: true } },
+        reservations: { where: { status: { in: ["COMPLETED", "EARLY_CHECKOUT_APPROVED"] } }, select: { id: true } },
         // 입주자로서 받은 평가(TenantReview)의 별점 목록. 평균은
         // 아래에서 JS로 계산한다 (Prisma가 관계의 평균을 select 안에서
         // 바로 못 구해주기 때문).
