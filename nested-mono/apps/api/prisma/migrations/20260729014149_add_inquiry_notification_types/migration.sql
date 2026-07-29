@@ -6,8 +6,8 @@
 -- the enum.
 
 
-ALTER TYPE "NotificationType" ADD VALUE 'INQUIRY_CREATED';
-ALTER TYPE "NotificationType" ADD VALUE 'INQUIRY_STATUS_CHANGED';
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'INQUIRY_CREATED';
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'INQUIRY_STATUS_CHANGED';
 
 -- DropIndex
 DROP INDEX "ReservationCompanionMember_individualPayment_status_idx";
