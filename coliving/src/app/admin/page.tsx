@@ -150,12 +150,12 @@ export default function AdminDashboard() {
         <div className="admin-card" style={{ padding: "10px 20px" }}>
           <strong style={{ fontSize: 15, display: "block", marginBottom: 14 }}>처리해야 할 업무</strong>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, justifyContent: "space-between", alignItems: "end" }}>
-            <ActionItem icon="calendar" label="신규 예약/취소" count={loading ? null : (t?.reservations.value ?? 0) + (t?.cancels.value ?? 0)} href="/admin/reservations" accent/>
-            <ActionItem icon="home" label="승인 대기 숙소" count={loading ? null : pending.length} href="/admin/approvals" accent/>
-            <ActionItem icon="chat" label="답변 대기 문의" count={loading ? null : pendingInquiries} href="/admin/inquiries" accent/>
-            <ActionItem icon="flag" label="미처리 신고" count={loading ? null : openReports.length} href="/admin/reports" accent />
-            <ActionItem icon="wallet" label="정산 지연" count={loading ? null : summary?.settlementDelayed ?? 0} href="/admin/revenue" accent/>
-            <ActionItem icon="coupon" label="만료 예정 쿠폰" count={loading ? null : expiringCoupons} href="/admin/coupons" accent/>
+            <ActionItem icon="calendar" label="신규 예약/취소" count={loading ? null : (t?.reservations.value ?? 0) + (t?.cancels.value ?? 0)} href="/admin/reservations" />
+            <ActionItem icon="home" label="승인 대기 숙소" count={loading ? null : pending.length} href="/admin/approvals" />
+            <ActionItem icon="chat" label="답변 대기 문의" count={loading ? null : pendingInquiries} href="/admin/inquiries" />
+            <ActionItem icon="flag" label="미처리 신고" count={loading ? null : openReports.length} href="/admin/reports" />
+            <ActionItem icon="wallet" label="정산 지연" count={loading ? null : summary?.settlementDelayed ?? 0} href="/admin/revenue" />
+            <ActionItem icon="coupon" label="만료 예정 쿠폰" count={loading ? null : expiringCoupons} href="/admin/coupons" />
           </div>
         </div>
       </div>
@@ -401,14 +401,14 @@ function ActionItem({
   label,
   count,
   href,
-  accent,
+  // accent,
   pending,
 }: {
   icon: string;
   label: string;
   count?: number | null;
   href: string;
-  accent?: boolean;
+  // accent?: boolean;
   pending?: boolean;
 }) {
   const badgeStyle: CSSProperties = {
@@ -421,7 +421,7 @@ function ActionItem({
   ) : count === null ? (
     <span style={{ ...badgeStyle, background: "var(--border)", color: "var(--text-2)", fontWeight: 400 }}>…</span>
   ) : (
-    <span style={{ ...badgeStyle, background: accent ? "var(--primary)" : "var(--secondary)", color: "#fff" }}>
+    <span style={{ ...badgeStyle, ...(count && count > 0 ? { background: "var(--primary)", color: "#fff" } : { background: "var(--secondary)", color: "#fff" }) }}>
       {count}
     </span>
   );
