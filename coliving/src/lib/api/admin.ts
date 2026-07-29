@@ -38,28 +38,63 @@ export interface PublishedListing extends PendingListing {
   reviewCount: number;
 }
 
+// 필터/검색/페이징 쿼리 파라미터
+export interface PublishedRoomsQuery {
+  buildingType?: string;
+  rentalUnit?: string;
+  nickname?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+// 페이징 응답 형태 (백엔드 admin.module.ts의 반환 형태와 동일)
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 // GET /admin/rooms/published — 게시중 숙소, 별점 낮은 순
-export async function listPublishedRooms(): Promise<PublishedListing[]> {
-  const rows = await api.get<
-    (ApiRoom & {
+export async function listPublishedRooms(
+  query: PublishedRoomsQuery = {},
+): Promise<PaginatedResult<PublishedListing>> {
+  const params = new URLSearchParams();
+  if (query.buildingType) params.set("buildingType", query.buildingType);
+  if (query.rentalUnit) params.set("rentalUnit", query.rentalUnit);
+  if (query.nickname) params.set("nickname", query.nickname);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("pageSize", String(query.pageSize));
+  const qs = params.toString();
+
+  const res = await api.get<{
+    items: (ApiRoom & {
       address?: string | null;
       verifiedByHost?: boolean;
       createdAt: string;
       host?: { name?: string };
       rating: number;
       reviewCount: number;
-    })[]
-  >("/admin/rooms/published");
+    })[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>(`/admin/rooms/published${qs ? `?${qs}` : ""}`);
 
-  return rows.map((r) => ({
-    ...apiRoomToHouse(r),
-    address: r.address ?? null,
-    verifiedByHost: r.verifiedByHost ?? false,
-    hostName: r.host?.name ?? "호스트",
-    submittedAt: r.createdAt,
-    rating: r.rating,
-    reviewCount: r.reviewCount,
-  }));
+  return {
+    items: res.items.map((r) => ({
+      ...apiRoomToHouse(r),
+      address: r.address ?? null,
+      verifiedByHost: r.verifiedByHost ?? false,
+      hostName: r.host?.name ?? "호스트",
+      submittedAt: r.createdAt,
+      rating: r.rating,
+      reviewCount: r.reviewCount,
+    })),
+    total: res.total,
+    page: res.page,
+    pageSize: res.pageSize,
+  };
 }
 
 // 후기가 3건 이상 쌓였고 평균이 3.0 미만이면 검토 대상으로 봅니다.
@@ -178,6 +213,11 @@ export interface AdminReport {
   id: string;
   targetType: ReportTargetType;
   targetId: string;
+  // 신고 대상을 나타내는 사람의 닉네임 (ROOM은 그 방 호스트, REVIEW/
+  // COMMUNITY_POST/COMMUNITY_COMMENT는 작성자, MESSAGE는 보낸 사람,
+  // USER는 그 사용자 본인). 대상이 삭제됐거나 못 찾으면 null — 그때는
+  // 프론트가 targetId를 대신 보여준다.
+  targetName: string | null;
   reason: string;
   status: ReportStatus;
   createdAt: string;
@@ -185,10 +225,24 @@ export interface AdminReport {
   reporterName: string;
 }
 
-// GET /admin/reports?status= — omit status for all.
-export async function listReports(status?: ReportStatus): Promise<AdminReport[]> {
-  const query = status ? `?status=${status}` : "";
-  return api.get<AdminReport[]>(`/admin/reports${query}`);
+export interface AdminReportPage {
+  rows: AdminReport[];
+  total: number;
+  take: number;
+  skip: number;
+}
+
+// GET /admin/reports?status=&take=&skip= — status 생략하면 전체.
+export async function listReports(
+  status?: ReportStatus,
+  take = 20,
+  skip = 0,
+): Promise<AdminReportPage> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("take", String(take));
+  params.set("skip", String(skip));
+  return api.get<AdminReportPage>(`/admin/reports?${params.toString()}`);
 }
 
 // PATCH /admin/reports/:id — move a report through RECEIVED → IN_REVIEW → RESOLVED.
@@ -307,9 +361,36 @@ export async function verifyMember(id: string, verified: boolean): Promise<void>
 }
 
 // GET /admin/members?q= — search by name/email (omit q for all).
-export async function listMembers(q?: string): Promise<AdminMember[]> {
-  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-  return api.get<AdminMember[]>(`/admin/members${query}`);
+export interface ListMembersQuery {
+  q?: string;
+  role?: MemberRole;
+  tier?: "SEED" | "REGULAR" | "TRUSTED";
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listMembers(
+  query: ListMembersQuery = {},
+): Promise<PaginatedResult<AdminMember>> {
+  const params = new URLSearchParams();
+  if (query.q?.trim()) params.set("q", query.q.trim());
+  if (query.role) params.set("role", query.role);
+  if (query.tier) params.set("tier", query.tier);
+  if (query.sortBy) params.set("sortBy", query.sortBy);
+  if (query.sortOrder) params.set("sortOrder", query.sortOrder);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("pageSize", String(query.pageSize));
+  const qs = params.toString();
+  return api.get<PaginatedResult<AdminMember>>(`/admin/members${qs ? `?${qs}` : ""}`);
+}
+// 페이징 응답 형태
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 // PATCH /admin/members/:id/suspend — toggle a member's suspension.
@@ -384,6 +465,8 @@ export interface RevenueTrend {
   commission: number;
   payouts: number;
   refunds: number;
+  // 사이트가 부담하는 쿠폰 할인 총액 — 매출이 아니라 비용이라 별도 표시.
+  couponDiscount: number;
   trend: MonthlyTrendPoint[];
 }
 
@@ -524,6 +607,23 @@ export async function createCoupon(input: {
   usageLimit?: number | null;
 }): Promise<AdminCoupon> {
   return api.post<AdminCoupon>("/admin/coupons", input);
+}
+
+// PATCH /admin/coupons/:id — 코드(code)는 수정 불가 (발급 후 코드가 바뀌면
+// 이미 공유된 쿠폰이 깨진다). 코드 자체를 바꿔야 하면 삭제 후 재생성.
+export async function updateCoupon(
+  id: string,
+  input: Partial<{
+    type: "FIXED" | "PERCENT";
+    value: number;
+    maxDiscount: number | null;
+    minSpend: number;
+    validFrom: string;
+    validTo: string;
+    usageLimit: number | null;
+  }>,
+): Promise<AdminCoupon> {
+  return api.patch<AdminCoupon>(`/admin/coupons/${id}`, input);
 }
 
 // DELETE /admin/coupons/:id

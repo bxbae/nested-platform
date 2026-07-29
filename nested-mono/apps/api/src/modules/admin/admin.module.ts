@@ -19,7 +19,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
-import { activityTier, TIER_LABEL } from "../../common/activity-tier";
+import { activityTier, TIER_LABEL, type ActivityTier } from "../../common/activity-tier";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 
@@ -67,6 +67,13 @@ const couponCreateSchema = z.object({
   usageLimit: z.number().int().positive().nullable().optional(),
 });
 
+// 코드(code)는 발급 후 바꾸면 이미 공유된 쿠폰 코드가 깨지니 수정 대상에서
+// 뺐다. kind/ownerId도 뺐다 — 이 CRUD는 관리자가 만드는 공용(GENERAL)
+// 쿠폰 전용이고(createCoupon이 항상 kind: "GENERAL", ownerId: null로
+// 생성한다), 생일 쿠폰(BIRTHDAY)은 별도 시스템(birthday-coupon.module.ts)이
+// 발급하는 것이라 여기서 종류를 바꿔치기할 수 있게 열어두면 안 된다.
+const couponUpdateSchema = couponCreateSchema.omit({ code: true }).partial();
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -74,13 +81,35 @@ export class AdminService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  async members(q?: string) {
+  // role 필터는 DB where에서 처리하고, tier(등급)는 계산 필드라
+  // JS에서 필터/정렬/페이징한다. 기존에 있던 take: 100 상한선은 페이징이
+  // 생기면서 제거한다 (안 그러면 101번째부터는 아예 조회가 안 됨).
+  async members(query: {
+    q?: string;
+    role?: "GUEST" | "HOST" | "ADMIN";
+    tier?: "SEED" | "REGULAR" | "TRUSTED";
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+    page?: number;
+    pageSize?: number;
+  }) {
+    const {
+      q,
+      role,
+      tier: tierFilter,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = 1,
+      pageSize = 20,
+    } = query;
+
     const rows = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
         ...(q
           ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] }
           : {}),
+        ...(role ? { role } : {}),
       },
       select: {
         id: true,
@@ -92,16 +121,14 @@ export class AdminService {
         verifiedAt: true,
         _count: { select: { reviews: true } },
         reservations: { where: { status: "COMPLETED" }, select: { id: true } },
-        // 신규 — 입주자로서 받은 평가(TenantReview)의 별점 목록. 평균은
+        // 입주자로서 받은 평가(TenantReview)의 별점 목록. 평균은
         // 아래에서 JS로 계산한다 (Prisma가 관계의 평균을 select 안에서
         // 바로 못 구해주기 때문).
         tenantReviewsReceived: { select: { rating: true } },
       },
-      orderBy: { createdAt: "desc" },
-      take: 100,
     });
 
-    // 신규 — 신고 건수는 관계로 못 가져오므로 별도 집계.
+    // 신고 건수는 관계로 못 가져오므로 별도 집계.
     // targetType이 "USER"인 신고만 모아서, targetId(=회원 id)별로 개수를
     // 센다. 회원 전체를 한 번의 쿼리로 처리해 N+1을 피한다.
     const userIds = rows.map((u) => u.id);
@@ -114,7 +141,7 @@ export class AdminService {
       reportGroups.map((g) => [g.targetId, g._count.targetId]),
     );
 
-    return rows.map(({ _count, reservations, tenantReviewsReceived, ...u }) => {
+    let enriched = rows.map(({ _count, reservations, tenantReviewsReceived, ...u }) => {
       const completedStays = reservations.length;
       const reviewsWritten = _count.reviews;
       const tier = activityTier(completedStays, reviewsWritten);
@@ -139,6 +166,50 @@ export class AdminService {
         reportCount: reportCountMap.get(u.id) ?? 0,
       };
     });
+
+    // 등급 필터 (계산 필드라 JS에서 처리)
+    if (tierFilter) {
+      enriched = enriched.filter((u) => u.tier === tierFilter);
+    }
+
+    // 헤더 클릭 정렬 — tier는 순서가 있는 값이라 랭크로 변환해서 비교
+    const TIER_RANK: Record<ActivityTier, number> = { SEED: 0, REGULAR: 1, TRUSTED: 2 };
+    enriched.sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case "name":
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case "role":
+          cmp = a.role.localeCompare(b.role);
+          break;
+        case "tier":
+          cmp = TIER_RANK[a.tier] - TIER_RANK[b.tier];
+          break;
+        case "completedStays":
+          cmp = a.completedStays - b.completedStays;
+          break;
+        case "reviewsWritten":
+          cmp = a.reviewsWritten - b.reviewsWritten;
+          break;
+        case "avgRating":
+          cmp = (a.avgRating ?? -1) - (b.avgRating ?? -1);
+          break;
+        case "reportCount":
+          cmp = a.reportCount - b.reportCount;
+          break;
+        case "createdAt":
+        default:
+          cmp = a.createdAt.getTime() - b.createdAt.getTime();
+      }
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+
+    const total = enriched.length;
+    const start = (page - 1) * pageSize;
+    const items = enriched.slice(start, start + pageSize);
+
+    return { items, total, page, pageSize };
   }
 
   // Admin marks identity as checked (or revokes it). Separate from
@@ -228,9 +299,30 @@ export class AdminService {
   }
   // 게시중인 숙소 — 별점이 낮은 순으로 정렬해 관리자가 문제 매물을 먼저 보게 합니다.
   // 후기가 적으면 평균이 흔들리므로 reviewCount를 함께 내려 UI에서 판단하게 합니다.
-  async publishedRooms() {
+  //
+  // 신규 — 유형(buildingType)/형태·인실(rentalUnit) 필터, 호스트 닉네임 검색,
+  // 페이징을 추가한다. 정렬 규칙("무후기는 맨 뒤")이 DB orderBy만으로 표현이
+  // 안 되므로, 지금 규모(관리자용 전체 게시 숙소)에서는 전체를 가져와 JS에서
+  // 정렬한 뒤 메모리에서 페이지를 자른다. 숙소 수가 크게 늘어나면 이 방식은
+  // 성능 이슈가 될 수 있어 raw SQL(CASE WHEN) 기반 DB 정렬로 바꾸는 걸 고려할 것.
+  async publishedRooms(query: {
+    buildingType?: string;
+    rentalUnit?: string;
+    nickname?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const { buildingType, rentalUnit, nickname, page = 1, pageSize = 20 } = query;
+
     const rooms = await this.prisma.room.findMany({
-      where: { published: true },
+      where: {
+        published: true,
+        ...(buildingType ? { buildingType: buildingType as any } : {}),
+        ...(rentalUnit ? { rentalUnit: rentalUnit as any } : {}),
+        ...(nickname
+          ? { host: { name: { contains: nickname, mode: "insensitive" } } }
+          : {}),
+      },
       orderBy: { createdAt: "desc" },
       include: {
         host: { select: { name: true } },
@@ -239,7 +331,7 @@ export class AdminService {
       },
     });
 
-    return rooms
+    const sorted = rooms
       .map((room) => {
         const ratings = room.reviews.map((r) => r.rating);
         const reviewCount = ratings.length;
@@ -256,6 +348,12 @@ export class AdminService {
         if (!b.reviewCount) return -1;
         return a.rating - b.rating;
       });
+
+    const total = sorted.length;
+    const start = (page - 1) * pageSize;
+    const items = sorted.slice(start, start + pageSize);
+
+    return { items, total, page, pageSize };
   }
 
   async setPublished(id: string, published: boolean) {
@@ -371,24 +469,103 @@ export class AdminService {
   }
 
   // reports (신고 관리)
-  async reports(status?: string) {
-    const rows = await this.prisma.report.findMany({
-      where: status ? { status: status as any } : {},
+  async reports(status?: string, take = 20, skip = 0) {
+    const where = status ? { status: status as any } : {};
+    const [rows, total] = await Promise.all([
+      this.prisma.report.findMany({
+        where,
       orderBy: { createdAt: "desc" },
       include: { reporter: { select: { name: true } } },
-      take: 200,
-    });
+        take,
+        skip,
+      }),
+      this.prisma.report.count({ where }),
+    ]);
+
+    // targetId는 신고 종류마다 다른 테이블을 가리키는 다형(polymorphic)
+    // 참조라 Report에 직접 관계(relation)를 걸 수가 없다. 그래서 종류별로
+    // id를 묶어뒀다가, 타입당 쿼리 한 번씩(최대 6번)만 날려서 이름을
+    // 채운다 — row마다 따로 조회하면 N+1이 된다.
+    const idsByType: Record<
+      "ROOM" | "REVIEW" | "USER" | "MESSAGE" | "COMMUNITY_POST" | "COMMUNITY_COMMENT",
+      string[]
+    > = {
+      ROOM: [], REVIEW: [], USER: [], MESSAGE: [], COMMUNITY_POST: [], COMMUNITY_COMMENT: [],
+    };
+    for (const r of rows) idsByType[r.targetType as keyof typeof idsByType]?.push(r.targetId);
+
+    const nameOf = new Map<string, string>();
+
+    const [rooms, reviews, users, posts, comments, chatMessages, directMessages] = await Promise.all([
+      // 방 자체엔 "닉네임"이 없으니, 신고당한 대상을 사람으로 통일하기
+      // 위해 그 방 호스트의 닉네임을 보여준다.
+      idsByType.ROOM.length
+        ? this.prisma.room.findMany({
+            where: { id: { in: idsByType.ROOM } },
+            select: { id: true, host: { select: { name: true } } },
+          })
+        : [],
+      idsByType.REVIEW.length
+        ? this.prisma.review.findMany({
+            where: { id: { in: idsByType.REVIEW } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      idsByType.USER.length
+        ? this.prisma.user.findMany({ where: { id: { in: idsByType.USER } }, select: { id: true, name: true } })
+        : [],
+      idsByType.COMMUNITY_POST.length
+        ? this.prisma.post.findMany({
+            where: { id: { in: idsByType.COMMUNITY_POST } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      idsByType.COMMUNITY_COMMENT.length
+        ? this.prisma.comment.findMany({
+            where: { id: { in: idsByType.COMMUNITY_COMMENT } },
+            select: { id: true, author: { select: { name: true } } },
+          })
+        : [],
+      // MESSAGE는 채팅방 메시지(Message)일 수도, 1:1 다이렉트 메시지
+      // (DirectMessage)일 수도 있다 — reportedUserId()와 같은 이유로
+      // 두 테이블 다 조회해서 먼저 걸리는 쪽을 쓴다.
+      idsByType.MESSAGE.length
+        ? this.prisma.message.findMany({
+            where: { id: { in: idsByType.MESSAGE } },
+            select: { id: true, sender: { select: { name: true } } },
+          })
+        : [],
+      idsByType.MESSAGE.length
+        ? this.prisma.directMessage.findMany({
+            where: { id: { in: idsByType.MESSAGE } },
+            select: { id: true, sender: { select: { name: true } } },
+          })
+        : [],
+    ]);
+
+    rooms.forEach((x) => nameOf.set(x.id, x.host?.name ?? "알 수 없음"));
+    reviews.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    users.forEach((x) => nameOf.set(x.id, x.name));
+    posts.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    comments.forEach((x) => nameOf.set(x.id, x.author?.name ?? "알 수 없음"));
+    chatMessages.forEach((x) => nameOf.set(x.id, x.sender?.name ?? "알 수 없음"));
+    directMessages.forEach((x) => nameOf.set(x.id, x.sender?.name ?? "알 수 없음"));
+
     // Flatten the reporter relation so the client gets a plain name string.
-    return rows.map((r: (typeof rows)[number]) => ({
+    const items = rows.map((r: (typeof rows)[number]) => ({
       id: r.id,
       targetType: r.targetType,
       targetId: r.targetId,
+      // null이면 대상이 이미 삭제됐거나(탈퇴 회원 등) 못 찾은 것 — 프론트가
+      // 이 경우 targetId를 대신 보여주도록 남겨둔다.
+      targetName: nameOf.get(r.targetId) ?? null,
       reason: r.reason,
       status: r.status,
       createdAt: r.createdAt,
       reporterId: r.reporterId,
       reporterName: r.reporter?.name ?? "알 수 없음",
     }));
+    return { rows: items, total, take, skip };
   }
   // ── 휴지통 (소프트 삭제된 커뮤니티 콘텐츠) ──
   // 삭제는 deletedAt 을 찍어두기만 하므로, 여기서 목록을 보여주고 되돌린다.
@@ -985,6 +1162,21 @@ export class AdminService {
       ORDER BY 1
     `;
 
+    // 쿠폰 할인액 — 실제로 결제가 완료된(PAID) 예약 중, 쿠폰이 적용된
+    // 건들의 discount 합계. 사이트가 대신 부담하는 금액이라, GMV/수수료
+    // 랑 구분해서 따로 보여준다. Reservation에 쿠폰 사용 시점의 할인
+    // 금액이 이미 저장돼 있어서(discount 컬럼) 새 집계 테이블 없이도
+    // 바로 합산할 수 있다.
+    const couponAgg = await this.prisma.$queryRaw<{ total: bigint | null }[]>`
+      SELECT SUM(r."discount") AS total
+      FROM "Reservation" r
+      JOIN "Payment" p ON p."reservationId" = r.id
+      WHERE p.status = 'PAID'
+        AND r."couponId" IS NOT NULL
+        AND r."createdAt" >= ${start}
+    `;
+    const couponDiscount = couponAgg[0]?.total ? Number(couponAgg[0].total) : 0;
+
     // Index DB results by "YYYY-M" so we can zero-fill missing months.
     const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}`;
     const revByMonth = new Map(
@@ -1021,6 +1213,7 @@ export class AdminService {
       commission,
       payouts: gmv - commission,
       refunds,
+      couponDiscount,
       trend,
     };
   }
@@ -1217,6 +1410,75 @@ export class AdminService {
     });
   }
 
+  async updateCoupon(
+    id: string,
+    data: {
+      type?: "FIXED" | "PERCENT";
+      value?: number;
+      maxDiscount?: number | null;
+      minSpend?: number;
+      validFrom?: string;
+      validTo?: string;
+      usageLimit?: number | null;
+    },
+  ) {
+    const found = await this.prisma.coupon.findUnique({
+      where: { id },
+      select: { id: true, usedCount: true, kind: true },
+    });
+    if (!found) {
+      throw new NotFoundException({
+        code: "COUPON_NOT_FOUND",
+        message: "쿠폰을 찾을 수 없습니다.",
+      });
+    }
+    // 이 화면은 관리자가 만드는 공용(GENERAL) 쿠폰 전용이다 — 생일 쿠폰은
+    // birthday-coupon.module.ts가 개인별로 발급하는 것이라 여기서 잘못
+    // 건드리면 안 된다.
+    if (found.kind !== "GENERAL") {
+      throw new BadRequestException({
+        code: "NOT_A_GENERAL_COUPON",
+        message: "공용 쿠폰만 여기서 수정할 수 있어요.",
+      });
+    }
+    // 사용 한도를 이미 쓰인 횟수보다 낮게 줄이면 "usedCount > usageLimit"인
+    // 모순된 상태가 되고, active 판정(listCoupons)이 헷갈리게 된다.
+    if (
+      data.usageLimit != null &&
+      data.usageLimit < found.usedCount
+    ) {
+      throw new BadRequestException({
+        code: "USAGE_LIMIT_BELOW_USED",
+        message: `이미 ${found.usedCount}명이 사용해서, 그보다 낮은 한도로는 줄일 수 없어요.`,
+      });
+    }
+    const updated = await this.prisma.coupon.update({
+      where: { id },
+      data: {
+        ...(data.type !== undefined && { type: data.type }),
+        ...(data.value !== undefined && { value: data.value }),
+        ...(data.maxDiscount !== undefined && { maxDiscount: data.maxDiscount }),
+        ...(data.minSpend !== undefined && { minSpend: data.minSpend }),
+        ...(data.validFrom !== undefined && { validFrom: new Date(data.validFrom) }),
+        ...(data.validTo !== undefined && { validTo: new Date(data.validTo) }),
+        ...(data.usageLimit !== undefined && { usageLimit: data.usageLimit }),
+      },
+    });
+    // listCoupons()랑 같은 파생(derived) 필드를 붙여서 리턴한다 — 프론트가
+    // 이 응답으로 목록의 해당 항목을 그대로 교체하는데, active가 없으면
+    // (undefined는 falsy라서) 방금 수정한 쿠폰이 무조건 "만료/소진"으로
+    // 보였다. prisma.coupon.update()는 원본 컬럼만 주지, listCoupons()가
+    // 계산해서 붙이는 active 같은 파생 필드는 안 준다.
+    const now = new Date();
+    return {
+      ...updated,
+      active:
+        now >= updated.validFrom &&
+        now <= updated.validTo &&
+        (updated.usageLimit == null || updated.usedCount < updated.usageLimit),
+    };
+  }
+
   async deleteCoupon(id: string) {
     const found = await this.prisma.coupon.findUnique({
       where: { id },
@@ -1257,14 +1519,23 @@ export class AdminController {
     return this.admin.stats();
   }
 
-  @Get("dashboard/summary")
+@Get("dashboard/summary")
   dashboardSummary() {
     return this.admin.dashboardSummary();
   }
 
+  // 쿼리: q(이름/이메일 검색), role, tier, sortBy, sortOrder, page, pageSize
   @Get("members")
-  members(@Query("q") q?: string) {
-    return this.admin.members(q);
+  members(@Query() query: any) {
+    return this.admin.members({
+      q: query.q,
+      role: query.role,
+      tier: query.tier,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
+      page: query.page ? Number(query.page) : undefined,
+      pageSize: query.pageSize ? Number(query.pageSize) : undefined,
+    });
   }
 
   // PATCH /admin/members/:id/verify — 신원 확인 표시 토글
@@ -1302,9 +1573,16 @@ export class AdminController {
   }
 
   // GET /admin/rooms/published — 게시중 숙소 (별점 낮은 순)
+  // 쿼리: buildingType, rentalUnit, nickname(호스트 검색), page, pageSize
   @Get("rooms/published")
-  publishedList() {
-    return this.admin.publishedRooms();
+  publishedList(@Query() q: any) {
+    return this.admin.publishedRooms({
+      buildingType: q.buildingType,
+      rentalUnit: q.rentalUnit,
+      nickname: q.nickname,
+      page: q.page ? Number(q.page) : undefined,
+      pageSize: q.pageSize ? Number(q.pageSize) : undefined,
+    });
   }
 
   @Patch("rooms/:id/publish")
@@ -1338,8 +1616,16 @@ export class AdminController {
   }
 
   @Get("reports")
-  reports(@Query("status") status?: string) {
-    return this.admin.reports(status);
+  reports(
+    @Query("status") status?: string,
+    @Query("take") take?: string,
+    @Query("skip") skip?: string,
+  ) {
+    return this.admin.reports(
+      status,
+      take ? Number(take) : undefined,
+      skip ? Number(skip) : undefined,
+    );
   }
 
   @Patch("reports/:id")
@@ -1466,6 +1752,15 @@ export class AdminController {
     dto: z.infer<typeof couponCreateSchema>,
   ) {
     return this.admin.createCoupon(dto);
+  }
+
+  @Patch("coupons/:id")
+  updateCoupon(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(couponUpdateSchema))
+    dto: z.infer<typeof couponUpdateSchema>,
+  ) {
+    return this.admin.updateCoupon(id, dto);
   }
 
   @Delete("coupons/:id")

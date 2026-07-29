@@ -323,6 +323,29 @@ export class ReservationsService {
       guestId,
     );
 
+    // 결제 검증(verify)까지 통과했는데도 Payment 테이블엔 아무것도 안 남기고
+    // Reservation.status만 CONFIRMED로 바꾸고 끝났었다 — 관리자 매출 관리
+    // 화면(총 거래액/수수료/환불액)이 전부 이 테이블만 보고 계산하는데,
+    // 쓰는 코드가 아예 없어서 실제 확정된 예약이 있어도 항상 0으로 나왔다.
+    // reservationId가 @unique라 이미 있으면(멱등 재호출) 에러 없이 건너뜀.
+    if (this.prisma) {
+      const existingPayment = await this.prisma.payment.findUnique({
+        where: { reservationId: reservation.id },
+        select: { id: true },
+      });
+      if (!existingPayment) {
+        await this.prisma.payment.create({
+          data: {
+            reservationId: reservation.id,
+            provider: dto.provider,
+            providerTxnId: dto.paymentKey,
+            amount: reservation.totalDueNow,
+            status: "PAID",
+          },
+        });
+      }
+    }
+
     if (room.hostId !== guestId && this.prisma && this.notificationsGateway) {
       const notification = await this.prisma.notification.create({
         data: {
@@ -391,6 +414,18 @@ export class ReservationsService {
     return this.repo.listByCompanion(userId);
   }
 
+  // 취소되면 그 예약의 Payment도 REFUNDED로 바꾼다 — 안 그러면 관리자
+  // 매출 관리의 "총 거래액(GMV)"이 취소된 예약 금액까지 그대로 포함해서
+  // 계산된다 (GMV 쿼리가 status='PAID'인 것만 더하기 때문). 게스트 취소,
+  // 호스트 취소 둘 다 이 메서드를 거친다.
+  private async refundPayment(reservationId: string): Promise<void> {
+    if (!this.prisma) return;
+    await this.prisma.payment.updateMany({
+      where: { reservationId, status: "PAID" },
+      data: { status: "REFUNDED" },
+    });
+  }
+
   async cancel(id: string, guestId: string): Promise<ReservationRecord> {
     const reservation = await this.repo.findById(id);
 
@@ -426,6 +461,7 @@ export class ReservationsService {
       id,
       "CANCELLED_BY_GUEST",
     );
+    await this.refundPayment(id);
 
     if (room.hostId !== guestId && this.prisma && this.notificationsGateway) {
       const notification = await this.prisma.notification.create({
@@ -1093,6 +1129,10 @@ export class ReservationsService {
     }
 
     const updated = await this.repo.updateStatus(id, status);
+
+    if (status === "CANCELLED_BY_HOST") {
+      await this.refundPayment(id);
+    }
 
     if (status === "NO_SHOW" && this.prisma) {
       const room = await this.repo.findRoom(reservation.roomId);

@@ -55,18 +55,25 @@ export default function AdminDashboard() {
   useEffect(() => {
     (async () => {
       try {
+// getDashboardSummary()로 집계, getRevenueTrend()로 월별 추이를 받는다.
+        // listReports()는 이제 { rows, total, ... } 페이지 객체를 리턴한다
+        // (신고 관리 페이지 페이징 처리 때문). 여기서는 "미처리 신고"
+        // 개수·미리보기용으로 쓰는 거라 넉넉히 한 번에 받아온다.
         const [s, sum, tr, p, r] = await Promise.all([
           getStats(),
           getDashboardSummary(),
           getRevenueTrend(6),
+          getStats(),
+          getDashboardSummary(),
+          getRevenueTrend(6),
           listPendingRooms(),
-          listReports(),
+          listReports(undefined, 200, 0),
         ]);
         setStats(s);
         setSummary(sum);
         setTrend(tr);
         setPending(p);
-        setReports(r);
+        setReports(r.rows);
       } catch (e) {
         setError(e instanceof Error ? e.message : "현황을 불러오지 못했어요.");
       } finally {

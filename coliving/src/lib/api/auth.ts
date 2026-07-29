@@ -5,7 +5,14 @@
 
 import { API_BASE_URL, USE_REAL_API } from "./config";
 import { api } from "./client";
-import { authStore, type AuthTokens, type AuthUser } from "./auth-store";
+import {
+  authStore,
+  type AuthTokens,
+  type AuthUser,
+  type Gender,
+  type GenderVisibility,
+  type RoommateGenderPreference,
+} from "./auth-store";
 
 // In demo mode (no backend) we fabricate a local session so the login UI is
 // fully clickable on the portfolio deployment. Tokens are dummy strings — the
@@ -14,6 +21,7 @@ function demoTokens(
   email: string,
   name?: string,
   preferredLocale: "KO" | "EN" = "KO",
+  gender: Gender = "OTHER",
 ): AuthTokens {
   return {
     accessToken: "demo-access",
@@ -24,6 +32,9 @@ function demoTokens(
       role: "USER",
       name: name ?? `사용자${Math.random().toString(36).slice(2, 8)}`,
       nicknameCompleted: Boolean(name?.trim()),
+      gender,
+      genderVisibility: "MATCHED_ONLY",
+      roommateGenderPreference: "ANY",
       preferredLocale,
     },
   };
@@ -40,11 +51,11 @@ export async function register(
   email: string,
   password: string,
   name: string,
-  gender: "MALE" | "FEMALE" | "OTHER",
+  gender: Exclude<Gender, "OTHER">,
   preferredLocale: "KO" | "EN",
 ): Promise<RegisterResult> {
   if (!USE_REAL_API) {
-    const t = demoTokens(email, name);
+    const t = demoTokens(email, name, preferredLocale, gender);
     authStore.set(t);
     return { user: t.user };
   }
@@ -126,7 +137,9 @@ interface ApiMe {
   bio?: string | null;
   avatarColor?: string;
   avatarUrl?: string | null;
-  gender?: "MALE" | "FEMALE" | "OTHER";
+  gender?: Gender;
+  genderVisibility?: GenderVisibility;
+  roommateGenderPreference?: RoommateGenderPreference;
   birthDate?: string | null;
   preferredLocale?: "KO" | "EN";
   hasPassword?: boolean;
@@ -144,6 +157,8 @@ function toAuthUser(me: ApiMe): AuthUser {
     avatarColor: me.avatarColor,
     avatarUrl: me.avatarUrl ?? null,
     gender: me.gender ?? "OTHER",
+    genderVisibility: me.genderVisibility ?? "MATCHED_ONLY",
+    roommateGenderPreference: me.roommateGenderPreference ?? "ANY",
     birthDate: me.birthDate ?? null,
     preferredLocale: me.preferredLocale ?? "KO",
     hasPassword: me.hasPassword,
@@ -158,7 +173,9 @@ export async function updateProfile(data: {
   bio?: string;
   avatarColor?: string;
   avatarUrl?: string | null;
-  gender?: "MALE" | "FEMALE" | "OTHER";
+  gender?: Exclude<Gender, "OTHER">;
+  genderVisibility?: GenderVisibility;
+  roommateGenderPreference?: RoommateGenderPreference;
   // YYYY-MM-DD 또는 ISO 문자열. null이면 생년월일을 지운다.
   birthDate?: string | null;
 }): Promise<AuthUser> {
@@ -234,6 +251,15 @@ export async function resetPassword(
 // storing it here means the user can list a room without logging in again.
 export async function becomeHost(): Promise<AuthUser> {
   const res = await api.post<AuthTokens>("/auth/become-host");
+  authStore.set(res);
+  return res.user;
+}
+
+// POST /auth/relinquish-host — HOST → GUEST. 등록한 숙소 중 예약·리뷰 이력이
+// 없는 것은 삭제되고, 이력이 있는 것은 비공개로 전환된다. 진행 중인 예약이
+// 있으면 서버가 400(HOST_HAS_ACTIVE_RESERVATIONS)으로 막는다.
+export async function relinquishHost(): Promise<AuthUser> {
+  const res = await api.post<AuthTokens>("/auth/relinquish-host");
   authStore.set(res);
   return res.user;
 }

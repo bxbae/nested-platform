@@ -48,9 +48,15 @@ const FILTERS: { key: ReportStatus | "ALL"; label: string }[] = [
   { key: "RESOLVED", label: "처리완료" },
 ];
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const DEFAULT_PAGE_SIZE = 20;
+
 export default function AdminReports() {
   const [reports, setReports] = useState<AdminReport[]>([]);
   const [filter, setFilter] = useState<ReportStatus | "ALL">("ALL");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -70,11 +76,17 @@ export default function AdminReports() {
   } | null>(null);
   const [notifyMessage, setNotifyMessage] = useState("");
 
-  const load = useCallback(async (status: ReportStatus | "ALL") => {
+  const load = useCallback(async (status: ReportStatus | "ALL", pageArg: number, sizeArg: number) => {
     setLoading(true);
     setError(null);
     try {
-      setReports(await listReports(status === "ALL" ? undefined : status));
+      const res = await listReports(
+        status === "ALL" ? undefined : status,
+        sizeArg,
+        pageArg * sizeArg,
+      );
+      setReports(res.rows);
+      setTotal(res.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : "신고 목록을 불러오지 못했어요.");
     } finally {
@@ -83,8 +95,24 @@ export default function AdminReports() {
   }, []);
 
   useEffect(() => {
-    load(filter);
-  }, [filter, load]);
+    load(filter, page, pageSize);
+  }, [filter, page, pageSize, load]);
+
+  // 필터 바뀌면 1페이지부터 다시 — 안 그러면 예를 들어 5페이지 보다가
+  // 필터 바꿨을 때 그 필터엔 5페이지가 없을 수도 있다.
+  function changeFilter(next: ReportStatus | "ALL") {
+    setFilter(next);
+    setPage(0);
+  }
+
+  // 페이지당 개수를 바꾸면, 지금 몇 번째 항목을 보고 있었는지 기준이
+  // 달라지니 마찬가지로 1페이지로 되돌린다.
+  function changePageSize(next: number) {
+    setPageSize(next);
+    setPage(0);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   async function advance(r: AdminReport) {
     const next = NEXT_STATUS[r.status];
@@ -96,7 +124,7 @@ export default function AdminReports() {
       // If we're viewing a filtered list, the row may no longer belong here —
       // reload rather than patch in place.
       if (filter !== "ALL") {
-        await load(filter);
+        await load(filter, page, pageSize);
       } else {
         setReports((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: next } : x)));
       }
@@ -186,20 +214,34 @@ export default function AdminReports() {
     <div>
       <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>신고 관리</h1>
       <p style={{ color: "var(--text-2)", marginBottom: 20 }}>
-        {loading ? "불러오는 중…" : `미처리 ${unresolved}건 · 전체 ${reports.length}건`}
+        {loading ? "불러오는 중…" : `현재 페이지 미처리 ${unresolved}건 · 전체 ${total}건`}
       </p>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {FILTERS.map((f) => (
           <button
             key={f.key}
             className="chip"
             data-active={filter === f.key}
-            onClick={() => setFilter(f.key)}
+            onClick={() => changeFilter(f.key)}
           >
             {f.label}
           </button>
         ))}
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-2)" }}>
+          한 번에
+          <select
+            value={pageSize}
+            onChange={(e) => changePageSize(Number(e.target.value))}
+            style={{ padding: "6px 10px", border: "1px solid var(--border)", borderRadius: "var(--r-sm)", fontSize: 13 }}
+          >
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <option key={n} value={n}>{n}건씩</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {error && (
@@ -233,7 +275,7 @@ export default function AdminReports() {
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-                  신고자 {r.reporterName} · 대상 ID {r.targetId.slice(0, 8)}…
+                  <span style={{fontWeight: "bold"}}>신고자</span> &nbsp; {r.reporterName} &nbsp; | &nbsp; <span style={{fontWeight: "bold"}}>대상</span> &nbsp; {r.targetName ?? `ID ${r.targetId.slice(0, 8)}`}
                 </span>
                 {next ? (
                   <button
@@ -318,6 +360,20 @@ export default function AdminReports() {
           );
         })}
       </div>
+
+      {!loading && totalPages > 1 && (
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center", marginTop: 20 }}>
+          <button className="chip" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+            이전
+          </button>
+          <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+            {page + 1} / {totalPages}
+          </span>
+          <button className="chip" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+            다음
+          </button>
+        </div>
+      )}
 
       <ReportChatModal chat={chatTarget} onClose={() => setChatTarget(null)} />
       <ReportReviewModal review={reviewTarget} onClose={() => setReviewTarget(null)} />

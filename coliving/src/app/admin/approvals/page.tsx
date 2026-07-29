@@ -17,8 +17,6 @@ import {
   type PublishedListing,
 } from "@/lib/api/admin";
 
-// 승인 대기 — the queue that gates a new listing into search. Rooms land here
-// on creation (published=false) and only become visible to guests once approved.
 export default function Approvals() {
   const [tab, setTab] = useState<"pending" | "live">("pending");
   const [pending, setPending] = useState<PendingListing[]>([]);
@@ -28,15 +26,33 @@ export default function Approvals() {
   const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
+  // 신규 — 게시중(live) 목록 필터/검색/페이징 상태
+  const [buildingType, setBuildingType] = useState<string>("");
+  const [rentalUnit, setRentalUnit] = useState<string>("");
+  const [nicknameInput, setNicknameInput] = useState(""); // 입력 즉시 반영
+  const [nickname, setNickname] = useState(""); // 디바운스된 실제 검색어
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const pageSize = 20;
+
+  // 닉네임 입력 디바운스 (400ms)
+  useEffect(() => {
+    const t = setTimeout(() => setNickname(nicknameInput), 400);
+    return () => clearTimeout(t);
+  }, [nicknameInput]);
+
+  // 필터/검색 바뀌면 페이지 1로 초기화
+  useEffect(() => {
+    setPage(1);
+  }, [buildingType, rentalUnit, nickname]);
+
+  // 최초 1회 — 승인 대기 목록 (필터 없음)
   useEffect(() => {
     (async () => {
       try {
-        const [queue, published] = await Promise.all([
-          listPendingRooms(),
-          listPublishedRooms(),
-        ]);
+        const queue = await listPendingRooms();
         setPending(queue);
-        setLive(published);
       } catch (e) {
         setError(e instanceof Error ? e.message : "목록을 불러오지 못했어요.");
       } finally {
@@ -44,6 +60,28 @@ export default function Approvals() {
       }
     })();
   }, []);
+
+  // 필터/검색/페이지 변경 시 게시중 목록 재조회
+  useEffect(() => {
+    (async () => {
+      setLiveLoading(true);
+      try {
+        const res = await listPublishedRooms({
+          buildingType: buildingType || undefined,
+          rentalUnit: rentalUnit || undefined,
+          nickname: nickname || undefined,
+          page,
+          pageSize,
+        });
+        setLive(res.items);
+        setTotal(res.total);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "목록을 불러오지 못했어요.");
+      } finally {
+        setLiveLoading(false);
+      }
+    })();
+  }, [buildingType, rentalUnit, nickname, page]);
 
   async function approve(id: string) {
     if (busy) return;
@@ -118,7 +156,7 @@ export default function Approvals() {
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         {([
           ["pending", `승인 대기 ${pending.length}`],
-          ["live", `게시중 ${live.length}`],
+          ["live", `게시중 ${tab === "live" ? total : live.length}`],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -142,16 +180,87 @@ export default function Approvals() {
 
       {error && <p style={{ fontSize: 13, color: "var(--primary)", marginBottom: 12 }}>{error}</p>}
 
+      {/* 신규 — 게시중 탭에서만 보이는 필터/검색 */}
+      {tab === "live" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {([
+              ["", "전체 유형"],
+              ["STUDIO", "원룸"],
+              ["APARTMENT", "아파트"],
+              ["OFFICETEL", "오피스텔"],
+              ["HOUSE", "주택"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                className="btn press"
+                style={{
+                  fontSize: 12,
+                  padding: "6px 12px",
+                  background: buildingType === value ? "var(--text)" : "transparent",
+                  color: buildingType === value ? "var(--bg)" : "var(--text-2)",
+                  border: buildingType === value ? "none" : "1px solid var(--line)",
+                }}
+                onClick={() => setBuildingType(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {([
+              ["", "전체 형태"],
+              ["WHOLE", "단독형"],
+              ["PRIVATE_ROOM", "공유형 · 개인실"],
+              ["BED", "공유형 · 다인실"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                className="btn press"
+                style={{
+                  fontSize: 12,
+                  padding: "6px 12px",
+                  background: rentalUnit === value ? "var(--text)" : "transparent",
+                  color: rentalUnit === value ? "var(--bg)" : "var(--text-2)",
+                  border: rentalUnit === value ? "none" : "1px solid var(--line)",
+                }}
+                onClick={() => setRentalUnit(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <input
+            type="text"
+            placeholder="호스트 닉네임 검색"
+            value={nicknameInput}
+            onChange={(e) => setNicknameInput(e.target.value)}
+            style={{
+              fontSize: 13,
+              padding: "8px 12px",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--r-md)",
+              maxWidth: 280,
+            }}
+          />
+        </div>
+      )}
+
       {loading ? (
         <p style={{ color: "var(--text-2)" }}>불러오는 중…</p>
       ) : tab === "live" ? (
-        live.length === 0 ? (
+        liveLoading ? (
+          <p style={{ color: "var(--text-2)" }}>불러오는 중…</p>
+        ) : live.length === 0 ? (
           <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}>
-            게시중인 숙소가 없어요.
+            조건에 맞는 게시중 숙소가 없어요.
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {live.map((h) => {
+          <>
+            <div style={{ display: "grid", gap: 14 }}>
+              {live.map((h) => {
               const flagged = isLowRated(h);
               return (
                 <div
@@ -231,7 +340,31 @@ export default function Approvals() {
                 </div>
               );
             })}
-          </div>
+            </div>
+
+            {/* 페이지네이션 */}
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, marginTop: 20 }}>
+              <button
+                className="btn btn-ghost press"
+                style={{ fontSize: 13, padding: "6px 14px" }}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+              >
+                이전
+              </button>
+              <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+                {page} / {Math.max(1, Math.ceil(total / pageSize))} 페이지 (총 {total}건)
+              </span>
+              <button
+                className="btn btn-ghost press"
+                style={{ fontSize: 13, padding: "6px 14px" }}
+                onClick={() => setPage((p) => (p * pageSize < total ? p + 1 : p))}
+                disabled={page * pageSize >= total}
+              >
+                다음
+              </button>
+            </div>
+          </>
         )
       ) : pending.length === 0 ? (
         <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-2)" }}>

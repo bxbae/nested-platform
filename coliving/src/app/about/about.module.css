@@ -405,6 +405,7 @@
   position: absolute;
   inset: 0;
   background: radial-gradient(500px 260px at 50% 0%, #00a69930, transparent 70%);
+  pointer-events: none;
 }
 .cta h2 {
   position: relative;

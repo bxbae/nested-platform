@@ -39,7 +39,7 @@ const registerSchema = z.object({
     .trim()
     .min(2, "닉네임은 2자 이상 입력해주세요.")
     .max(20, "닉네임은 20자 이하로 입력해주세요."),
-  gender: z.enum(["MALE", "FEMALE", "OTHER"], {
+  gender: z.enum(["MALE", "FEMALE"], {
     required_error: "성별을 선택해주세요.",
   }),
   preferredLocale: z.enum(["KO", "EN"], {
@@ -77,7 +77,9 @@ const updateMeSchema = z.object({
   // ISO 날짜 문자열(YYYY-MM-DD 또는 전체 ISO). 서비스에서 Date로 변환한다.
   birthDate: z.string().min(1).nullable().optional(),
   job: z.string().max(40).nullable().optional(),
-  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+  gender: z.enum(["MALE", "FEMALE"]).optional(),
+  genderVisibility: z.enum(["PUBLIC", "MATCHED_ONLY", "PRIVATE"]).optional(),
+  roommateGenderPreference: z.enum(["ANY", "MALE", "FEMALE"]).optional(),
 });
 
 const updateLocaleSchema = z.object({
@@ -236,6 +238,14 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   becomeHost(@Req() req: any) {
     return this.auth.becomeHost(req.user.id);
+  }
+
+  // POST /auth/relinquish-host — HOST 계정이 스스로 GUEST로 돌아간다.
+  @Post("relinquish-host")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  relinquishHost(@Req() req: any) {
+    return this.auth.relinquishHost(req.user.id);
   }
 
   @Delete("me")

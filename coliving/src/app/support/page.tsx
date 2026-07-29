@@ -12,9 +12,13 @@ import {
   type Inquiry,
 } from "@/lib/api/inquiries";
 
+const PAGE_SIZE = 10;
+
 export default function Support() {
   const { isAuthenticated } = useAuth();
   const [items, setItems] = useState<Inquiry[]>([]);
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -27,11 +31,17 @@ export default function Support() {
       setLoading(false);
       return;
     }
-    listMyInquiries()
-      .then(setItems)
+    setLoading(true);
+    listMyInquiries(PAGE_SIZE, page * PAGE_SIZE)
+      .then((res) => {
+        setItems(res.rows);
+        setTotal(res.total);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [isAuthenticated]);
+  }, [isAuthenticated, page]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   async function submit() {
     if (sending || !title.trim() || !body.trim()) return;
@@ -39,7 +49,14 @@ export default function Support() {
     setError(null);
     try {
       const created = await createInquiry({ title: title.trim(), body: body.trim() });
-      setItems((prev) => [created, ...prev]);
+      // 새 글은 방금 쓴 거니 1페이지 맨 위에 보여야 자연스럽다 — 지금
+      // 다른 페이지를 보고 있었다면 1페이지로 돌려보낸다.
+      if (page === 0) {
+        setItems((prev) => [created, ...prev].slice(0, PAGE_SIZE));
+      } else {
+        setPage(0);
+      }
+      setTotal((t) => t + 1);
       setTitle("");
       setBody("");
       setSent(true);
@@ -158,6 +175,20 @@ export default function Support() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {!loading && totalPages > 1 && (
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center", marginTop: 20 }}>
+          <button className="chip" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+            이전
+          </button>
+          <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+            {page + 1} / {totalPages}
+          </span>
+          <button className="chip" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+            다음
+          </button>
         </div>
       )}
     </div>
