@@ -144,6 +144,9 @@ export interface MatchScore {
   compatible: boolean;
   score: number;
   reasons: string[];
+  // perfectAxes 전체 목록. reasons는 사람이 읽는 문장 3개로 잘리지만,
+  // 프론트의 "겹치는 항목으로 좁혀보기" 필터는 9개 축 전부가 필요하다.
+  matchedAxes: Axis[];
 }
 
 export function scoreMatch(
@@ -158,6 +161,7 @@ export function scoreMatch(
         compatible: false,
         score: 0,
         reasons: [],
+        matchedAxes: [],
       };
     }
   }
@@ -184,6 +188,7 @@ export function scoreMatch(
     compatible: true,
     score,
     reasons,
+    matchedAxes: perfectAxes,
   };
 }
 
@@ -204,6 +209,9 @@ export interface MatchCandidate {
   keywords: string[];
   score: number;
   reasons: string[];
+  // 나와 정확히 일치하는 성향 축 전체 목록(9개 중 일부). "겹치는 룸메이트만
+  // 보기" 필터가 이 배열로 후보를 좁힌다.
+  matchedAxes: Axis[];
   verified: boolean;
   tier: ActivityTier;
   tierLabel: string;
@@ -330,6 +338,7 @@ export class MatchService {
         keywords: other.keywords,
         score: result.score,
         reasons: result.reasons,
+        matchedAxes: result.matchedAxes,
         ...badges,
       });
     }
@@ -470,6 +479,7 @@ export class MatchService {
       keywords: target.keywords,
       score: result.score,
       reasons: result.reasons,
+      matchedAxes: result.matchedAxes,
 
       exactMatchCount: analysis.exactMatchCount,
       totalAxisCount: AXES.length,
