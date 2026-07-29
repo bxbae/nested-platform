@@ -44,6 +44,7 @@ export default function HostListings() {
     smokingAllowed: boolean;
     parking: boolean;
     amenities: AmenityKey[];
+    availableFrom: string;
   }>({
     monthlyRent: 0,
     deposit: 0,
@@ -58,6 +59,7 @@ export default function HostListings() {
     smokingAllowed: false,
     parking: false,
     amenities: [],
+    availableFrom: "",
   });
   const [photos, setPhotos] = useState<string[]>([]);
   const [amenitiesDirty, setAmenitiesDirty] = useState(false);
@@ -119,6 +121,7 @@ export default function HostListings() {
       parking:
         listing.parking || (listing.amenityKeys ?? []).includes("parking"),
       amenities: listing.amenityKeys ?? [],
+      availableFrom: listing.availableFrom?.slice(0, 10) ?? "",
     });
     setPhotos(listing.gallery ?? []);
     setAmenitiesDirty(false);
@@ -154,6 +157,7 @@ export default function HostListings() {
       smokingAllowed: h.smokingAllowed ?? false,
       parking: h.parking || (h.amenityKeys ?? []).includes("parking"),
       amenities: h.amenityKeys ?? [],
+      availableFrom: h.availableFrom?.slice(0, 10) ?? "",
     });
     // gallery is already in display order (index 0 = 대표 사진).
     setPhotos(h.gallery ?? []);
@@ -224,6 +228,10 @@ export default function HostListings() {
       setError("예약 공간과 건물 유형을 선택해주세요.");
       return;
     }
+    if (!draft.availableFrom) {
+      setError("입주 가능 시작일을 선택해주세요.");
+      return;
+    }
     if (
       draft.rentalUnit === "bed" &&
       (!Number.isInteger(draft.capacity) || draft.capacity < 2 || draft.capacity > 20)
@@ -241,6 +249,7 @@ export default function HostListings() {
         monthlyRent: Number(draft.monthlyRent),
         deposit: Number(draft.deposit),
         minStayMonths: Number(draft.minStayMonths),
+        availableFrom: draft.availableFrom,
         capacity:
           draft.rentalUnit === "bed"
             ? Number(draft.capacity)
@@ -314,9 +323,23 @@ export default function HostListings() {
               id={`listing-${h.id}`}
               key={h.id}
               className="card"
-              style={{ overflow: "hidden", display: "flex", flexWrap: "wrap" }}>
-              <div style={{ width: 180, minWidth: 140, flex: "1 1 140px", maxWidth: 220 }}>
-                <Thumbnail src={h.photo} color={h.color} height="100%">
+              style={{ overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "flex-start" }}>
+              <div
+                style={{
+                  flex: "0 1 320px",
+                  minWidth: 240,
+                  height: 200,
+                  margin: 18,
+                  borderRadius: 14,
+                  overflow: "hidden",
+                  alignSelf: "flex-start",
+                }}
+              >
+                <Thumbnail
+                  src={editingId === h.id && photos[0] ? photos[0] : h.photo}
+                  color={h.color}
+                  height={200}
+                >
                   <div />
                 </Thumbnail>
               </div>
@@ -493,6 +516,23 @@ export default function HostListings() {
                           </div>
                         </div>
                       </div>
+                      <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                        입주 가능 시작일
+                        <input
+                          type="date"
+                          value={draft.availableFrom}
+                          onChange={(event) =>
+                            setDraft((current) => ({
+                              ...current,
+                              availableFrom: event.target.value,
+                            }))
+                          }
+                          style={{ width: "100%", marginTop: 3 }}
+                        />
+                        <span style={{ display: "block", marginTop: 4, lineHeight: 1.5 }}>
+                          선택한 날짜부터 게스트가 입주일을 예약할 수 있습니다.
+                        </span>
+                      </label>
                       {draft.rentalUnit && draft.rentalUnit !== "whole" && (
                         <div>
                           <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>공유 시설</div>
@@ -676,6 +716,7 @@ export default function HostListings() {
                         <span>월세 {won(h.monthlyRent)}{h.rentalUnit === "bed" ? " / 1자리" : ""}</span>
                         <span>보증금 {won(h.deposit)}</span>
                         <span>누적 예약 {h.reservationCount}건</span>
+                        <span>입주 가능 {h.availableFrom}</span>
                       </div>
                       <div style={{ marginTop: 9, fontSize: 13.5, lineHeight: 1.65 }}>
                         <strong>{getInventorySummary(h)}</strong>
