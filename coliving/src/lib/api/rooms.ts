@@ -17,6 +17,8 @@ import type {
   RentalUnit,
   RoomType,
   SharedFacility,
+  GenderPolicy,
+  AmenityKey,
 } from "@/lib/types";
 import type { AddressValue } from "@/components/AddressSearch";
 import { filtersToParams } from "@/features/search/schema";
@@ -55,6 +57,11 @@ export interface CreateRoomInput {
   rentalUnit: RentalUnit;
   buildingType: BuildingType;
   sharedFacilities: SharedFacility[];
+  genderPolicy: GenderPolicy;
+  petsAllowed: boolean;
+  smokingAllowed: boolean;
+  parking: boolean;
+  amenities: AmenityKey[];
   roomType?: RoomType;
   monthlyRent: number;
   deposit: number;
@@ -88,6 +95,11 @@ export async function createRoom(input: CreateRoomInput): Promise<{ id: string }
     rentalUnit: input.rentalUnit.toUpperCase(),
     buildingType: input.buildingType.toUpperCase(),
     sharedFacilities: input.sharedFacilities.map((facility) => facility.toUpperCase()),
+    genderPolicy: input.genderPolicy.toUpperCase(),
+    petsAllowed: input.petsAllowed,
+    smokingAllowed: input.smokingAllowed,
+    parking: input.parking,
+    amenities: input.amenities,
     monthlyRent: input.monthlyRent,
     deposit: input.deposit,
     cleaningFee: input.cleaningFee,
@@ -173,6 +185,12 @@ export interface UpdateRoomInput {
   rentalUnit?: RentalUnit;
   buildingType?: BuildingType;
   sharedFacilities?: SharedFacility[];
+  genderPolicy?: GenderPolicy;
+  petsAllowed?: boolean;
+  smokingAllowed?: boolean;
+  parking?: boolean;
+  amenities?: AmenityKey[];
+  bedrooms?: number | null;
   classificationReviewRequired?: boolean;
   images?: string[]; // full gallery, in display order — index 0 is the cover
 }
@@ -184,6 +202,9 @@ export async function updateRoom(id: string, input: UpdateRoomInput): Promise<vo
     ...(input.buildingType ? { buildingType: input.buildingType.toUpperCase() } : {}),
     ...(input.sharedFacilities
       ? { sharedFacilities: input.sharedFacilities.map((facility) => facility.toUpperCase()) }
+      : {}),
+    ...(input.genderPolicy
+      ? { genderPolicy: input.genderPolicy.toUpperCase() }
       : {}),
   });
 }

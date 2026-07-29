@@ -22,6 +22,7 @@ import type {
 } from "@/lib/types";
 // 월세 슬라이더의 경계값. 이 값과 같으면 "필터를 걸지 않은 것"으로 본다.
 import { RENT_MIN, RENT_MAX } from "@/features/search/schema";
+import { isAmenityKey } from "@/lib/amenities";
 
 // ── enum maps ──
 const ROOM_TYPE_TO_API: Record<RoomType, string> = {
@@ -100,6 +101,7 @@ export function filtersToApiQuery(f: SearchParams): URLSearchParams {
   if (f.rentalUnits?.length) p.set("rentalUnits", f.rentalUnits.map((v) => RENTAL_UNIT_TO_API[v]).join(","));
   if (f.buildingTypes?.length) p.set("buildingTypes", f.buildingTypes.map((v) => BUILDING_TYPE_TO_API[v]).join(","));
   if (f.sharedFacilities?.length) p.set("sharedFacilities", f.sharedFacilities.map((v) => SHARED_FACILITY_TO_API[v]).join(","));
+  if (f.amenities?.length) p.set("amenities", f.amenities.join(","));
   // 슬라이더를 건드리지 않았으면 minRent/maxRent가 경계값 그대로 들어옵니다.
   // 기본 경계값은 API에 보내지 않아 범위 밖 숙소가 누락되지 않게 합니다.
   if (f.minRent != null && f.minRent > RENT_MIN) p.set("minRent", String(f.minRent));
@@ -160,7 +162,7 @@ export interface ApiRoom {
   smokingAllowed?: boolean;
   parking?: boolean;
   images?: ApiImage[];
-  amenities?: { amenity?: { label?: string; name?: string } }[];
+  amenities?: { amenity?: { key?: string; label?: string; name?: string } }[];
   host?: ApiHostProfile;
   rating?: number;
   reviews?: number;
@@ -230,6 +232,9 @@ export function apiRoomToHouse(r: ApiRoom): House {
     // 서버가 내려주는 정원. 독채는 null.
     capacity: (r as { capacity?: number | null }).capacity ?? null,
     amenities: (r.amenities ?? []).map((a) => a.amenity?.label ?? a.amenity?.name ?? "").filter(Boolean),
+    amenityKeys: (r.amenities ?? [])
+      .map((a) => a.amenity?.key)
+      .filter(isAmenityKey),
     vibe: [],
     rating: r.rating ?? 0,
     reviews: r.reviewCount ?? (Array.isArray(r.reviewList) ? r.reviewList.length : r.reviews ?? 0),

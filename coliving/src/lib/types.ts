@@ -12,6 +12,21 @@ export type SharedFacility =
   | "entrance";
 export type BookingMode = "unit" | "bed" | "whole_room";
 export type GenderPolicy = "any" | "male_only" | "female_only";
+export type AmenityKey =
+  | "wifi"
+  | "laundry"
+  | "aircon"
+  | "desk"
+  | "weekly_cleaning"
+  | "gym"
+  | "rooftop"
+  | "garden"
+  | "parcel_locker"
+  | "elevator"
+  | "step_free_access"
+  // 기존 운영 데이터 호환용. 신규 등록 UI에서는 별도 항목으로 관리합니다.
+  | "kitchen"
+  | "parking";
 
 // 기존 RoomType 라벨은 분류 확인이 끝나지 않은 운영 데이터 표시용으로 유지한다.
 export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
@@ -99,6 +114,8 @@ export interface House {
   /** 함께 지낼 수 있는 최대 인원. 기존 데이터는 null일 수 있다. */
   capacity: number | null;
   amenities: string[];
+  /** 등록·수정·검색에서 사용하는 DB Amenity.key 목록 */
+  amenityKeys?: AmenityKey[];
   vibe: string[]; // e.g. "quiet", "social", "creative"
   rating: number;
   reviews: number;
@@ -288,6 +305,7 @@ export interface SearchParams {
   rentalUnits?: RentalUnit[];
   buildingTypes?: BuildingType[];
   sharedFacilities?: SharedFacility[];
+  amenities?: AmenityKey[];
   minRent?: number;
   maxRent?: number;
   availableFrom?: string; // ISO date; house must be available on/before this

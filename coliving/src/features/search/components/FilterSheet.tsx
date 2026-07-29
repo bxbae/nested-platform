@@ -7,6 +7,7 @@ import type {
   RentalUnit,
   SearchParams,
   SharedFacility,
+  AmenityKey,
 } from "@/lib/types";
 import {
   BUILDING_TYPE_LABELS,
@@ -17,7 +18,8 @@ import {
 import { won } from "@/lib/format";
 import { AREA_OPTIONS, DISTRICT_OPTIONS, DISTRICTS_BY_AREA, WORKPLACE_PRESETS, type ServiceArea } from "@/lib/seoul";
 import { getLegalNeighborhoods, type LegalRegionOption } from "@/lib/api/regions";
-import { DEFAULT_FILTERS, RENT_MAX, RENT_MIN } from "../schema";
+import { DEFAULT_FILTERS, RENT_MAX, RENT_MIN, normalizeRentalUnitFilters } from "../schema";
+import { AMENITY_OPTIONS } from "@/lib/amenities";
 import {
   addCalendarMonthsISO,
   formatStayDuration,
@@ -36,6 +38,7 @@ const SHARED_FACILITIES: SharedFacility[] = [
   "laundry_room",
   "entrance",
 ];
+
 
 export function FilterSheet({
   open,
@@ -59,7 +62,7 @@ export function FilterSheet({
 
   useEffect(() => {
     if (open) {
-      setDraft(initial);
+      setDraft(normalizeRentalUnitFilters(initial));
       setSelectedArea(
         DISTRICT_OPTIONS.find((item) => item.value === initial.district)?.area ??
           "서울",
@@ -140,6 +143,26 @@ export function FilterSheet({
   const minimumCheckOut = draft.checkIn
     ? minimumCheckOutISO(draft.checkIn, PLATFORM_MIN_STAY_MONTHS)
     : "";
+
+  const selectedRentalUnits = draft.rentalUnits ?? [];
+  const showWholeOnlyFilters =
+    selectedRentalUnits.length > 0 &&
+    selectedRentalUnits.every((unit) => unit === "whole");
+  const showSharedOnlyFilters =
+    selectedRentalUnits.length > 0 &&
+    selectedRentalUnits.every((unit) => unit !== "whole");
+  const showBedCapacityFilter =
+    selectedRentalUnits.length > 0 &&
+    selectedRentalUnits.every((unit) => unit === "bed");
+
+  const setRentalUnits = (rentalUnits: RentalUnit[]) => {
+    setDraft((current) =>
+      normalizeRentalUnitFilters({
+        ...current,
+        rentalUnits,
+      }),
+    );
+  };
 
   return (
     <>
@@ -451,7 +474,7 @@ export function FilterSheet({
                 values={draft.rentalUnits ?? []}
                 options={RENTAL_UNITS}
                 labels={RENTAL_UNIT_LABELS}
-                onChange={(rentalUnits) => set({ rentalUnits })}
+                onChange={setRentalUnits}
               />
               <MultiSelectDropdown
                 label="건물 유형"
@@ -461,14 +484,16 @@ export function FilterSheet({
                 labels={BUILDING_TYPE_LABELS}
                 onChange={(buildingTypes) => set({ buildingTypes })}
               />
-              <MultiSelectDropdown
-                label="공유 시설"
-                placeholder="공유 시설 전체"
-                values={draft.sharedFacilities ?? []}
-                options={SHARED_FACILITIES}
-                labels={SHARED_FACILITY_LABELS}
-                onChange={(sharedFacilities) => set({ sharedFacilities })}
-              />
+              {showSharedOnlyFilters && (
+                <MultiSelectDropdown
+                  label="공유 시설"
+                  placeholder="공유 시설 전체"
+                  values={draft.sharedFacilities ?? []}
+                  options={SHARED_FACILITIES}
+                  labels={SHARED_FACILITY_LABELS}
+                  onChange={(sharedFacilities) => set({ sharedFacilities })}
+                />
+              )}
             </div>
           </Section>
 
@@ -635,88 +660,72 @@ export function FilterSheet({
             </p>
           </Section>
 
-          <Section title="방 개수">
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              {[1, 2, 3, 4].map((count) => (
-                <button
-                  key={count}
-                  type="button"
-                  className="chip"
-                  data-active={draft.minBedrooms === count}
-                  onClick={() =>
-                    set({
-                      minBedrooms:
-                        draft.minBedrooms === count ? undefined : count,
-                    })
-                  }
-                >
-                  {count}개 이상
-                </button>
-              ))}
-            </div>
-          </Section>
+          {showWholeOnlyFilters && (
+            <Section title="방 개수">
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {[1, 2, 3, 4].map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    className="chip"
+                    data-active={draft.minBedrooms === count}
+                    onClick={() =>
+                      set({
+                        minBedrooms:
+                          draft.minBedrooms === count ? undefined : count,
+                      })
+                    }
+                  >
+                    {count}개 이상
+                  </button>
+                ))}
+              </div>
+            </Section>
+          )}
 
-          <Section title="함께 지낼 인원">
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              {[2, 3, 4, 5].map((count) => (
-                <button
-                  key={count}
-                  type="button"
-                  className="chip"
-                  data-active={draft.minCapacity === count}
-                  onClick={() =>
-                    set({
-                      minCapacity:
-                        draft.minCapacity === count ? undefined : count,
-                    })
-                  }
-                >
-                  {count}명 이상
-                </button>
-              ))}
-            </div>
-          </Section>
+          {showSharedOnlyFilters && (
+            <>
+              {showBedCapacityFilter && (
+                <Section title="다인실 정원">
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {[2, 3, 4, 5].map((count) => (
+                      <button
+                        key={count}
+                        type="button"
+                        className="chip"
+                        data-active={draft.minCapacity === count}
+                        onClick={() =>
+                          set({
+                            minCapacity:
+                              draft.minCapacity === count ? undefined : count,
+                          })
+                        }
+                      >
+                        {count}명 이상
+                      </button>
+                    ))}
+                  </div>
+                </Section>
+              )}
 
-          <Section title="성별">
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-              }}
-            >
-              {GENDERS.map((gender) => (
-                <button
-                  key={gender}
-                  type="button"
-                  className="chip"
-                  data-active={(draft.gender ?? "any") === gender}
-                  onClick={() =>
-                    set({
-                      gender,
-                    })
-                  }
-                  style={{
-                    flex: 1,
-                    justifyContent: "center",
-                  }}
-                >
-                  {GENDER_LABELS[gender]}
-                </button>
-              ))}
-            </div>
-          </Section>
+              <Section title="성별">
+                <div style={{ display: "flex", gap: 8 }}>
+                  {GENDERS.map((gender) => (
+                    <button
+                      key={gender}
+                      type="button"
+                      className="chip"
+                      data-active={(draft.gender ?? "any") === gender}
+                      onClick={() => set({ gender })}
+                      style={{ flex: 1, justifyContent: "center" }}
+                    >
+                      {GENDER_LABELS[gender]}
+                    </button>
+                  ))}
+                </div>
+              </Section>
+            </>
+          )}
 
           <Section title="옵션">
             <div
@@ -755,6 +764,43 @@ export function FilterSheet({
                 }
               />
             </div>
+
+            <details className="filter-multi-select" data-active={(draft.amenities ?? []).length > 0}>
+              <summary className="filter-multi-select-summary">
+                <span className="filter-multi-select-label">편의시설 더보기</span>
+                <span className="filter-multi-select-value">
+                  {(draft.amenities ?? []).length > 0
+                    ? `${(draft.amenities ?? []).length}개 선택`
+                    : "선택 안 함"}
+                </span>
+              </summary>
+              <div
+                className="filter-multi-select-options"
+                style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+              >
+                {AMENITY_OPTIONS.map((option) => {
+                  const selected = (draft.amenities ?? []).includes(option.key);
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className="chip"
+                      data-active={selected}
+                      onClick={() => {
+                        const current = draft.amenities ?? [];
+                        set({
+                          amenities: selected
+                            ? current.filter((key) => key !== option.key)
+                            : [...current, option.key as AmenityKey],
+                        });
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </details>
           </Section>
         </div>
 
@@ -793,7 +839,7 @@ export function FilterSheet({
               flex: 1,
               justifyContent: "center",
             }}
-            onClick={() => onApply(draft)}
+            onClick={() => onApply(normalizeRentalUnitFilters(draft))}
             disabled={hasPartialStayRange || hasInvalidStayRange || hasTooShortStay}
           >
             적용하기
