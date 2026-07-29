@@ -77,7 +77,6 @@ export class ReservationsService {
       remainingSpots: number | null;
     }
   > {
-    if (this.prisma) await expireCompanionInvites(this.prisma);
     const room = await this.repo.findRoom(dto.roomId);
     if (!room)
       throw new NotFoundException({
@@ -824,7 +823,6 @@ export class ReservationsService {
 
   // 내가 동반자로 초대된 예약 목록
   async listCompanionInvites(userId: string) {
-    if (this.prisma) await expireCompanionInvites(this.prisma);
     return this.repo.listByCompanion(userId);
   }
 
@@ -1471,14 +1469,12 @@ export class ReservationsService {
   // All reservations for the logged-in guest (my trips).
   async listMine(guestId: string) {
     await this.expireStaleExtensionPayments();
-    if (this.prisma) await expireCompanionInvites(this.prisma);
     return this.repo.listByGuest(guestId);
   }
 
   // All reservations across every room this host owns (host 예약 관리 inbox).
   async listForHost(hostId: string) {
     await this.expireStaleExtensionPayments();
-    if (this.prisma) await expireCompanionInvites(this.prisma);
     return this.repo.listByHost(hostId);
   }
 

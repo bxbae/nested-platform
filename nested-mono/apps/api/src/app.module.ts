@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 import { GraphQLModule } from "@nestjs/graphql";
 import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
 import { join } from "path";
@@ -32,10 +33,12 @@ import { UsersModule } from "./modules/users/users.module";
 import { FriendsModule } from "./modules/friends/friends.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { TransitModule } from './modules/transit/transit.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
 
     // GraphQL (optional) alongside REST — code-first, auto-generated schema.
     GraphQLModule.forRoot<ApolloDriverConfig>({
@@ -74,5 +77,6 @@ import { TransitModule } from './modules/transit/transit.module';
     ReportsModule,
     TransitModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

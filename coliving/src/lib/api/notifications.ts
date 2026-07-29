@@ -11,6 +11,11 @@ export type NotificationType =
   | "COMMENT"
   | "ROOM_APPROVED"
   | "ROOM_REJECTED"
+  | "ROOM_UNPUBLISHED"
+  | "INQUIRY_CREATED"
+  | "INQUIRY_ANSWERED"
+  | "INQUIRY_STATUS_CHANGED"
+  | "FRIEND_ADDED"
   | "RESERVATION_REQUESTED"
   | "RESERVATION_CONFIRMED"
   | "RESERVATION_COMPLETED"
@@ -20,10 +25,12 @@ export type NotificationType =
   | "EARLY_CHECKOUT_REJECTED"
   | "PAYMENT"
   | "REVIEW"
+  | "REPORT"
   | "SYSTEM"
+
+  // 기존 알림 데이터 호환용
   | "MESSAGE"
-  | "RESERVATION"
-  | "REPORT";
+  | "RESERVATION";
 
 export interface ApiNotification {
   id: string;
@@ -37,40 +44,64 @@ export interface ApiNotification {
 
 export const TYPE_LABEL: Record<NotificationType, string> = {
   COMMENT: "댓글",
+
   ROOM_APPROVED: "숙소 승인",
   ROOM_REJECTED: "숙소 반려",
+  ROOM_UNPUBLISHED: "숙소 비공개",
+
+  INQUIRY_CREATED: "문의 접수",
+  INQUIRY_ANSWERED: "문의 답변",
+  INQUIRY_STATUS_CHANGED: "문의 상태",
+
+  FRIEND_ADDED: "친구 추가",
+
   RESERVATION_REQUESTED: "예약 요청",
   RESERVATION_CONFIRMED: "예약 확정",
   RESERVATION_COMPLETED: "이용 완료",
   RESERVATION_CANCELLED: "예약 취소",
+
   EARLY_CHECKOUT_REQUESTED: "조기 퇴실 요청",
   EARLY_CHECKOUT_APPROVED: "조기 퇴실 승인",
   EARLY_CHECKOUT_REJECTED: "조기 퇴실 거절",
+
   PAYMENT: "결제",
   REVIEW: "리뷰",
+  REPORT: "신고",
   SYSTEM: "안내",
+
   MESSAGE: "메시지",
   RESERVATION: "예약",
-  REPORT: "신고",
 };
 
 export const TYPE_COLOR: Record<NotificationType, string> = {
   COMMENT: "#2E9D65",
+
   ROOM_APPROVED: "#7C6FE0",
   ROOM_REJECTED: "#A26A42",
+  ROOM_UNPUBLISHED: "#A26A42",
+
+  INQUIRY_CREATED: "#3E9BC4",
+  INQUIRY_ANSWERED: "#3E9BC4",
+  INQUIRY_STATUS_CHANGED: "#3E9BC4",
+
+  FRIEND_ADDED: "#2E9D65",
+
   RESERVATION_REQUESTED: "#00A699",
   RESERVATION_CONFIRMED: "#00A699",
   RESERVATION_COMPLETED: "#00A699",
   RESERVATION_CANCELLED: "#00A699",
+
   EARLY_CHECKOUT_REQUESTED: "#00A699",
   EARLY_CHECKOUT_APPROVED: "#00A699",
   EARLY_CHECKOUT_REJECTED: "#00A699",
+
   PAYMENT: "#3E9BC4",
   REVIEW: "#FFB400",
+  REPORT: "#FF5A5F",
   SYSTEM: "#7C6FE0",
+
   MESSAGE: "#FF5A5F",
   RESERVATION: "#00A699",
-  REPORT: "#FF5A5F",
 };
 
 // "3분 전" / "2시간 전" / "5일 전"

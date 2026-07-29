@@ -186,12 +186,14 @@ model User {
   tenantReviewsWritten  TenantReview[]               @relation("TenantReviewAuthor")
   tenantReviewsReceived TenantReview[]               @relation("TenantReviewTenant")
 
-  friendshipsA         Friendship[]         @relation("FriendshipUserA")
-  friendshipsB         Friendship[]         @relation("FriendshipUserB")
-  directConversationsA DirectConversation[] @relation("DirectParticipantA")
-  directConversationsB DirectConversation[] @relation("DirectParticipantB")
-  directMessages       DirectMessage[]      @relation("DirectMessageSender")
-  ownedCoupons         Coupon[]             @relation("CouponOwner")
+  friendshipsA           Friendship[]         @relation("FriendshipUserA")
+  friendshipsB           Friendship[]         @relation("FriendshipUserB")
+  friendRequestsSent     FriendRequest[]      @relation("FriendRequestRequester")
+  friendRequestsReceived FriendRequest[]      @relation("FriendRequestReceiver")
+  directConversationsA   DirectConversation[] @relation("DirectParticipantA")
+  directConversationsB   DirectConversation[] @relation("DirectParticipantB")
+  directMessages         DirectMessage[]      @relation("DirectMessageSender")
+  ownedCoupons           Coupon[]             @relation("CouponOwner")
 
   @@index([provider, providerId])
 }
@@ -459,33 +461,33 @@ model ContractChangeRequest {
 }
 
 model ReservationCompanionMember {
-  id            String          @id @default(cuid())
-  reservationId String
-  reservation   Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status        CompanionStatus @default(PENDING)
-  respondedAt   DateTime?
+  id                        String          @id @default(cuid())
+  reservationId             String
+  reservation               Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  userId                    String
+  user                      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status                    CompanionStatus @default(PENDING)
+  respondedAt               DateTime?
   // true 인 신규 다인실 초대만 개별 결제·자동 만료 흐름을 사용한다.
   // 기존 초대 데이터는 false 로 유지해 이중 결제를 방지한다.
-  requiresIndividualPayment Boolean @default(false)
-  inviteExpiresAt DateTime?
-  paymentDeadline DateTime?
-  paidAt        DateTime?
-  expiredAt     DateTime?
+  requiresIndividualPayment Boolean         @default(false)
+  inviteExpiresAt           DateTime?
+  paymentDeadline           DateTime?
+  paidAt                    DateTime?
+  expiredAt                 DateTime?
 
   // 초대받은 사용자가 결제할 1자리 금액. 대표 예약자의 결제액과 분리한다.
-  monthlyRent    Int @default(0)
-  deposit        Int @default(0)
-  cleaningFee    Int @default(0)
-  maintenanceFee Int @default(0)
-  serviceFee     Int @default(0)
-  discount       Int @default(0)
-  totalDueNow    Int @default(0)
+  monthlyRent     Int     @default(0)
+  deposit         Int     @default(0)
+  cleaningFee     Int     @default(0)
+  maintenanceFee  Int     @default(0)
+  serviceFee      Int     @default(0)
+  discount        Int     @default(0)
+  totalDueNow     Int     @default(0)
   paymentProvider String?
   paymentTxnId    String?
 
-  createdAt     DateTime        @default(now())
+  createdAt DateTime @default(now())
 
   @@unique([reservationId, userId])
   @@index([userId, status])
@@ -528,6 +530,30 @@ model Message {
   createdAt  DateTime @default(now())
 
   @@index([chatRoomId, createdAt])
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model FriendRequest {
+  id          String @id @default(cuid())
+  pairKey     String @unique
+  requesterId String
+  receiverId  String
+
+  requester User @relation("FriendRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("FriendRequestReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  status      FriendRequestStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  respondedAt DateTime?
+
+  @@index([requesterId, status, createdAt])
+  @@index([receiverId, status, createdAt])
 }
 
 // ── Friendships ───────────────────────────────────────────────────
@@ -606,7 +632,12 @@ enum NotificationType {
   ROOM_APPROVED
   ROOM_REJECTED
   ROOM_UNPUBLISHED
+  INQUIRY_CREATED
   INQUIRY_ANSWERED
+  INQUIRY_STATUS_CHANGED
+
+  FRIEND_REQUESTED
+  FRIEND_ADDED
 
   RESERVATION_REQUESTED
   RESERVATION_CONFIRMED

@@ -19,7 +19,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
-import { activityTier, TIER_LABEL, type ActivityTier } from "../../common/activity-tier";
+import { activityTier, TIER_LABEL, TIER_RANK, type ActivityTier } from "../../common/activity-tier";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 
@@ -33,16 +33,32 @@ const noticeUpdateSchema = z.object({
   body: z.string().min(1).max(5000).optional(),
   pinned: z.boolean().optional(),
 });
-const MAX_HOME_BANNERS = 5;
+const HOME_BANNER_POSITION = "메인 상단";
+const MAX_TOTAL_HOME_SLIDES = 5;
+const DEFAULT_HOME_SLIDE_COUNT = 1;
+const MAX_HOME_BANNERS = MAX_TOTAL_HOME_SLIDES - DEFAULT_HOME_SLIDE_COUNT;
+
+const bannerLinkSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .refine((value) => {
+    if (value.startsWith("/") && !value.startsWith("//")) return true;
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "연결 주소는 /로 시작하는 내부 경로 또는 http(s) 주소여야 해요.");
 
 const bannerCreateSchema = z.object({
   title: z.string().min(1, "제목을 입력해주세요.").max(200),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "색상 형식이 올바르지 않아요."),
-  position: z.string().min(1).max(50),
-  linkUrl: z.string().url().max(500).nullable().optional(),
+  position: z.literal(HOME_BANNER_POSITION).optional(),
+  linkUrl: bannerLinkSchema.nullable().optional(),
   imageUrl: z.string().url().max(1000).nullable().optional(),
   active: z.boolean().optional(),
-  order: z.number().int().optional(),
 });
 const bannerUpdateSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -50,11 +66,14 @@ const bannerUpdateSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .optional(),
-  position: z.string().min(1).max(50).optional(),
-  linkUrl: z.string().url().max(500).nullable().optional(),
+  position: z.literal(HOME_BANNER_POSITION).optional(),
+  linkUrl: bannerLinkSchema.nullable().optional(),
   imageUrl: z.string().url().max(1000).nullable().optional(),
   active: z.boolean().optional(),
-  order: z.number().int().optional(),
+  order: z.number().int().min(1).optional(),
+});
+const bannerReorderSchema = z.object({
+  ids: z.array(z.string().min(1)).max(20),
 });
 const couponCreateSchema = z.object({
   code: z.string().min(1, "코드를 입력해주세요.").max(50),
@@ -87,7 +106,7 @@ export class AdminService {
   async members(query: {
     q?: string;
     role?: "GUEST" | "HOST" | "ADMIN";
-    tier?: "SEED" | "REGULAR" | "TRUSTED";
+    tier?: ActivityTier;
     sortBy?: string;
     sortOrder?: "asc" | "desc";
     page?: number;
@@ -173,7 +192,7 @@ export class AdminService {
     }
 
     // 헤더 클릭 정렬 — tier는 순서가 있는 값이라 랭크로 변환해서 비교
-    const TIER_RANK: Record<ActivityTier, number> = { SEED: 0, REGULAR: 1, TRUSTED: 2 };
+    // TIER_RANK 는 activity-tier.ts 에서 import (5단계 확장에 맞춰 한 곳에서 관리).
     enriched.sort((a, b) => {
       let cmp = 0;
       switch (sortBy) {
@@ -1507,33 +1526,75 @@ export class AdminService {
   async createBanner(data: {
     title: string;
     color: string;
-    position: string;
+    position?: typeof HOME_BANNER_POSITION;
     linkUrl?: string | null;
     imageUrl?: string | null;
     active?: boolean;
-    order?: number;
   }) {
-    const bannerCount = await this.prisma.banner.count({
-      where: { position: "메인 상단" },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.banner.findMany({
+        where: { position: HOME_BANNER_POSITION },
+        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+        select: { id: true },
+      });
 
-    if (bannerCount >= MAX_HOME_BANNERS) {
+      if (current.length >= MAX_HOME_BANNERS) {
+        throw new BadRequestException(
+          "기본 배너를 포함해 메인 배너는 최대 5장까지 노출할 수 있습니다.",
+        );
+      }
+
+      await Promise.all(
+        current.map((banner, index) =>
+          tx.banner.update({
+            where: { id: banner.id },
+            data: { order: index + 1 },
+          }),
+        ),
+      );
+
+      return tx.banner.create({
+        data: {
+          title: data.title,
+          color: data.color,
+          position: HOME_BANNER_POSITION,
+          linkUrl: data.linkUrl ?? null,
+          imageUrl: data.imageUrl ?? null,
+          active: data.active ?? true,
+          order: current.length + 1,
+        },
+      });
+    });
+  }
+
+  async reorderBanners(ids: string[]) {
+    const current = await this.prisma.banner.findMany({
+      where: { position: HOME_BANNER_POSITION },
+      select: { id: true },
+    });
+    const currentIds = new Set(current.map((banner) => banner.id));
+    const requestedIds = new Set(ids);
+
+    if (
+      ids.length !== current.length ||
+      requestedIds.size !== ids.length ||
+      ids.some((id) => !currentIds.has(id))
+    ) {
       throw new BadRequestException(
-        "메인 배너는 최대 5장까지 등록할 수 있습니다.",
+        "현재 메인 배너 목록과 순서 변경 요청이 일치하지 않습니다. 새로고침 후 다시 시도해주세요.",
       );
     }
 
-    return this.prisma.banner.create({
-      data: {
-        title: data.title,
-        color: data.color,
-        position: data.position,
-        linkUrl: data.linkUrl ?? null,
-        imageUrl: data.imageUrl ?? null,
-        active: data.active ?? true,
-        order: data.order ?? 0,
-      },
-    });
+    await this.prisma.$transaction(
+      ids.map((id, index) =>
+        this.prisma.banner.update({
+          where: { id },
+          data: { order: index + 1 },
+        }),
+      ),
+    );
+
+    return this.listBanners();
   }
 
   async updateBanner(
@@ -1565,7 +1626,22 @@ export class AdminService {
 
   async deleteBanner(id: string) {
     await this.ensureBanner(id);
-    await this.prisma.banner.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.banner.delete({ where: { id } });
+      const remaining = await tx.banner.findMany({
+        where: { position: HOME_BANNER_POSITION },
+        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+        select: { id: true },
+      });
+      await Promise.all(
+        remaining.map((banner, index) =>
+          tx.banner.update({
+            where: { id: banner.id },
+            data: { order: index + 1 },
+          }),
+        ),
+      );
+    });
     return { ok: true };
   }
 
@@ -1963,6 +2039,14 @@ export class AdminController {
     dto: z.infer<typeof bannerCreateSchema>,
   ) {
     return this.admin.createBanner(dto);
+  }
+
+  @Patch("banners/reorder")
+  reorderBanners(
+    @Body(new ZodValidationPipe(bannerReorderSchema))
+    dto: z.infer<typeof bannerReorderSchema>,
+  ) {
+    return this.admin.reorderBanners(dto.ids);
   }
 
   @Patch("banners/:id")

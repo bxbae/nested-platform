@@ -13,8 +13,10 @@ import { UserBadges } from "@/components/UserBadges";
 
 const TIERS = [
   { key: "SEED", label: "새싹", desc: "이용 이력이 아직 없어요" },
-  { key: "REGULAR", label: "일반", desc: "완료한 숙박 1회 이상" },
-  { key: "TRUSTED", label: "우수", desc: "완료한 숙박 3회 또는 리뷰 3개 이상" },
+  { key: "SPROUT", label: "새 이웃", desc: "완료한 숙박 1회 또는 리뷰 1개 이상" },
+  { key: "REGULAR", label: "이웃", desc: "완료한 숙박 3회 또는 리뷰 3개 이상" },
+  { key: "TRUSTED", label: "신뢰 이웃", desc: "완료한 숙박 6회 또는 리뷰 5개 이상" },
+  { key: "ELITE", label: "베스트 이웃", desc: "완료한 숙박 12회 또는 리뷰 10개 이상" },
 ] as const;
 
 export function TierGuide() {
@@ -25,17 +27,25 @@ export function TierGuide() {
   const reviews = user.reviewsWritten ?? 0;
   const tier = user.tier ?? "SEED";
 
-  // 다음 등급까지 남은 조건. 우수면 더 올라갈 곳이 없다.
+  // 다음 등급까지 남은 조건. 예약/리뷰 중 더 가까운 쪽을 안내한다.
+  // 베스트 이웃이면 더 올라갈 곳이 없다.
+  function hintTo(nextLabel: string, needStay: number, needReview: number) {
+    const byStay = Math.max(0, needStay - stays);
+    const byReview = Math.max(0, needReview - reviews);
+    return byStay <= byReview
+      ? `숙박 ${byStay}회를 더 완료하면 ‘${nextLabel}’ 등급이 돼요.`
+      : `리뷰 ${byReview}개를 더 쓰면 ‘${nextLabel}’ 등급이 돼요.`;
+  }
+
   let nextHint: string | null = null;
   if (tier === "SEED") {
-    nextHint = "숙박을 한 번 완료하면 ‘일반’ 등급이 돼요.";
+    nextHint = "숙박을 한 번 완료하거나 리뷰를 하나 쓰면 ‘새 이웃’ 등급이 돼요.";
+  } else if (tier === "SPROUT") {
+    nextHint = hintTo("이웃", 3, 3);
   } else if (tier === "REGULAR") {
-    const byStay = Math.max(0, 3 - stays);
-    const byReview = Math.max(0, 3 - reviews);
-    nextHint =
-      byStay <= byReview
-        ? `숙박 ${byStay}회를 더 완료하면 ‘우수’ 등급이 돼요.`
-        : `리뷰 ${byReview}개를 더 쓰면 ‘우수’ 등급이 돼요.`;
+    nextHint = hintTo("신뢰 이웃", 6, 5);
+  } else if (tier === "TRUSTED") {
+    nextHint = hintTo("베스트 이웃", 12, 10);
   }
 
   return (

@@ -4,22 +4,26 @@
 
 import { USE_REAL_API } from "./config";
 import { api } from "./client";
+import type { PreferenceAxis } from "./preference";
 
 export interface MatchCandidate {
   userId: string;
   name: string;
   // 서버가 생년월일에서 계산한 연령대(20/30/40). 정확한 생일은 내려오지 않는다.
   ageGroup: number | null;
-  gender: "MALE" | "FEMALE" | null;
+  gender: "MALE" | "FEMALE" | "OTHER";
   job: string | null;
   avatarColor: string;
   avatarUrl: string | null;
   keywords: string[];
   score: number;
   reasons: string[];
+  // 나와 정확히 일치하는 성향 축 전체 목록(9개 중 일부). "겹치는 항목으로
+  // 좁혀보기" 필터가 이 배열을 기준으로 후보를 좁힌다.
+  matchedAxes: PreferenceAxis[];
   // Trust signals shown on the card.
   verified: boolean;
-  tier: "SEED" | "REGULAR" | "TRUSTED";
+  tier: "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE";
   tierLabel: string;
 }
 

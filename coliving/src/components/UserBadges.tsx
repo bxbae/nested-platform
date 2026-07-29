@@ -5,14 +5,16 @@
 // 카드, 리뷰 작성자. One component so the styling stays consistent — the API
 // returns the same `{ verified, tier, tierLabel }` block everywhere.
 
-export type ActivityTier = "SEED" | "REGULAR" | "TRUSTED";
+export type ActivityTier = "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE";
 
 const TIER_STYLE: Record<ActivityTier, { bg: string; fg: string; border: string }> = {
-  // Newcomers get a quiet outline rather than a colour, so the badge reads as
-  // "no history yet" instead of a demerit.
+  // 아래로 갈수록 진하게 — 신규는 색 없는 외곽선이라 "이력 없음"으로 읽히고
+  // 감점처럼 보이지 않는다. 상위 두 등급만 채운 색으로 눈에 띄게 한다.
   SEED: { bg: "transparent", fg: "var(--text-2)", border: "1px solid var(--border)" },
+  SPROUT: { bg: "var(--bg-2)", fg: "var(--text-2)", border: "1px solid var(--border)" },
   REGULAR: { bg: "var(--bg-2)", fg: "var(--text)", border: "1px solid var(--border)" },
   TRUSTED: { bg: "var(--secondary)", fg: "#fff", border: "none" },
+  ELITE: { bg: "var(--primary)", fg: "#fff", border: "none" },
 };
 
 export function UserBadges({

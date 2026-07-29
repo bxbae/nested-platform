@@ -334,7 +334,7 @@ export async function notifyReportParty(
   await api.post(`/admin/reports/${reportId}/notify`, { target, message });
 }
 
-export type ActivityTier = "SEED" | "REGULAR" | "TRUSTED";
+export type ActivityTier = "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE";
 
 export interface AdminMember {
   id: string;
@@ -376,7 +376,7 @@ export async function verifyMember(id: string, verified: boolean): Promise<void>
 export interface ListMembersQuery {
   q?: string;
   role?: MemberRole;
-  tier?: "SEED" | "REGULAR" | "TRUSTED";
+  tier?: "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE";
   sortBy?: string;
   sortOrder?: "asc" | "desc";
   page?: number;
@@ -618,6 +618,11 @@ export async function updateBanner(
   }>,
 ): Promise<AdminBanner> {
   return api.patch<AdminBanner>(`/admin/banners/${id}`, input);
+}
+
+// PATCH /admin/banners/reorder — 등록 배너 전체 순서를 원자적으로 저장
+export async function reorderBanners(ids: string[]): Promise<AdminBanner[]> {
+  return api.patch<AdminBanner[]>("/admin/banners/reorder", { ids });
 }
 
 // DELETE /admin/banners/:id
