@@ -16,7 +16,7 @@ import { USE_REAL_API } from "@/lib/api/config";
 //   유도한다.
 // - HOST/ADMIN: children을 그대로 보여준다.
 export function HostGate({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, ready } = useAuth();
   const router = useRouter();
   const redirected = useRef(false);
   const [upgrading, setUpgrading] = useState(false);
@@ -26,11 +26,15 @@ export function HostGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!USE_REAL_API) return; // 데모 모드는 기존과 동일하게 열어둔다.
+    // 클라이언트가 localStorage 세션 확인을 마치기 전(첫 하이드레이션
+    // 렌더)에는 user가 로그인 상태여도 null이다. ready를 기다리지 않으면
+    // 로그인된 사용자도 순간적으로 로그아웃으로 오판해 튕겨나간다.
+    if (!ready) return;
     if (!user && !redirected.current) {
       redirected.current = true;
       router.replace("/?auth=1");
     }
-  }, [user, router]);
+  }, [user, ready, router]);
 
   async function upgrade() {
     setUpgrading(true);
