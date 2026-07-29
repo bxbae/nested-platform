@@ -9,8 +9,10 @@ import type {
   RoomType,
   SharedFacility,
   SortKey,
+  AmenityKey,
 } from "@/lib/types";
 import { districtForRegion } from "@/lib/seoul";
+import { AMENITY_KEY_LABELS } from "@/lib/amenities";
 
 // GET /api/search — cursor-paginated, filtered room search.
 // Mirrors the /search contract in ARCHITECTURE.md §7.2.
@@ -32,9 +34,14 @@ export async function GET(req: NextRequest) {
   const sharedFacilities = (p.get("sharedFacilities") ?? "")
     .split(",")
     .filter(Boolean) as SharedFacility[];
+  const amenities = (p.get("amenities") ?? "")
+    .split(",")
+    .filter(Boolean) as AmenityKey[];
   const minRent = p.get("minRent") ? Number(p.get("minRent")) : null;
   const maxRent = p.get("maxRent") ? Number(p.get("maxRent")) : null;
   const availableFrom = p.get("availableFrom"); // ISO date
+  const minCapacity = Number(p.get("minCapacity")) || 0;
+  const minBedrooms = Number(p.get("minBedrooms")) || 0;
   const gender = (p.get("gender") ?? "") as GenderPolicy | "";
   const pets = p.get("pets") === "true";
   const smoking = p.get("smoking") === "true";
@@ -71,9 +78,20 @@ export async function GET(req: NextRequest) {
       sharedFacilities.length &&
       !sharedFacilities.every((facility) => h.sharedFacilities?.includes(facility))
     ) return false;
+    if (amenities.length) {
+      const roomKeys = new Set(h.amenityKeys ?? []);
+      const roomLabels = new Set(h.amenities ?? []);
+      if (
+        !amenities.every(
+          (key) => roomKeys.has(key) || roomLabels.has(AMENITY_KEY_LABELS[key]),
+        )
+      ) return false;
+    }
     if (minRent != null && h.monthlyRent < minRent) return false;
     if (maxRent != null && h.monthlyRent > maxRent) return false;
     if (availableFrom && h.availableFrom > availableFrom) return false;
+    if (minCapacity > 0 && (h.capacity ?? 0) < minCapacity) return false;
+    if (minBedrooms > 0 && (h.bedrooms ?? 0) < minBedrooms) return false;
     if (gender && gender !== "any" && h.genderPolicy !== "any" && h.genderPolicy !== gender)
       return false;
     if (pets && !h.petsAllowed) return false;

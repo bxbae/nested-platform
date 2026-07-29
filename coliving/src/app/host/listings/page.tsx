@@ -7,14 +7,18 @@ import {
   BUILDING_TYPE_LABELS,
   RENTAL_UNIT_LABELS,
   SHARED_FACILITY_LABELS,
+  GENDER_LABELS,
   getAccommodationLabel,
   type BuildingType,
   type RentalUnit,
   type SharedFacility,
+  type GenderPolicy,
+  type AmenityKey,
 } from "@/lib/types";
 import { Thumbnail } from "@/components/Thumbnail";
 import { listMyRooms, updateRoom, deleteRoom, type HostListing } from "@/lib/api/rooms";
 import { uploadImage } from "@/lib/api/storage";
+import { AMENITY_OPTIONS } from "@/lib/amenities";
 
 // 숙소 관리 — only *my* listings, and unlike search this includes rooms still
 // waiting on admin approval. Previously this page showed every room in the DB
@@ -34,6 +38,12 @@ export default function HostListings() {
     rentalUnit: RentalUnit | "";
     buildingType: BuildingType | "";
     sharedFacilities: SharedFacility[];
+    bedrooms: number | null;
+    genderPolicy: GenderPolicy;
+    petsAllowed: boolean;
+    smokingAllowed: boolean;
+    parking: boolean;
+    amenities: AmenityKey[];
   }>({
     monthlyRent: 0,
     deposit: 0,
@@ -42,8 +52,16 @@ export default function HostListings() {
     rentalUnit: "",
     buildingType: "",
     sharedFacilities: [],
+    bedrooms: null,
+    genderPolicy: "any",
+    petsAllowed: false,
+    smokingAllowed: false,
+    parking: false,
+    amenities: [],
   });
   const [photos, setPhotos] = useState<string[]>([]);
+  const [amenitiesDirty, setAmenitiesDirty] = useState(false);
+  const [photosDirty, setPhotosDirty] = useState(false);
   const [photoUrl, setPhotoUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -94,8 +112,17 @@ export default function HostListings() {
       rentalUnit: listing.rentalUnit ?? "",
       buildingType: listing.buildingType ?? "",
       sharedFacilities: listing.sharedFacilities ?? [],
+      bedrooms: listing.bedrooms ?? null,
+      genderPolicy: listing.genderPolicy ?? "any",
+      petsAllowed: listing.petsAllowed ?? false,
+      smokingAllowed: listing.smokingAllowed ?? false,
+      parking:
+        listing.parking || (listing.amenityKeys ?? []).includes("parking"),
+      amenities: listing.amenityKeys ?? [],
     });
     setPhotos(listing.gallery ?? []);
+    setAmenitiesDirty(false);
+    setPhotosDirty(false);
     setPhotoUrl("");
     setPhotoError(null);
 
@@ -112,13 +139,26 @@ export default function HostListings() {
       monthlyRent: h.monthlyRent,
       deposit: h.deposit,
       minStayMonths: h.minStayMonths ?? 1,
-      capacity: h.capacity ?? 1,
+      capacity:
+        h.rentalUnit === "bed"
+          ? Math.max(2, h.capacity ?? 2)
+          : h.rentalUnit === "private_room"
+            ? 1
+            : h.capacity ?? 1,
       rentalUnit: h.rentalUnit ?? "",
       buildingType: h.buildingType ?? "",
       sharedFacilities: h.sharedFacilities ?? [],
+      bedrooms: h.bedrooms ?? null,
+      genderPolicy: h.genderPolicy ?? "any",
+      petsAllowed: h.petsAllowed ?? false,
+      smokingAllowed: h.smokingAllowed ?? false,
+      parking: h.parking || (h.amenityKeys ?? []).includes("parking"),
+      amenities: h.amenityKeys ?? [],
     });
     // gallery is already in display order (index 0 = 대표 사진).
     setPhotos(h.gallery ?? []);
+    setAmenitiesDirty(false);
+    setPhotosDirty(false);
     setPhotoError(null);
   }
 
@@ -132,6 +172,7 @@ export default function HostListings() {
       return;
     }
     setPhotoError(null);
+    setPhotosDirty(true);
     setPhotos((prev) => [...prev, url].slice(0, 8));
     setPhotoUrl("");
   }
@@ -144,6 +185,7 @@ export default function HostListings() {
       const room = 8 - photos.length;
       const picked = Array.from(files).slice(0, room);
       const urls = await Promise.all(picked.map((file) => uploadImage(file)));
+      setPhotosDirty(true);
       setPhotos((prev) => [...prev, ...urls].slice(0, 8));
     } catch (e) {
       setPhotoError(
@@ -166,14 +208,27 @@ export default function HostListings() {
     }));
   }
 
+  function toggleAmenity(amenity: AmenityKey) {
+    setAmenitiesDirty(true);
+    setDraft((current) => ({
+      ...current,
+      amenities: current.amenities.includes(amenity)
+        ? current.amenities.filter((item) => item !== amenity)
+        : [...current.amenities, amenity],
+    }));
+  }
+
   async function saveEdit(id: string) {
     if (saving) return;
     if (!draft.rentalUnit || !draft.buildingType) {
       setError("예약 공간과 건물 유형을 선택해주세요.");
       return;
     }
-    if (!Number.isInteger(draft.capacity) || draft.capacity < 1 || draft.capacity > 20) {
-      setError("최대 수용 인원은 1명부터 20명까지 입력해주세요.");
+    if (
+      draft.rentalUnit === "bed" &&
+      (!Number.isInteger(draft.capacity) || draft.capacity < 2 || draft.capacity > 20)
+    ) {
+      setError("다인실 최대 수용 인원은 2명부터 20명까지 입력해주세요.");
       return;
     }
     if (draft.rentalUnit !== "whole" && draft.sharedFacilities.length === 0) {
@@ -186,14 +241,28 @@ export default function HostListings() {
         monthlyRent: Number(draft.monthlyRent),
         deposit: Number(draft.deposit),
         minStayMonths: Number(draft.minStayMonths),
-        capacity: Number(draft.capacity),
+        capacity:
+          draft.rentalUnit === "bed"
+            ? Number(draft.capacity)
+            : draft.rentalUnit === "private_room"
+              ? 1
+              : null,
+        bedrooms:
+          draft.rentalUnit === "whole" ? draft.bedrooms : undefined,
         rentalUnit: draft.rentalUnit,
         buildingType: draft.buildingType,
         sharedFacilities: draft.rentalUnit === "whole" ? [] : draft.sharedFacilities,
+        genderPolicy: draft.rentalUnit === "whole" ? "any" : draft.genderPolicy,
+        petsAllowed: draft.petsAllowed,
+        smokingAllowed: draft.smokingAllowed,
+        parking: draft.parking,
+        ...(amenitiesDirty ? { amenities: draft.amenities } : {}),
         classificationReviewRequired: false,
-        images: photos,
+        ...(photosDirty ? { images: photos } : {}),
       });
       setEditingId(null);
+      setAmenitiesDirty(false);
+      setPhotosDirty(false);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "수정하지 못했어요.");
@@ -355,7 +424,10 @@ export default function HostListings() {
                               )}
                               <button
                                 type="button"
-                                onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                                onClick={() => {
+                                  setPhotosDirty(true);
+                                  setPhotos((p) => p.filter((_, j) => j !== i));
+                                }}
                                 aria-label="사진 삭제"
                                 style={{
                                   position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: 99,
@@ -384,6 +456,13 @@ export default function HostListings() {
                                 ...current,
                                 rentalUnit,
                                 sharedFacilities: rentalUnit === "whole" ? [] : current.sharedFacilities,
+                                genderPolicy: rentalUnit === "whole" ? "any" : current.genderPolicy,
+                                capacity:
+                                  rentalUnit === "private_room"
+                                    ? 1
+                                    : rentalUnit === "bed"
+                                      ? Math.max(2, current.capacity || 2)
+                                      : current.capacity,
                               }));
                             }}
                             style={{ width: "100%", marginTop: 3 }}
@@ -432,17 +511,113 @@ export default function HostListings() {
                           </div>
                         </div>
                       )}
-                      <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-                        최대 수용 인원
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={draft.capacity}
-                          onChange={(event) => setDraft({ ...draft, capacity: Number(event.target.value) })}
-                          style={{ width: "100%", marginTop: 3 }}
+                      {draft.rentalUnit === "private_room" && (
+                        <p style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                          공유형·개인실의 최대 입주 인원은 1명으로 고정됩니다.
+                        </p>
+                      )}
+                      {draft.rentalUnit === "bed" && (
+                        <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                          최대 수용 인원
+                          <input
+                            type="number"
+                            min={2}
+                            max={20}
+                            value={draft.capacity}
+                            onChange={(event) => setDraft({ ...draft, capacity: Number(event.target.value) })}
+                            style={{ width: "100%", marginTop: 3 }}
+                          />
+                        </label>
+                      )}
+                      {draft.rentalUnit === "whole" && (
+                        <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                          <div style={{ marginBottom: 6 }}>방 개수</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {[1, 2, 3, 4, 5].map((count) => (
+                              <button
+                                key={count}
+                                type="button"
+                                className="chip"
+                                data-active={draft.bedrooms === count}
+                                onClick={() =>
+                                  setDraft((current) => ({
+                                    ...current,
+                                    bedrooms: current.bedrooms === count ? null : count,
+                                  }))
+                                }
+                              >
+                                {count}개{count === 5 ? " 이상" : ""}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {draft.rentalUnit && draft.rentalUnit !== "whole" && (
+                        <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                          <div style={{ marginBottom: 6 }}>성별 조건</div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {(Object.keys(GENDER_LABELS) as GenderPolicy[]).map((gender) => (
+                              <button
+                                key={gender}
+                                type="button"
+                                className="chip"
+                                data-active={draft.genderPolicy === gender}
+                                onClick={() => setDraft((current) => ({ ...current, genderPolicy: gender }))}
+                                style={{ flex: 1, justifyContent: "center" }}
+                              >
+                                {GENDER_LABELS[gender]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                        <div style={{ marginBottom: 6 }}>편의시설</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {AMENITY_OPTIONS.map((option) => (
+                            <button
+                              key={option.key}
+                              type="button"
+                              className="chip"
+                              data-active={draft.amenities.includes(option.key)}
+                              onClick={() => toggleAmenity(option.key)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <InlineBooleanChoice
+                          label="반려동물"
+                          value={draft.petsAllowed}
+                          trueLabel="허용"
+                          falseLabel="불가"
+                          onChange={(value) => setDraft((current) => ({ ...current, petsAllowed: value }))}
                         />
-                      </label>
+                        <InlineBooleanChoice
+                          label="흡연"
+                          value={draft.smokingAllowed}
+                          trueLabel="허용"
+                          falseLabel="금연"
+                          onChange={(value) => setDraft((current) => ({ ...current, smokingAllowed: value }))}
+                        />
+                        <InlineBooleanChoice
+                          label="주차"
+                          value={draft.parking}
+                          trueLabel="가능"
+                          falseLabel="불가"
+                          onChange={(value) => {
+                            setAmenitiesDirty(true);
+                            setDraft((current) => ({
+                              ...current,
+                              parking: value,
+                              // 기존 시드의 parking 편의시설 관계는 Boolean 필드로 정규화합니다.
+                              amenities: current.amenities.filter((key) => key !== "parking"),
+                            }));
+                          }}
+                        />
+                      </div>
                       <label style={{ fontSize: 12.5, color: "var(--text-2)" }}>
                         월세 (원)
                         <input
@@ -576,6 +751,32 @@ export default function HostListings() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function InlineBooleanChoice({
+  label,
+  value,
+  trueLabel,
+  falseLabel,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  trueLabel: string;
+  falseLabel: string;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "88px 1fr 1fr", gap: 6, alignItems: "center" }}>
+      <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>{label}</span>
+      <button type="button" className="chip" data-active={value} onClick={() => onChange(true)} style={{ justifyContent: "center" }}>
+        {trueLabel}
+      </button>
+      <button type="button" className="chip" data-active={!value} onClick={() => onChange(false)} style={{ justifyContent: "center" }}>
+        {falseLabel}
+      </button>
     </div>
   );
 }
