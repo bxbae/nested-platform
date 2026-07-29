@@ -63,11 +63,8 @@ export default function AdminDashboard() {
           getStats(),
           getDashboardSummary(),
           getRevenueTrend(6),
-          getStats(),
-          getDashboardSummary(),
-          getRevenueTrend(6),
           listPendingRooms(),
-          listReports(undefined, 200, 0),
+          listReports(),
         ]);
         setStats(s);
         setSummary(sum);
