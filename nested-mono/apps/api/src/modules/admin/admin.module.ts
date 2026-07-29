@@ -19,7 +19,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard, RolesGuard, Roles } from "../auth/guards/auth.guards";
-import { activityTier, TIER_LABEL, type ActivityTier } from "../../common/activity-tier";
+import { activityTier, TIER_LABEL, TIER_RANK, type ActivityTier } from "../../common/activity-tier";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 
@@ -87,7 +87,7 @@ export class AdminService {
   async members(query: {
     q?: string;
     role?: "GUEST" | "HOST" | "ADMIN";
-    tier?: "SEED" | "REGULAR" | "TRUSTED";
+    tier?: ActivityTier;
     sortBy?: string;
     sortOrder?: "asc" | "desc";
     page?: number;
@@ -173,7 +173,7 @@ export class AdminService {
     }
 
     // 헤더 클릭 정렬 — tier는 순서가 있는 값이라 랭크로 변환해서 비교
-    const TIER_RANK: Record<ActivityTier, number> = { SEED: 0, REGULAR: 1, TRUSTED: 2 };
+    // TIER_RANK 는 activity-tier.ts 에서 import (5단계 확장에 맞춰 한 곳에서 관리).
     enriched.sort((a, b) => {
       let cmp = 0;
       switch (sortBy) {

@@ -33,7 +33,7 @@ export interface AuthUser {
   createdAt?: string | null;
   // Trust badges (see common/activity-tier on the API side).
   verified?: boolean;
-  tier?: "SEED" | "REGULAR" | "TRUSTED";
+  tier?: "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE";
   tierLabel?: string;
   completedStays?: number;
   reviewsWritten?: number;

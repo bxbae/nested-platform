@@ -15,7 +15,7 @@ export interface FriendProfile {
   avatarUrl: string | null;
   joinedYear: number;
   verified: boolean;
-  tier: "SEED" | "REGULAR" | "TRUSTED";
+  tier: "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE";
   tierLabel: string;
   // 사용자가 생활 성향 설문을 완료한 경우에만 공개한다.
   lifestyle: Preference | null;

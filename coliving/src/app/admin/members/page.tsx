@@ -42,7 +42,7 @@ export default function AdminMembers() {
 
   // 필터/정렬/페이징 상태
   const [role, setRole] = useState<MemberRole | "">("");
-  const [tier, setTier] = useState<"" | "SEED" | "REGULAR" | "TRUSTED">("");
+  const [tier, setTier] = useState<"" | "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE">("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
@@ -217,8 +217,10 @@ export default function AdminMembers() {
           {([
             ["", "전체 등급"],
             ["SEED", "새싹"],
-            ["REGULAR", "일반"],
-            ["TRUSTED", "우수"],
+            ["SPROUT", "새 이웃"],
+            ["REGULAR", "이웃"],
+            ["TRUSTED", "신뢰 이웃"],
+            ["ELITE", "베스트 이웃"],
           ] as const).map(([value, label]) => (
             <button
               key={value}

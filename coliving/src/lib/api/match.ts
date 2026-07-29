@@ -23,7 +23,7 @@ export interface MatchCandidate {
   matchedAxes: PreferenceAxis[];
   // Trust signals shown on the card.
   verified: boolean;
-  tier: "SEED" | "REGULAR" | "TRUSTED";
+  tier: "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE";
   tierLabel: string;
 }
 
