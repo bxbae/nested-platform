@@ -44,8 +44,14 @@ export class NotificationsGateway implements OnGatewayConnection {
       client.data.userId = payload.sub;
 
       this.logger.log(`notification socket connected: ${payload.sub}`);
-    } catch {
-      this.logger.warn(`invalid notification socket token: ${client.id}`);
+    } catch (err) {
+      // 만료 토큰은 흔한 정상 상황이라 debug 로, 그 외 검증 실패만 warn 으로 남긴다.
+      const name = err instanceof Error ? err.name : "UnknownError";
+      if (name === "TokenExpiredError") {
+        this.logger.debug(`expired notification socket token: ${client.id}`);
+      } else {
+        this.logger.warn(`invalid notification socket token: ${client.id} (${name})`);
+      }
 
       client.disconnect(true);
     }
