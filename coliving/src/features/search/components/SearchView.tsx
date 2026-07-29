@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import type { BuildingType, SearchParams, SortKey } from "@/lib/types";
+import type { BuildingType, House, SearchParams, SortKey } from "@/lib/types";
 import {
   BUILDING_TYPE_LABELS,
   RENTAL_UNIT_LABELS,
@@ -14,11 +14,11 @@ import { regionLabel } from "@/lib/seoul";
 import { formatStayDuration } from "@/lib/stay-dates";
 
 import { useSearchProperties } from "../api/useSearchProperties";
-import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 import { activeFilterCount, filtersToParams, paramsToFilters } from "../schema";
 
 import { PropertyCard, PropertyCardSkeleton } from "./PropertyCard";
 import { SearchMap } from "./SearchMap";
+import { SearchPropertyPreview } from "./SearchPropertyPreview";
 import { FilterSheet } from "./FilterSheet";
 
 const QUICK_BUILDING_TYPES: BuildingType[] = [
@@ -27,6 +27,40 @@ const QUICK_BUILDING_TYPES: BuildingType[] = [
   "officetel",
   "studio",
 ];
+
+
+const PAGE_SIZE = 9;
+
+type PaginationItem = number | "ellipsis";
+
+function buildPaginationItems(
+  currentPage: number,
+  totalPages: number,
+): PaginationItem[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const pages = new Set<number>([
+    1,
+    totalPages,
+    currentPage - 1,
+    currentPage,
+    currentPage + 1,
+  ]);
+  const sorted = [...pages]
+    .filter((page) => page >= 1 && page <= totalPages)
+    .sort((a, b) => a - b);
+
+  const result: PaginationItem[] = [];
+  sorted.forEach((page, index) => {
+    const previous = sorted[index - 1];
+    if (previous && page - previous > 1) result.push("ellipsis");
+    result.push(page);
+  });
+
+  return result;
+}
 
 const SORT_OPTIONS: {
   key: SortKey;
@@ -66,7 +100,9 @@ export function SearchView() {
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
+  const [selectedHouse, setSelectedHouse] = useState<House | null>(null);
   const [showMap, setShowMap] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const {
     items,
@@ -78,13 +114,56 @@ export function SearchView() {
     isError,
   } = useSearchProperties(filters);
 
-  const sentinelRef = useInfiniteScroll(
-    fetchNextPage,
-    hasNextPage && !isLoading,
+  const filterKey = useMemo(() => filtersToParams(filters).toString(), [filters]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageEnd = currentPage * PAGE_SIZE;
+  const visibleItems = useMemo(
+    () => items.slice(pageStart, pageEnd),
+    [items, pageEnd, pageStart],
   );
+  const paginationItems = useMemo(
+    () => buildPaginationItems(currentPage, totalPages),
+    [currentPage, totalPages],
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedHouse(null);
+    setHover(null);
+  }, [filterKey]);
+
+  useEffect(() => {
+    const requiredCount = Math.min(pageEnd, total);
+    if (
+      !isLoading &&
+      items.length < requiredCount &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      void fetchNextPage();
+    }
+  }, [
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    items.length,
+    pageEnd,
+    total,
+  ]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
 
   const commit = useCallback(
     (next: SearchParams) => {
+      setCurrentPage(1);
+      setSelectedHouse(null);
+      setHover(null);
+
       const params = filtersToParams(next);
       const queryString = params.toString();
 
@@ -122,7 +201,24 @@ export function SearchView() {
     commit({ ...filters, buildingTypes: next });
   };
 
+  const goToPage = (page: number) => {
+    const nextPage = Math.min(Math.max(page, 1), totalPages);
+    if (nextPage === currentPage) return;
+
+    setCurrentPage(nextPage);
+    setSelectedHouse(null);
+    setHover(null);
+
+    window.requestAnimationFrame(() => {
+      document.querySelector(".search-results-count")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
   const activeCount = activeFilterCount(filters);
+  const activeHouseId = hover ?? selectedHouse?.id ?? null;
 
   const hasVisibleFilters =
     Boolean(filters.district) ||
@@ -135,45 +231,10 @@ export function SearchView() {
     Boolean(filters.checkIn && filters.checkOut);
 
   return (
-    <div
-      className="wrap"
-      style={{
-        paddingTop: 24,
-        paddingBottom: 40,
-      }}
-    >
-      <div
-        style={{
-          position: "sticky",
-          top: 68,
-          zIndex: 30,
-          background: "var(--glass)",
-          backdropFilter: "saturate(160%) blur(18px)",
-          WebkitBackdropFilter: "saturate(160%) blur(18px)",
-          margin: "0 -28px",
-          padding: "14px 28px",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div
-            className="card"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 14px",
-              flex: "1 1 260px",
-              borderRadius: "var(--r-pill)",
-            }}
-          >
+    <div className="wrap search-page-shell">
+      <div className="search-toolbar">
+        <div className="search-toolbar-row">
+          <div className="card search-query-field">
             <span aria-hidden="true" />
 
             <input
@@ -190,13 +251,7 @@ export function SearchView() {
                   setQuery(event.target.value);
                 }
               }}
-              style={{
-                border: "none",
-                outline: "none",
-                flex: 1,
-                background: "transparent",
-                fontSize: 15,
-              }}
+              className="search-query-input"
               aria-label="검색어"
             />
           </div>
@@ -284,27 +339,12 @@ export function SearchView() {
           </span>
         </div>
 
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            fontSize: 13.5,
-            color: "var(--text-2)",
-            marginTop: 10,
-          }}
-        >
+        <div className="search-results-count" role="status" aria-live="polite">
           {isLoading ? "검색 중…" : `${total}개의 숙소`}
         </div>
 
         {hasVisibleFilters && (
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              marginTop: 10,
-            }}
-          >
+          <div className="search-active-filters">
             {filters.district && (
               <button
                 type="button"
@@ -436,13 +476,8 @@ export function SearchView() {
         )}
       </div>
 
-      <div
-        className="search-split"
-        style={{
-          marginTop: 20,
-        }}
-      >
-        <div>
+      <div className="search-split">
+        <div className="search-results-column">
           {isError && (
             <div
               className="card"
@@ -457,31 +492,34 @@ export function SearchView() {
 
           <div className="results-grid">
             {isLoading &&
-              Array.from({
-                length: 6,
-              }).map((_, index) => <PropertyCardSkeleton key={index} />)}
+              Array.from({ length: PAGE_SIZE }).map((_, index) => (
+                <PropertyCardSkeleton key={index} />
+              ))}
 
             {!isLoading &&
-              items.map((house) => (
+              visibleItems.map((house) => (
                 <PropertyCard
                   key={house.id}
                   house={house}
                   onHover={setHover}
-                  active={hover === house.id}
-                  checkIn={filters.checkIn}
-                  checkOut={filters.checkOut}
+                  active={activeHouseId === house.id}
+                  onSelect={setSelectedHouse}
                 />
               ))}
 
-            {isFetchingNextPage &&
+            {!isLoading &&
+              isFetchingNextPage &&
               Array.from({
-                length: 2,
+                length: Math.max(
+                  0,
+                  Math.min(PAGE_SIZE, total - pageStart) - visibleItems.length,
+                ),
               }).map((_, index) => (
-                <PropertyCardSkeleton key={`next-${index}`} />
+                <PropertyCardSkeleton key={`page-loading-${index}`} />
               ))}
           </div>
 
-          {!isLoading && items.length === 0 && (
+          {!isLoading && total === 0 && (
             <div
               className="card"
               style={{
@@ -496,34 +534,80 @@ export function SearchView() {
             </div>
           )}
 
-          {hasNextPage && (
-            <div
-              ref={sentinelRef}
-              style={{
-                height: 1,
-              }}
-              aria-hidden="true"
-            />
+          {!isLoading && totalPages > 1 && (
+            <nav className="search-pagination" aria-label="숙소 검색 페이지">
+              <button
+                type="button"
+                className="press search-pagination-arrow"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                aria-label="이전 페이지"
+              >
+                ‹
+              </button>
+
+              <div className="search-pagination-pages">
+                {paginationItems.map((item, index) =>
+                  item === "ellipsis" ? (
+                    <span
+                      key={`ellipsis-${index}`}
+                      className="search-pagination-ellipsis"
+                      aria-hidden="true"
+                    >
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      className="press search-pagination-page"
+                      data-active={item === currentPage}
+                      aria-current={item === currentPage ? "page" : undefined}
+                      onClick={() => goToPage(item)}
+                    >
+                      {item}
+                    </button>
+                  ),
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="press search-pagination-arrow"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                aria-label="다음 페이지"
+              >
+                ›
+              </button>
+            </nav>
           )}
 
-          {!hasNextPage && !isLoading && items.length > 0 && (
-            <p
-              style={{
-                textAlign: "center",
-                color: "var(--text-2)",
-                fontSize: 13.5,
-                marginTop: 26,
-              }}
-            >
-              모든 숙소를 확인했습니다.
+          {!isLoading && total > 0 && (
+            <p className="search-pagination-summary">
+              총 {total}개 중 {pageStart + 1}–{Math.min(pageEnd, total)}개 표시
             </p>
           )}
         </div>
 
         <div className={`search-map-wrap ${showMap ? "" : "hide-mobile"}`}>
-          <SearchMap houses={items} hover={hover} onHover={setHover} />
+          <SearchMap
+            houses={visibleItems}
+            hover={activeHouseId}
+            onHover={setHover}
+            onSelect={setSelectedHouse}
+          />
         </div>
       </div>
+
+      {selectedHouse && (
+        <SearchPropertyPreview
+          house={selectedHouse}
+          checkIn={filters.checkIn}
+          checkOut={filters.checkOut}
+          onClose={() => setSelectedHouse(null)}
+        />
+      )}
 
       <FilterSheet
         open={filterOpen}
