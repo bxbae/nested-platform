@@ -103,6 +103,26 @@ export class ReservationsController {
     return this.service.listCompanionInvites(userId);
   }
 
+  @Patch("reservations/:id/list-hidden")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  hideFromMyList(
+    @Param("id") id: string,
+    @CurrentGuest() userId: string,
+  ) {
+    return this.service.setMyListHidden(id, userId, true);
+  }
+
+  @Patch("reservations/:id/list-visible")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  restoreToMyList(
+    @Param("id") id: string,
+    @CurrentGuest() userId: string,
+  ) {
+    return this.service.setMyListHidden(id, userId, false);
+  }
+
   @Post("reservations/:id/contract-change/quote")
   @UseGuards(JwtAuthGuard)
   @HttpCode(200)

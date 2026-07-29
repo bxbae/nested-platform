@@ -1,11 +1,39 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { listActiveBanners, type AdminBanner } from "@/lib/api/admin";
 
 const FALLBACK_IMAGE = "/hero-friends.png";
 const SLIDE_INTERVAL_MS = 5000;
-const MAX_REGISTERED_BANNERS = 5;
+const MAX_TOTAL_SLIDES = 5;
+const MAX_REGISTERED_BANNERS = MAX_TOTAL_SLIDES - 1;
+
+function getCtaLabel(linkUrl: string): string {
+  return linkUrl.toLowerCase().includes("coupon")
+    ? "쿠폰 확인하러 가기"
+    : "자세히 보기";
+}
+
+const ctaStyle = {
+  position: "absolute",
+  top: 24,
+  right: 28,
+  zIndex: 4,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 44,
+  padding: "0 18px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.94)",
+  color: "#1f1f1f",
+  fontSize: 14,
+  fontWeight: 700,
+  boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
+  pointerEvents: "auto",
+  textDecoration: "none",
+} as const;
 
 export function HomeBanner() {
   const [banners, setBanners] = useState<AdminBanner[]>([]);
@@ -18,7 +46,7 @@ export function HomeBanner() {
         if (!alive) return;
         const heroRows = rows
           .filter((banner) => banner.position === "메인 상단")
-          .sort((a, b) => a.order - b.order)
+          .sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt))
           .slice(0, MAX_REGISTERED_BANNERS);
         setBanners(heroRows);
         setActiveIndex(0);
@@ -43,13 +71,18 @@ export function HomeBanner() {
       linkUrl: null,
       imageUrl: FALLBACK_IMAGE,
       active: true,
-      order: -1,
+      order: 0,
       createdAt: "",
       updatedAt: "",
     } satisfies AdminBanner;
 
-    return [fallback, ...banners];
+    return [fallback, ...banners].slice(0, MAX_TOTAL_SLIDES);
   }, [banners]);
+
+  useEffect(() => {
+    if (activeIndex < slides.length) return;
+    setActiveIndex(0);
+  }, [activeIndex, slides.length]);
 
   useEffect(() => {
     if (slides.length <= 1) return;
@@ -59,6 +92,9 @@ export function HomeBanner() {
     return () => window.clearInterval(timer);
   }, [slides.length]);
 
+  const activeBanner = slides[activeIndex] ?? slides[0];
+  const activeLink = activeBanner?.linkUrl?.trim() || null;
+
   return (
     <div
       aria-label="메인 배너"
@@ -67,6 +103,7 @@ export function HomeBanner() {
         inset: 0,
         overflow: "hidden",
         background: "#f7f2ec",
+        pointerEvents: "none",
       }}
     >
       {slides.map((banner, index) => {
@@ -91,6 +128,23 @@ export function HomeBanner() {
         );
       })}
 
+      {activeLink && activeLink.startsWith("/") && !activeLink.startsWith("//") && (
+        <Link href={activeLink} style={ctaStyle}>
+          {getCtaLabel(activeLink)}
+        </Link>
+      )}
+
+      {activeLink && (!activeLink.startsWith("/") || activeLink.startsWith("//")) && (
+        <a
+          href={activeLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={ctaStyle}
+        >
+          {getCtaLabel(activeLink)}
+        </a>
+      )}
+
       {slides.length > 1 && (
         <div
           aria-label="배너 페이지"
@@ -101,6 +155,7 @@ export function HomeBanner() {
             zIndex: 3,
             display: "flex",
             gap: 7,
+            pointerEvents: "auto",
           }}
         >
           {slides.map((banner, index) => (
@@ -120,7 +175,6 @@ export function HomeBanner() {
                     : "rgba(255,255,255,0.88)",
                 boxShadow: "0 1px 5px rgba(0,0,0,0.2)",
                 transition: "width 180ms ease, background 180ms ease",
-                pointerEvents: "auto",
               }}
             />
           ))}

@@ -2,13 +2,14 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import { addFriend, getFriendStatus } from "@/lib/api/friends";
-import { openDirectConversation } from "@/lib/api/messages";
 import {
-  genderLabel,
-  getMatchDetail,
-  type MatchDetail,
-} from "@/lib/api/match";
+  addFriend,
+  getFriendStatus,
+  removeFriend,
+  type FriendRequestState,
+} from "@/lib/api/friends";
+import { openDirectConversation } from "@/lib/api/messages";
+import { genderLabel, getMatchDetail, type MatchDetail } from "@/lib/api/match";
 
 interface MatchDetailModalProps {
   userId: string | null;
@@ -23,6 +24,9 @@ export default function MatchDetailModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFriend, setIsFriend] = useState(false);
+  const [friendRequestState, setFriendRequestState] =
+    useState<FriendRequestState>("NONE");
+  const [friendRequestId, setFriendRequestId] = useState<string | null>(null);
   const [friendBusy, setFriendBusy] = useState(false);
   const router = useRouter();
 
@@ -31,6 +35,9 @@ export default function MatchDetailModal({
       setDetail(null);
       setError(null);
       setLoading(false);
+      setIsFriend(false);
+      setFriendRequestState("NONE");
+      setFriendRequestId(null);
       return;
     }
 
@@ -41,6 +48,9 @@ export default function MatchDetailModal({
       setLoading(true);
       setError(null);
       setDetail(null);
+      setIsFriend(false);
+      setFriendRequestState("NONE");
+      setFriendRequestId(null);
 
       try {
         const data = await getMatchDetail(targetUserId);
@@ -49,7 +59,12 @@ export default function MatchDetailModal({
 
         setDetail(data);
         const status = await getFriendStatus(targetUserId);
-        if (alive) setIsFriend(status.isFriend);
+
+        if (alive) {
+          setIsFriend(status.isFriend);
+          setFriendRequestState(status.requestState);
+          setFriendRequestId(status.requestId);
+        }
       } catch (loadError) {
         if (!alive) return;
 
@@ -71,6 +86,86 @@ export default function MatchDetailModal({
       alive = false;
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId || friendRequestState !== "SENT") {
+      return;
+    }
+
+    // null 검사를 통과한 사용자 ID를 문자열로 고정
+    const targetUserId = userId;
+    let alive = true;
+
+    async function refreshFriendStatus() {
+      try {
+        const status = await getFriendStatus(targetUserId);
+
+        if (!alive) return;
+
+        setIsFriend(status.isFriend);
+        setFriendRequestState(status.requestState);
+        setFriendRequestId(status.requestId);
+      } catch {
+        // 일시적인 통신 오류가 발생해도
+        // 다음 주기에 다시 확인한다.
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshFriendStatus();
+    }, 4000);
+
+    return () => {
+      alive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [userId, friendRequestState]);
+
+  async function handleFriendAction() {
+    if (!detail || friendBusy) {
+      return;
+    }
+
+    // 이미 요청을 보낸 상태라면 아무 동작도 하지 않는다.
+    if (friendRequestState === "SENT") {
+      return;
+    }
+
+    // 상대방에게 받은 요청이 있으면 요청 관리 화면으로 이동한다.
+    if (friendRequestState === "RECEIVED") {
+      const requestUrl = friendRequestId
+        ? `/me/friends?tab=requests&requestId=${encodeURIComponent(
+            friendRequestId,
+          )}`
+        : "/me/friends?tab=requests";
+
+      router.push(requestUrl);
+      return;
+    }
+
+    setFriendBusy(true);
+
+    try {
+      // 이미 친구라면 친구 삭제
+      if (isFriend) {
+        await removeFriend(detail.userId);
+
+        setIsFriend(false);
+        setFriendRequestState("NONE");
+        setFriendRequestId(null);
+        return;
+      }
+
+      // 친구가 아니라면 친구 요청 전송
+      const result = await addFriend(detail.userId);
+
+      setIsFriend(result.isFriend);
+      setFriendRequestState(result.requestState);
+      setFriendRequestId(result.requestId);
+    } finally {
+      setFriendBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!userId) return;
@@ -132,7 +227,25 @@ export default function MatchDetailModal({
         {!loading && !error && detail && (
           <div style={contentGridStyle}>
             <ProfileSection detail={detail} />
-            <MatchAnalysisSection detail={detail} isFriend={isFriend} friendBusy={friendBusy} onAddFriend={async () => { setFriendBusy(true); try { await addFriend(detail.userId); setIsFriend(true); } finally { setFriendBusy(false); } }} onViewProfile={() => router.push(`/users/${encodeURIComponent(detail.userId)}`)} onMessage={async () => { const conversation = await openDirectConversation(detail.userId); router.push(`/me/messages?direct=${encodeURIComponent(conversation.id)}`); }} />
+            <MatchAnalysisSection
+              detail={detail}
+              isFriend={isFriend}
+              friendRequestState={friendRequestState}
+              friendBusy={friendBusy}
+              onFriendAction={handleFriendAction}
+              onViewProfile={() =>
+                router.push(`/users/${encodeURIComponent(detail.userId)}`)
+              }
+              onMessage={async () => {
+                const conversation = await openDirectConversation(
+                  detail.userId,
+                );
+
+                router.push(
+                  `/me/messages?direct=${encodeURIComponent(conversation.id)}`,
+                );
+              }}
+            />
           </div>
         )}
       </section>
@@ -209,45 +322,110 @@ function ProfileSection({ detail }: { detail: MatchDetail }) {
 function MatchAnalysisSection({
   detail,
   isFriend,
+  friendRequestState,
   friendBusy,
-  onAddFriend,
+  onFriendAction,
   onViewProfile,
   onMessage,
 }: {
   detail: MatchDetail;
   isFriend: boolean;
+  friendRequestState: FriendRequestState;
   friendBusy: boolean;
-  onAddFriend: () => Promise<void>;
+  onFriendAction: () => void;
   onViewProfile: () => void;
   onMessage: () => Promise<void>;
 }) {
+  const friendButtonLabel = friendBusy
+    ? "처리 중…"
+    : isFriend
+      ? "친구 삭제"
+      : friendRequestState === "SENT"
+        ? "수락 요청 중"
+        : friendRequestState === "RECEIVED"
+          ? "받은 요청 확인"
+          : "+ 친구 추가";
+
+  const friendButtonDisabled = friendBusy || friendRequestState === "SENT";
+
   return (
     <section style={analysisSectionStyle}>
       <div style={scoreGridStyle}>
         <ScoreBox icon="♥" label="매칭 점수" value={`${detail.score}%`} />
-        <ScoreBox icon="✓" label="생활 성향 일치" value={`${detail.exactMatchCount}/${detail.totalAxisCount}`} />
-        <ScoreBox icon="★" label="중요 조건 일치" value={`${detail.importantMatchCount}/${detail.totalImportantCount}`} />
+        <ScoreBox
+          icon="✓"
+          label="생활 성향 일치"
+          value={`${detail.exactMatchCount}/${detail.totalAxisCount}`}
+        />
+        <ScoreBox
+          icon="★"
+          label="중요 조건 일치"
+          value={`${detail.importantMatchCount}/${detail.totalImportantCount}`}
+        />
       </div>
       <div>
         <h3 style={sectionTitleStyle}>왜 잘 맞나요?</h3>
-        {detail.reasons.length > 0 ? <div style={{ display: "grid", gap: 11 }}>{detail.reasons.map((reason) => <div key={reason} style={reasonRowStyle}><span aria-hidden="true" style={checkIconStyle}>✓</span><span>{reason}</span></div>)}</div> : <p style={metaTextStyle}>일부 생활 성향에서 공통점이 있습니다.</p>}
+        {detail.reasons.length > 0 ? (
+          <div style={{ display: "grid", gap: 11 }}>
+            {detail.reasons.map((reason) => (
+              <div key={reason} style={reasonRowStyle}>
+                <span aria-hidden="true" style={checkIconStyle}>
+                  ✓
+                </span>
+                <span>{reason}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={metaTextStyle}>일부 생활 성향에서 공통점이 있습니다.</p>
+        )}
       </div>
-      {detail.adjustmentPoints.length > 0 && <div style={warningBoxStyle}><h3 style={{ ...sectionTitleStyle, marginBottom: 9 ,color: "var(--primary)"}}>조율이 필요한 부분</h3><div style={{ display: "grid", gap: 8 }}>{detail.adjustmentPoints.map((point) => <div key={point} style={warningRowStyle}><span aria-hidden="true">⚠</span><span>{point}</span></div>)}</div></div>}
+      {detail.adjustmentPoints.length > 0 && (
+        <div style={warningBoxStyle}>
+          <h3
+            style={{
+              ...sectionTitleStyle,
+              marginBottom: 9,
+              color: "var(--primary)",
+            }}
+          >
+            조율이 필요한 부분
+          </h3>
+          <div style={{ display: "grid", gap: 8 }}>
+            {detail.adjustmentPoints.map((point) => (
+              <div key={point} style={warningRowStyle}>
+                <span aria-hidden="true">⚠</span>
+                <span>{point}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div style={actionRowStyle}>
-        <button type="button" style={secondaryButtonStyle} onClick={onViewProfile}>
+        <button
+          type="button"
+          style={secondaryButtonStyle}
+          onClick={onViewProfile}
+        >
           공개 프로필 보기
         </button>
-        {!isFriend && (
-          <button
-            type="button"
-            style={secondaryButtonStyle}
-            disabled={friendBusy}
-            onClick={() => void onAddFriend()}
-          >
-            {friendBusy ? "추가 중…" : "+ 친구 추가"}
-          </button>
-        )}
-        <button type="button" style={primaryButtonStyle} onClick={() => void onMessage()}>
+        <button
+          type="button"
+          style={{
+            ...secondaryButtonStyle,
+            cursor: friendButtonDisabled ? "default" : "pointer",
+            opacity: friendButtonDisabled ? 0.65 : 1,
+          }}
+          disabled={friendButtonDisabled}
+          onClick={onFriendAction}
+        >
+          {friendButtonLabel}
+        </button>
+        <button
+          type="button"
+          style={primaryButtonStyle}
+          onClick={() => void onMessage()}
+        >
           메시지 보내기
         </button>
       </div>
