@@ -10,4 +10,4 @@ ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'INQUIRY_CREATED';
 ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'INQUIRY_STATUS_CHANGED';
 
 -- DropIndex
-DROP INDEX "ReservationCompanionMember_individualPayment_status_idx";
+DROP INDEX IF EXISTS "ReservationCompanionMember_individualPayment_status_idx";
