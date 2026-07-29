@@ -585,6 +585,11 @@ export async function updateBanner(
   return api.patch<AdminBanner>(`/admin/banners/${id}`, input);
 }
 
+// PATCH /admin/banners/reorder — 등록 배너 전체 순서를 원자적으로 저장
+export async function reorderBanners(ids: string[]): Promise<AdminBanner[]> {
+  return api.patch<AdminBanner[]>("/admin/banners/reorder", { ids });
+}
+
 // DELETE /admin/banners/:id
 export async function deleteBanner(id: string): Promise<void> {
   await api.delete(`/admin/banners/${id}`);
