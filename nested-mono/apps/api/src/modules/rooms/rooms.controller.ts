@@ -21,6 +21,23 @@ import {
   Roles,
 } from "../auth/guards/auth.guards";
 
+const AMENITY_KEY_VALUES = [
+  "wifi",
+  "laundry",
+  "aircon",
+  "desk",
+  "weekly_cleaning",
+  "gym",
+  "rooftop",
+  "garden",
+  "parcel_locker",
+  "elevator",
+  "step_free_access",
+  // 기존 RoomAmenity 관계 호환용. 신규 UI에서는 공유시설/주차 Boolean으로 관리합니다.
+  "kitchen",
+  "parking",
+] as const;
+
 const addressSchema = z.object({
   city: z.string().min(1),
   district: z.string().min(1),
@@ -56,6 +73,11 @@ const createRoomSchema = z
       "LAUNDRY_ROOM",
       "ENTRANCE",
     ])).optional().default([]),
+    genderPolicy: z.enum(["ANY", "MALE_ONLY", "FEMALE_ONLY"]).optional().default("ANY"),
+    petsAllowed: z.boolean().optional().default(false),
+    smokingAllowed: z.boolean().optional().default(false),
+    parking: z.boolean().optional().default(false),
+    amenities: z.array(z.enum(AMENITY_KEY_VALUES)).optional().default([]),
     capacity: z.number().int().min(1).max(20).nullable().optional(),
     bedrooms: z.number().int().min(1).max(10).nullable().optional(),
     monthlyRent: z.number().int().positive(),
@@ -64,7 +86,7 @@ const createRoomSchema = z
     maintenanceFee: z.number().int().nonnegative(),
     minStayMonths: z.number().int().min(1).default(3),
     availableFrom: z.string(),
-    images: z.array(z.string().url()).max(8).optional().default([]),
+    images: z.array(z.string().url()).min(5, "사진을 5장 이상 등록해주세요.").max(8).optional().default([]),
   })
   .superRefine((data, ctx) => {
     const usesNewClassification = Boolean(data.rentalUnit || data.buildingType);
@@ -174,6 +196,11 @@ const updateRoomSchema = z.object({
     "LAUNDRY_ROOM",
     "ENTRANCE",
   ])).optional(),
+  genderPolicy: z.enum(["ANY", "MALE_ONLY", "FEMALE_ONLY"]).optional(),
+  petsAllowed: z.boolean().optional(),
+  smokingAllowed: z.boolean().optional(),
+  parking: z.boolean().optional(),
+  amenities: z.array(z.enum(AMENITY_KEY_VALUES)).optional(),
   classificationReviewRequired: z.boolean().optional(),
   images: z.array(z.string().url()).max(8).optional(),
 });
@@ -227,6 +254,7 @@ export class RoomsController {
       rentalUnits: enumCsv(q.rentalUnits, RENTAL_UNIT_VALUES),
       buildingTypes: enumCsv(q.buildingTypes, BUILDING_TYPE_VALUES),
       sharedFacilities: enumCsv(q.sharedFacilities, SHARED_FACILITY_VALUES),
+      amenities: enumCsv(q.amenities, AMENITY_KEY_VALUES),
       minRent: finiteNumber(q.minRent),
       maxRent: finiteNumber(q.maxRent),
       availableFrom: textValue(q.availableFrom),

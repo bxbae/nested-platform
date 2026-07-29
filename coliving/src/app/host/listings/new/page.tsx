@@ -16,6 +16,7 @@ import {
   type GenderPolicy,
   type RentalUnit,
   type SharedFacility,
+  type AmenityKey,
 } from "@/lib/types";
 import { createRoom } from "@/lib/api/rooms";
 import { AddressSearch, type AddressValue } from "@/components/AddressSearch";
@@ -24,7 +25,7 @@ import { useAuth } from "@/lib/api/useAuth";
 import { ApiError } from "@/lib/api/client";
 import { uploadImage } from "@/lib/api/storage";
 import { USE_REAL_API } from "@/lib/api/config";
-import { getAmenityLabel } from "@/lib/amenities";
+import { AMENITY_OPTIONS } from "@/lib/amenities";
 
 const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
 const BUILDING_TYPES: BuildingType[] = ["house", "apartment", "officetel", "studio"];
@@ -36,7 +37,6 @@ const SHARED_FACILITIES: SharedFacility[] = [
   "entrance",
 ];
 const GENDERS: GenderPolicy[] = ["any", "female_only", "male_only"];
-const AMENITIES = ["Rooftop", "Coworking room", "Laundry", "Fiber wifi", "Weekly cleaning", "Gym", "Garden", "Parcel locker"];
 
 function todayISOInKorea(): string {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -66,6 +66,9 @@ const listingSchema = z.object({
   buildingType: z.enum(["studio", "apartment", "officetel", "house"]),
   sharedFacilities: z.array(z.enum(["bathroom", "kitchen", "living_room", "laundry_room", "entrance"])),
   gender: z.enum(["any", "female_only", "male_only"]),
+  petsAllowed: z.boolean(),
+  smokingAllowed: z.boolean(),
+  parking: z.boolean(),
   monthlyRent: z.coerce.number().min(100000, "월세는 10만원 이상이어야 합니다."),
   deposit: z.coerce.number().min(0),
   cleaningFee: z.coerce.number().min(0),
@@ -118,7 +121,7 @@ type ListingForm = z.infer<typeof listingSchema>;
 export default function NewListing() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoUrl, setPhotoUrl] = useState("");
-  const [amenities, setAmenities] = useState<string[]>([]);
+  const [amenities, setAmenities] = useState<AmenityKey[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   // Set when the API rejects the listing because the account is still a GUEST.
@@ -148,7 +151,7 @@ export default function NewListing() {
     resolver: zodResolver(listingSchema),
     mode: "onChange",
     defaultValues: {
-      name: "", city: "", district: "", neighborhood: "", legalDongCode: "", roadAddress: "", jibunAddress: "", detailAddress: "", zipCode: "", rentalUnit: "whole", buildingType: "studio", sharedFacilities: [], gender: "any", capacity: 2,
+      name: "", city: "", district: "", neighborhood: "", legalDongCode: "", roadAddress: "", jibunAddress: "", detailAddress: "", zipCode: "", rentalUnit: "whole", buildingType: "studio", sharedFacilities: [], gender: "any", petsAllowed: false, smokingAllowed: false, parking: false, capacity: undefined,
       monthlyRent: 700000, deposit: 3000000, cleaningFee: 70000, maintenanceFee: 50000, minStay: 3,
       availableFrom: todayISOInKorea(),
       verifiedByHost: false as unknown as true,
@@ -207,6 +210,10 @@ export default function NewListing() {
 
   async function submit(form: ListingForm) {
     if (saving) return;
+    if (photos.length < 5) {
+      setError("숙소 사진을 5장 이상 등록해주세요.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -217,13 +224,26 @@ export default function NewListing() {
           rentalUnit: form.rentalUnit,
           buildingType: form.buildingType,
           sharedFacilities: form.sharedFacilities,
+          genderPolicy: form.rentalUnit === "whole" ? "any" : form.gender,
+          petsAllowed: form.petsAllowed,
+          smokingAllowed: form.smokingAllowed,
+          parking: form.parking,
+          amenities,
           monthlyRent: Number(form.monthlyRent),
           deposit: Number(form.deposit),
           cleaningFee: Number(form.cleaningFee),
           maintenanceFee: Number(form.maintenanceFee),
           minStayMonths: Number(form.minStay),
-          capacity: form.rentalUnit === "bed" ? Number(form.capacity) : null,
-          bedrooms: form.bedrooms ? Number(form.bedrooms) : null,
+          capacity:
+            form.rentalUnit === "bed"
+              ? Number(form.capacity)
+              : form.rentalUnit === "private_room"
+                ? 1
+                : null,
+          bedrooms:
+            form.rentalUnit === "whole" && form.bedrooms
+              ? Number(form.bedrooms)
+              : null,
           availableFrom: form.availableFrom,
           address: {
             city: form.city,
@@ -271,7 +291,7 @@ export default function NewListing() {
       setUpgrading(false);
     }
   }
-  function toggleAmenity(a: string) {
+  function toggleAmenity(a: AmenityKey) {
     setAmenities((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
   }
   function toggleSharedFacility(facility: SharedFacility) {
@@ -346,7 +366,7 @@ export default function NewListing() {
       </p>
 
       {/* 사진 업로드 */}
-      <Section title="사진" hint="최대 8장 · 첫 번째 사진이 대표 이미지가 됩니다">
+      <Section title="사진" hint={`최소 5장 · 최대 8장 · 현재 ${photos.length}장 · 첫 번째 사진이 대표 이미지가 됩니다`}>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <input
             value={photoUrl}
@@ -475,8 +495,11 @@ export default function NewListing() {
                 setValue("rentalUnit", rentalUnit, { shouldValidate: true, shouldDirty: true });
                 if (rentalUnit === "whole") {
                   setValue("sharedFacilities", [], { shouldValidate: true, shouldDirty: true });
-                }
-                if (rentalUnit === "bed" && Number(v.capacity ?? 0) < 2) {
+                  setValue("gender", "any", { shouldValidate: true, shouldDirty: true });
+                  setValue("capacity", undefined, { shouldValidate: true, shouldDirty: true });
+                } else if (rentalUnit === "private_room") {
+                  setValue("capacity", 1, { shouldValidate: true, shouldDirty: true });
+                } else if (Number(v.capacity ?? 0) < 2) {
                   setValue("capacity", 2, { shouldValidate: true, shouldDirty: true });
                 }
               }}
@@ -538,6 +561,12 @@ export default function NewListing() {
             </Field>
           )}
 
+          {v.rentalUnit === "private_room" && (
+            <p style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+              공유형·개인실은 개인 침실 1개를 한 명이 사용하므로 최대 입주 인원은 1명으로 고정됩니다.
+            </p>
+          )}
+
           {v.rentalUnit === "bed" && (
             <Field label="최대 수용 인원 (명)" error={errors.capacity?.message}>
               <input
@@ -550,15 +579,40 @@ export default function NewListing() {
             </Field>
           )}
 
-          <Field label="성별 조건">
-            <div style={{ display: "flex", gap: 8 }}>
-              {GENDERS.map((g) => (
-                <button key={g} type="button" className="chip" data-active={v.gender === g} onClick={() => setValue("gender", g)} style={{ flex: 1, justifyContent: "center" }}>
-                  {GENDER_LABELS[g]}
-                </button>
-              ))}
-            </div>
-          </Field>
+          {v.rentalUnit === "whole" && (
+            <Field label="방 개수" error={errors.bedrooms?.message}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className="chip"
+                    data-active={v.bedrooms === n}
+                    onClick={() =>
+                      setValue("bedrooms", v.bedrooms === n ? undefined : n, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                  >
+                    {n}개{n === 5 ? " 이상" : ""}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+
+          {v.rentalUnit !== "whole" && (
+            <Field label="성별 조건">
+              <div style={{ display: "flex", gap: 8 }}>
+                {GENDERS.map((g) => (
+                  <button key={g} type="button" className="chip" data-active={v.gender === g} onClick={() => setValue("gender", g, { shouldDirty: true })} style={{ flex: 1, justifyContent: "center" }}>
+                    {GENDER_LABELS[g]}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
         </div>
       </Section>
 
@@ -614,48 +668,50 @@ export default function NewListing() {
         </div>
       </Section>
 
-      {/* 편의시설 */}
-      <Section title="편의시설">
-        {/* 방 개수 — 편의시설과 함께 고르지만 태그가 아니라 숫자로 저장한다.
-            그래야 검색에서 "방 2개 이상" 같은 조건을 걸 수 있다. */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>
-            방 개수
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                className="chip"
-                data-active={v.bedrooms === n}
-                onClick={() =>
-                  setValue("bedrooms", v.bedrooms === n ? undefined : n, {
-                    shouldDirty: true,
-                  })
-                }
-              >
-                {n}개{n === 5 ? " 이상" : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>
-          시설
+      {/* 편의시설 및 이용 조건 */}
+      <Section title="시설 및 이용 조건" hint="모두 선택 항목이며 검색 필터와 동일한 기준으로 사용됩니다">
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 8 }}>
+          편의시설
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {AMENITIES.map((a) => (
+          {AMENITY_OPTIONS.map((option) => (
             <button
-              key={a}
+              key={option.key}
               type="button"
               className="chip"
-              data-active={amenities.includes(a)}
-              onClick={() => toggleAmenity(a)}
+              data-active={amenities.includes(option.key)}
+              onClick={() => toggleAmenity(option.key)}
             >
-              {getAmenityLabel(a)}
+              {option.label}
             </button>
           ))}
+        </div>
+
+        <div style={{ marginTop: 18, fontSize: 13, fontWeight: 600, color: "var(--text-2)", marginBottom: 8 }}>
+          이용 조건
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <BooleanChoice
+            label="반려동물 동반"
+            value={Boolean(v.petsAllowed)}
+            trueLabel="허용"
+            falseLabel="불가"
+            onChange={(value) => setValue("petsAllowed", value, { shouldDirty: true, shouldValidate: true })}
+          />
+          <BooleanChoice
+            label="흡연"
+            value={Boolean(v.smokingAllowed)}
+            trueLabel="허용"
+            falseLabel="금연"
+            onChange={(value) => setValue("smokingAllowed", value, { shouldDirty: true, shouldValidate: true })}
+          />
+          <BooleanChoice
+            label="주차"
+            value={Boolean(v.parking)}
+            trueLabel="가능"
+            falseLabel="불가"
+            onChange={(value) => setValue("parking", value, { shouldDirty: true, shouldValidate: true })}
+          />
         </div>
       </Section>
 
@@ -693,11 +749,11 @@ export default function NewListing() {
           justifyContent: "center",
           opacity: saving ? 0.6 : 1,
         }}
-        disabled={saving}
+        disabled={saving || photos.length < 5}
       >
         {saving ? "등록 중…" : "숙소 등록하기"}
       </button>
-      {!isValid && <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 8, textAlign: "center" }}>필수 항목을 올바르게 입력하면 등록할 수 있어요.</p>}
+      {(!isValid || photos.length < 5) && <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 8, textAlign: "center" }}>{photos.length < 5 ? `사진을 ${5 - photos.length}장 더 등록해주세요.` : "필수 항목을 올바르게 입력하면 등록할 수 있어요."}</p>}
     </form>
   );
 }
@@ -721,6 +777,33 @@ function Field({ label, error, children }: { label: string; error?: string; chil
       {children}
       {error && <div style={{ fontSize: 12, color: "var(--primary)", marginTop: 4 }}>{error}</div>}
     </label>
+  );
+}
+
+
+function BooleanChoice({
+  label,
+  value,
+  trueLabel,
+  falseLabel,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  trueLabel: string;
+  falseLabel: string;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 8, alignItems: "center" }}>
+      <span style={{ fontSize: 13, color: "var(--text-2)" }}>{label}</span>
+      <button type="button" className="chip" data-active={value} onClick={() => onChange(true)} style={{ justifyContent: "center" }}>
+        {trueLabel}
+      </button>
+      <button type="button" className="chip" data-active={!value} onClick={() => onChange(false)} style={{ justifyContent: "center" }}>
+        {falseLabel}
+      </button>
+    </div>
   );
 }
 

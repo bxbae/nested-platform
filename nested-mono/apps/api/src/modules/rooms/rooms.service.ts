@@ -36,6 +36,7 @@ export interface RoomSearchQuery {
   rentalUnits?: string[];
   buildingTypes?: string[];
   sharedFacilities?: string[];
+  amenities?: string[];
   minRent?: number;
   maxRent?: number;
   availableFrom?: string; // ISO date; room must be available on/before this
@@ -62,6 +63,59 @@ export interface RoomSearchQuery {
 // 방이다. 목록에서 "입주 중"으로 표시해 헛걸음을 줄인다. 방을 목록에서 빼지는
 // 않는다 — 나중 날짜로는 들어갈 수 있기 때문이다.
 const OCCUPYING_STATUSES = INVENTORY_QUERY_STATUSES;
+
+const MANAGED_AMENITY_KEYS = new Set([
+  "wifi",
+  "laundry",
+  "aircon",
+  "desk",
+  "weekly_cleaning",
+  "gym",
+  "rooftop",
+  "garden",
+  "parcel_locker",
+  "elevator",
+  "step_free_access",
+  // 주차는 신규 UI에서 Boolean으로 관리하므로 사용자가 변경하면 기존 관계를 제거합니다.
+  "parking",
+]);
+
+const AMENITY_CATALOG: Record<string, { label: string; icon: string }> = {
+  wifi: { label: "초고속 와이파이", icon: "wifi" },
+  laundry: { label: "세탁시설", icon: "washer" },
+  aircon: { label: "냉난방", icon: "thermometer" },
+  desk: { label: "코워킹 공간", icon: "desk" },
+  weekly_cleaning: { label: "주 1회 청소", icon: "sparkles" },
+  gym: { label: "헬스장", icon: "dumbbell" },
+  rooftop: { label: "루프탑", icon: "sun" },
+  garden: { label: "정원·테라스", icon: "leaf" },
+  parcel_locker: { label: "무인 택배함", icon: "package" },
+  elevator: { label: "엘리베이터", icon: "elevator" },
+  step_free_access: { label: "무단차 출입 가능", icon: "accessibility" },
+  // 기존 시드/운영 데이터 관계를 수정 시 그대로 보존하기 위한 호환 키입니다.
+  kitchen: { label: "공용 주방", icon: "kitchen" },
+  parking: { label: "주차 가능", icon: "car" },
+};
+
+function amenityCreates(
+  keys: string[],
+  existingCatalog: Record<string, { label: string; icon: string | null }> = {},
+) {
+  return [...new Set(keys)].map((key) => {
+    const catalog = AMENITY_CATALOG[key] ?? existingCatalog[key];
+    if (!catalog) {
+      throw new BadRequestException(`지원하지 않는 편의시설입니다: ${key}`);
+    }
+    return {
+      amenity: {
+        connectOrCreate: {
+          where: { key },
+          create: { key, label: catalog.label, icon: catalog.icon },
+        },
+      },
+    };
+  });
+}
 
 function appendAnd(where: Record<string, any>, clause: Record<string, any>) {
   where.AND = [...(Array.isArray(where.AND) ? where.AND : []), clause];
@@ -327,6 +381,14 @@ export class RoomsService {
       where.sharedFacilities = { hasEvery: query.sharedFacilities };
     }
 
+    if (query.amenities?.length) {
+      for (const key of query.amenities) {
+        appendAnd(where, {
+          amenities: { some: { amenity: { key } } },
+        });
+      }
+    }
+
     if (query.q) {
       const term = query.q.trim();
       appendAnd(where, {
@@ -342,7 +404,18 @@ export class RoomsService {
     if (query.petsAllowed !== undefined) where.petsAllowed = query.petsAllowed;
     if (query.smokingAllowed !== undefined)
       where.smokingAllowed = query.smokingAllowed;
-    if (query.parking !== undefined) where.parking = query.parking;
+    if (query.parking !== undefined) {
+      // 운영 초기 시드에는 parking이 Amenity 관계에만 저장된 숙소가 있어
+      // 신규 Boolean 필드와 기존 관계를 모두 인정합니다.
+      appendAnd(where, {
+        OR: [
+          { parking: query.parking },
+          ...(query.parking
+            ? [{ amenities: { some: { amenity: { key: "parking" } } } }]
+            : []),
+        ],
+      });
+    }
     if (query.availableFrom)
       where.availableFrom = { lte: new Date(query.availableFrom) };
 
@@ -869,6 +942,7 @@ export class RoomsService {
       orderBy: { createdAt: "desc" },
       include: {
         images: { orderBy: { order: "asc" } },
+        amenities: { include: { amenity: true } },
         _count: { select: { reservations: true } },
       },
     });
@@ -995,6 +1069,7 @@ export class RoomsService {
   async create(hostId: string, data: any) {
     const {
       images = [],
+      amenities = [],
       roadAddress,
       jibunAddress = "",
       detailAddress = "",
@@ -1027,7 +1102,9 @@ export class RoomsService {
         ? rest.capacity
         : rest.rentalUnit === "BED"
           ? rest.capacity
-          : null;
+          : rest.rentalUnit === "PRIVATE_ROOM"
+            ? 1
+            : null;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const room = await tx.room.create({
@@ -1056,6 +1133,9 @@ export class RoomsService {
               url,
               order,
             })),
+          },
+          amenities: {
+            create: amenityCreates(amenities as string[]),
           },
         },
         include: {
@@ -1098,13 +1178,30 @@ export class RoomsService {
 
   // ── Update (host-scoped) ──
   async update(hostId: string, id: string, data: any) {
-    const room = await this.prisma.room.findUnique({ where: { id } });
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      include: { amenities: { include: { amenity: true } } },
+    });
     if (!room) throw new NotFoundException("숙소를 찾을 수 없습니다.");
     if (room.hostId !== hostId)
       throw new ForbiddenException("본인 숙소만 수정할 수 있습니다.");
     await this.redis.cacheSet(`room:${id}`, null, 1); // invalidate
 
-    const { images, ...rest } = data;
+    const { images, amenities, ...rest } = data;
+    const existingAmenityCatalog = Object.fromEntries(
+      room.amenities.map(({ amenity }) => [
+        amenity.key,
+        { label: amenity.label, icon: amenity.icon },
+      ]),
+    );
+    // 편의시설을 수정해도 신규 UI에서 관리하지 않는 기존 관계는 보존합니다.
+    // 예: 과거 시드의 kitchen 또는 향후 추가된 별도 편의시설.
+    const preservedAmenityKeys = room.amenities
+      .map(({ amenity }) => amenity.key)
+      .filter((key) => !MANAGED_AMENITY_KEYS.has(key));
+    const nextAmenityKeys = amenities
+      ? [...preservedAmenityKeys, ...(amenities as string[])]
+      : undefined;
     const nextRentalUnit = rest.rentalUnit ?? room.rentalUnit;
     const nextBuildingType = rest.buildingType ?? room.buildingType;
     const nextSharedFacilities = rest.sharedFacilities ?? room.sharedFacilities;
@@ -1134,7 +1231,9 @@ export class RoomsService {
         throw new BadRequestException("공유 시설을 하나 이상 선택해주세요.");
       }
       rest.roomType = deriveLegacyRoomType(nextRentalUnit, nextBuildingType);
-      if (nextRentalUnit !== "BED") {
+      if (nextRentalUnit === "PRIVATE_ROOM") {
+        rest.capacity = 1;
+      } else if (nextRentalUnit !== "BED") {
         rest.capacity = null;
       }
       // 분류 세 축이 유효하게 저장된 경우에만 검토 필요 상태를 해제한다.
@@ -1161,6 +1260,17 @@ export class RoomsService {
                   url,
                   order,
                 })),
+              },
+            }
+          : {}),
+        ...(nextAmenityKeys
+          ? {
+              amenities: {
+                deleteMany: {},
+                create: amenityCreates(
+                  nextAmenityKeys,
+                  existingAmenityCatalog,
+                ),
               },
             }
           : {}),

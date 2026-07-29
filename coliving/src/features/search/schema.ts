@@ -6,7 +6,9 @@ import type {
   GenderPolicy,
   SortKey,
   SearchParams,
+  AmenityKey,
 } from "@/lib/types";
+import { AMENITY_KEYS } from "@/lib/amenities";
 
 // Default filter state. Mirrors ARCHITECTURE.md: URL is the source of truth,
 // this is the shape we serialize to/from the query string.
@@ -20,6 +22,7 @@ export const DEFAULT_FILTERS: SearchParams = {
   rentalUnits: [],
   buildingTypes: [],
   sharedFacilities: [],
+  amenities: [],
   minRent: 500000,
   maxRent: 1100000,
   availableFrom: "",
@@ -33,6 +36,40 @@ export const DEFAULT_FILTERS: SearchParams = {
 export const RENT_MIN = 500000;
 export const RENT_MAX = 1100000;
 
+
+export function normalizeRentalUnitFilters(filters: SearchParams): SearchParams {
+  const units = filters.rentalUnits ?? [];
+  const wholeOnly = units.length > 0 && units.every((unit) => unit === "whole");
+  const sharedOnly = units.length > 0 && units.every((unit) => unit !== "whole");
+  const bedOnly = units.length > 0 && units.every((unit) => unit === "bed");
+
+  if (wholeOnly) {
+    return {
+      ...filters,
+      sharedFacilities: [],
+      minCapacity: undefined,
+      gender: "any",
+    };
+  }
+
+  if (sharedOnly) {
+    return {
+      ...filters,
+      minBedrooms: undefined,
+      minCapacity: bedOnly ? filters.minCapacity : undefined,
+    };
+  }
+
+  // 전체 또는 단독형·공유형을 섞어 고른 경우에는 유형별 조건을 적용하지 않습니다.
+  return {
+    ...filters,
+    sharedFacilities: [],
+    minCapacity: undefined,
+    minBedrooms: undefined,
+    gender: "any",
+  };
+}
+
 const ROOM_TYPES: RoomType[] = ["one_room", "share_room", "whole_house", "apartment"];
 const RENTAL_UNITS: RentalUnit[] = ["whole", "private_room", "bed"];
 const BUILDING_TYPES: BuildingType[] = ["studio", "apartment", "officetel", "house"];
@@ -44,6 +81,7 @@ const SHARED_FACILITIES: SharedFacility[] = [
   "entrance",
 ];
 const GENDERS: GenderPolicy[] = ["any", "male_only", "female_only"];
+const AMENITIES: AmenityKey[] = [...AMENITY_KEYS];
 const SORTS: SortKey[] = ["recommended", "price_asc", "price_desc", "rating", "newest"];
 
 function parseList<T extends string>(value: string | null, allowed: readonly T[]): T[] {
@@ -83,6 +121,7 @@ export function filtersToParams(f: SearchParams): URLSearchParams {
   if (f.rentalUnits?.length) p.set("rentalUnits", f.rentalUnits.join(","));
   if (f.buildingTypes?.length) p.set("buildingTypes", f.buildingTypes.join(","));
   if (f.sharedFacilities?.length) p.set("sharedFacilities", f.sharedFacilities.join(","));
+  if (f.amenities?.length) p.set("amenities", f.amenities.join(","));
   if (f.minRent != null && f.minRent > RENT_MIN) p.set("minRent", String(f.minRent));
   if (f.maxRent != null && f.maxRent < RENT_MAX) p.set("maxRent", String(f.maxRent));
   if (f.availableFrom) p.set("availableFrom", f.availableFrom);
@@ -110,6 +149,7 @@ export function paramsToFilters(sp: URLSearchParams): SearchParams {
     rentalUnits: parseList(sp.get("rentalUnits"), RENTAL_UNITS),
     buildingTypes: parseList(sp.get("buildingTypes"), BUILDING_TYPES),
     sharedFacilities: parseList(sp.get("sharedFacilities"), SHARED_FACILITIES),
+    amenities: parseList(sp.get("amenities"), AMENITIES),
     minRent: parseNumber(sp.get("minRent"), RENT_MIN),
     maxRent: parseNumber(sp.get("maxRent"), RENT_MAX),
     availableFrom: sp.get("availableFrom") ?? "",
@@ -135,6 +175,7 @@ export function activeFilterCount(f: SearchParams): number {
   if (f.rentalUnits?.length) n++;
   if (f.buildingTypes?.length) n++;
   if (f.sharedFacilities?.length) n++;
+  if (f.amenities?.length) n++;
   if ((f.minRent ?? RENT_MIN) > RENT_MIN || (f.maxRent ?? RENT_MAX) < RENT_MAX) n++;
   if (f.availableFrom) n++;
   if (f.minCapacity) n++;
