@@ -68,10 +68,15 @@ export function Nav() {
   ];
 
   const [authOpen, setAuthOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const displayName =
     user?.nicknameCompleted === false ? t.nicknameSetup : (user?.name ?? t.my);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -361,7 +366,7 @@ export function Nav() {
           <LanguageToggle />
           <ThemeToggle />
 
-          {isAuthenticated ? (
+          {mounted && isAuthenticated ? (
             <>
               <Link
                 href="/me"
