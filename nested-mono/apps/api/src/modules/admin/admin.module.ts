@@ -98,7 +98,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
-  ) {}
+  ) { }
 
   // role 필터는 DB where에서 처리하고, tier(등급)는 계산 필드라
   // JS에서 필터/정렬/페이징한다. 기존에 있던 take: 100 상한선은 페이징이
@@ -169,8 +169,8 @@ export class AdminService {
       const avgRating =
         reviewCount > 0
           ? Math.round(
-              (tenantReviewsReceived.reduce((sum, r) => sum + r.rating, 0) / reviewCount) * 10,
-            ) / 10
+            (tenantReviewsReceived.reduce((sum, r) => sum + r.rating, 0) / reviewCount) * 10,
+          ) / 10
           : null;
 
       return {
@@ -493,8 +493,8 @@ export class AdminService {
     const [rows, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
-      orderBy: { createdAt: "desc" },
-      include: { reporter: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        include: { reporter: { select: { name: true } } },
         take,
         skip,
       }),
@@ -520,45 +520,45 @@ export class AdminService {
       // 위해 그 방 호스트의 닉네임을 보여준다.
       idsByType.ROOM.length
         ? this.prisma.room.findMany({
-            where: { id: { in: idsByType.ROOM } },
-            select: { id: true, host: { select: { name: true } } },
-          })
+          where: { id: { in: idsByType.ROOM } },
+          select: { id: true, host: { select: { name: true } } },
+        })
         : [],
       idsByType.REVIEW.length
         ? this.prisma.review.findMany({
-            where: { id: { in: idsByType.REVIEW } },
-            select: { id: true, author: { select: { name: true } } },
-          })
+          where: { id: { in: idsByType.REVIEW } },
+          select: { id: true, author: { select: { name: true } } },
+        })
         : [],
       idsByType.USER.length
         ? this.prisma.user.findMany({ where: { id: { in: idsByType.USER } }, select: { id: true, name: true } })
         : [],
       idsByType.COMMUNITY_POST.length
         ? this.prisma.post.findMany({
-            where: { id: { in: idsByType.COMMUNITY_POST } },
-            select: { id: true, author: { select: { name: true } } },
-          })
+          where: { id: { in: idsByType.COMMUNITY_POST } },
+          select: { id: true, author: { select: { name: true } } },
+        })
         : [],
       idsByType.COMMUNITY_COMMENT.length
         ? this.prisma.comment.findMany({
-            where: { id: { in: idsByType.COMMUNITY_COMMENT } },
-            select: { id: true, author: { select: { name: true } } },
-          })
+          where: { id: { in: idsByType.COMMUNITY_COMMENT } },
+          select: { id: true, author: { select: { name: true } } },
+        })
         : [],
       // MESSAGE는 채팅방 메시지(Message)일 수도, 1:1 다이렉트 메시지
       // (DirectMessage)일 수도 있다 — reportedUserId()와 같은 이유로
       // 두 테이블 다 조회해서 먼저 걸리는 쪽을 쓴다.
       idsByType.MESSAGE.length
         ? this.prisma.message.findMany({
-            where: { id: { in: idsByType.MESSAGE } },
-            select: { id: true, sender: { select: { name: true } } },
-          })
+          where: { id: { in: idsByType.MESSAGE } },
+          select: { id: true, sender: { select: { name: true } } },
+        })
         : [],
       idsByType.MESSAGE.length
         ? this.prisma.directMessage.findMany({
-            where: { id: { in: idsByType.MESSAGE } },
-            select: { id: true, sender: { select: { name: true } } },
-          })
+          where: { id: { in: idsByType.MESSAGE } },
+          select: { id: true, sender: { select: { name: true } } },
+        })
         : [],
     ]);
 
@@ -672,11 +672,11 @@ export class AdminService {
       }),
       ...(post?.deletedAt
         ? [
-            this.prisma.post.update({
-              where: { id: comment.postId },
-              data: { deletedAt: null },
-            }),
-          ]
+          this.prisma.post.update({
+            where: { id: comment.postId },
+            data: { deletedAt: null },
+          }),
+        ]
         : []),
     ]);
     return { ok: true, restoredPost: !!post?.deletedAt };
@@ -955,23 +955,23 @@ export class AdminService {
       const updated =
         target === "REPORTER"
           ? await tx.report.updateMany({
-              where: {
-                id: reportId,
-                reporterNotifiedAt: null,
-              },
-              data: {
-                reporterNotifiedAt: now,
-              },
-            })
+            where: {
+              id: reportId,
+              reporterNotifiedAt: null,
+            },
+            data: {
+              reporterNotifiedAt: now,
+            },
+          })
           : await tx.report.updateMany({
-              where: {
-                id: reportId,
-                reportedNotifiedAt: null,
-              },
-              data: {
-                reportedNotifiedAt: now,
-              },
-            });
+            where: {
+              id: reportId,
+              reportedNotifiedAt: null,
+            },
+            data: {
+              reportedNotifiedAt: now,
+            },
+          });
 
       if (updated.count === 0) {
         throw new BadRequestException({
@@ -1028,6 +1028,7 @@ export class AdminService {
     const yesterdayStart = new Date(todayStart);
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
     const between = (from: Date, to: Date) => ({ gte: from, lt: to });
     const CANCELLED = ["CANCELLED_BY_GUEST", "CANCELLED_BY_HOST"] as const;
@@ -1046,9 +1047,16 @@ export class AdminService {
       ydayReports,
       ydayCancels,
       monthPaidAgg,
+      lastMonthPaidAgg,
       hostCount,
+      lastMonthMembers,
+      lastMonthHosts,
+      lastMonthRooms,
+      roomCount,
+      memberCount,
       ratingAgg,
       reservationsByStatus,
+      checkedOutConfirmed,
     ] = await Promise.all([
       this.prisma.reservation.count({ where: { createdAt: between(todayStart, now) } }),
       this.prisma.user.count({ where: { createdAt: between(todayStart, now) } }),
@@ -1070,11 +1078,32 @@ export class AdminService {
         _sum: { amount: true },
         where: { status: "PAID", createdAt: { gte: monthStart } },
       }),
+      // 지난 달(전체) 매출 — 이번 달 매출/순수익/GMV/수수료 카드가 다
+      // 같은 매출 흐름에서 나온 숫자라, "지난달 대비"는 이 하나의 매출
+      // 비교값을 공유해서 쓴다.
+      this.prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: { status: "PAID", createdAt: { gte: lastMonthStart, lt: monthStart } },
+      }),
       this.prisma.user.count({ where: { role: "HOST" } }),
+      // 회원/호스트/숙소 "지난달 대비"는 지난달이 시작하던 시점에 이미
+      // 존재했던 개수와, 지금 총개수를 비교한다.
+      this.prisma.user.count({ where: { createdAt: { lt: monthStart } } }),
+      this.prisma.user.count({ where: { role: "HOST", createdAt: { lt: monthStart } } }),
+      this.prisma.room.count({ where: { createdAt: { lt: monthStart } } }),
+      this.prisma.room.count(),
+      this.prisma.user.count(),
       this.prisma.review.aggregate({ _avg: { rating: true } }),
       this.prisma.reservation.groupBy({
         by: ["status"],
         _count: { _all: true },
+      }),
+      // 정산 지연 — 체크아웃은 끝났는데 아직 CONFIRMED로 남아있는 예약.
+      // 정산 예정일(체크아웃 다음 달 25일) 계산은 JS에서 하는 게 더
+      // 명확해서, 대상 후보만 넉넉히 가져와 아래에서 걸러낸다.
+      this.prisma.reservation.findMany({
+        where: { status: "CONFIRMED", checkOut: { lte: now } },
+        select: { checkOut: true },
       }),
     ]);
 
@@ -1082,6 +1111,16 @@ export class AdminService {
       yesterday === 0 ? null : Math.round(((today - yesterday) / yesterday) * 100);
 
     const monthRevenue = monthPaidAgg._sum.amount ?? 0;
+    const lastMonthRevenue = lastMonthPaidAgg._sum.amount ?? 0;
+
+    // 핵심 KPI 카드용 "지난달 대비". GMV/수수료수익/이번달매출/이번달
+    // 순수익은 전부 같은 매출 흐름에서 나온 숫자라 revenueDeltaPct 하나를
+    // 같이 쓴다 — GMV·수수료는 누적값이라 엄밀한 "성장률"은 아니고,
+    // "이번 달 매출 흐름이 지난달 대비 어떤지"를 보여주는 근사치다.
+    const revenueDeltaPct = delta(monthRevenue, lastMonthRevenue);
+    const membersDeltaPct = delta(memberCount, lastMonthMembers);
+    const hostsDeltaPct = delta(hostCount, lastMonthHosts);
+    const roomsDeltaPct = delta(roomCount, lastMonthRooms);
 
     const statusCount: Record<string, number> = {};
     for (const row of reservationsByStatus) {
@@ -1089,6 +1128,15 @@ export class AdminService {
     }
     const sumStatus = (...keys: string[]) =>
       keys.reduce((acc, k) => acc + (statusCount[k] ?? 0), 0);
+
+    // 정산 예정일 = 체크아웃 다음 달 25일 (/admin/revenue 카드에 안내된
+    // 것과 같은 규칙). 그 날짜가 이미 지났는데 아직 CONFIRMED로 남아
+    // 있으면 "지연"이다 — 정상적으로 나갈 예정인 정산까지 세면 항상 큰
+    // 숫자가 떠서 "처리해야 할 업무"로서 의미가 없어진다.
+    const settlementDelayed = checkedOutConfirmed.filter((r) => {
+      const payoutDue = new Date(r.checkOut.getFullYear(), r.checkOut.getMonth() + 1, 25);
+      return payoutDue <= now;
+    }).length;
 
     return {
       today: {
@@ -1115,6 +1163,13 @@ export class AdminService {
         completed: statusCount["COMPLETED"] ?? 0,
         cancelled: sumStatus("CANCELLED_BY_GUEST", "CANCELLED_BY_HOST"),
         noShow: statusCount["NO_SHOW"] ?? 0,
+      },
+      settlementDelayed,
+      kpiDelta: {
+        revenue: revenueDeltaPct,
+        members: membersDeltaPct,
+        hosts: hostsDeltaPct,
+        rooms: roomsDeltaPct,
       },
     };
   }
@@ -1163,22 +1218,35 @@ export class AdminService {
       granularity === "day" ? 86_400_000 : granularity === "week" ? 7 * 86_400_000 : 30 * 86_400_000;
     const start = new Date(now.getTime() - periods * msPerPeriod);
 
-    const [paymentRows, reservationRows] = await Promise.all([
+    const [paymentRows, reservationRows, couponRows] = await Promise.all([
       this.prisma.$queryRawUnsafe<{ bucket: Date; paid: bigint }[]>(
         `SELECT date_trunc('${bucket}', "createdAt") AS bucket,
-                COALESCE(SUM(CASE WHEN "status" = 'PAID' THEN "amount" ELSE 0 END), 0) AS paid
-         FROM "Payment"
-         WHERE "createdAt" >= $1
-         GROUP BY 1
-         ORDER BY 1`,
+            COALESCE(SUM(CASE WHEN "status" = 'PAID' THEN "amount" ELSE 0 END), 0) AS paid
+     FROM "Payment"
+     WHERE "createdAt" >= $1
+     GROUP BY 1
+     ORDER BY 1`,
         start,
       ),
       this.prisma.$queryRawUnsafe<{ bucket: Date; count: bigint }[]>(
         `SELECT date_trunc('${bucket}', "createdAt") AS bucket, COUNT(*) AS count
-         FROM "Reservation"
-         WHERE "createdAt" >= $1
-         GROUP BY 1
-         ORDER BY 1`,
+     FROM "Reservation"
+     WHERE "createdAt" >= $1
+     GROUP BY 1
+     ORDER BY 1`,
+        start,
+      ),
+      // 쿠폰 할인액도 같은 버킷으로 — /admin/revenue의 "실제 순수익"(수수료 -
+      // 쿠폰 할인액)이랑 같은 정의를 여기서도 쓴다. Payment 기준으로 묶어야
+      // 위 매출 집계랑 같은 시점 기준으로 맞는다.
+      this.prisma.$queryRawUnsafe<{ bucket: Date; discount: bigint }[]>(
+        `SELECT date_trunc('${bucket}', p."createdAt") AS bucket,
+            COALESCE(SUM(r."discount"), 0) AS discount
+     FROM "Reservation" r
+     JOIN "Payment" p ON p."reservationId" = r.id
+     WHERE p.status = 'PAID' AND r."couponId" IS NOT NULL AND p."createdAt" >= $1
+     GROUP BY 1
+     ORDER BY 1`,
         start,
       ),
     ]);
@@ -1190,10 +1258,20 @@ export class AdminService {
       granularity === "month"
         ? `${d.getFullYear()}-${d.getMonth()}`
         : `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    // const paidByBucket = new Map(paymentRows.map((r) => [key(new Date(r.bucket)), Number(r.paid)]));
+    // const reservationsByBucket = new Map(reservationRows.map((r) => [key(new Date(r.bucket)), Number(r.count)]));
     const paidByBucket = new Map(paymentRows.map((r) => [key(new Date(r.bucket)), Number(r.paid)]));
     const reservationsByBucket = new Map(reservationRows.map((r) => [key(new Date(r.bucket)), Number(r.count)]));
+    const couponByBucket = new Map(couponRows.map((r) => [key(new Date(r.bucket)), Number(r.discount)]));
 
-    const trend: { label: string; day: number; revenue: number; reservations: number }[] = [];
+    const trend: {
+      label: string;
+      day: number;
+      revenue: number;
+      reservations: number;
+      commission: number;
+      netProfit: number;
+    }[] = [];
     for (let i = periods - 1; i >= 0; i--) {
       let d: Date;
       if (granularity === "month") {
@@ -1208,14 +1286,89 @@ export class AdminService {
       }
       const label =
         granularity === "month" ? `${d.getMonth() + 1}월` : granularity === "day" ? `${d.getDate()}일` : `${d.getMonth() + 1}/${d.getDate()}`;
+      const revenue = paidByBucket.get(key(d)) ?? 0;
+      // 수수료 = 매출의 5%(플랫폼 정책). 순수익은 대시보드 KPI 카드의
+      // "이번 달 순수익"(=수수료와 같은 값, 어림계산)과는 다르게, 여기선
+      // "매출에서 수수료를 뗀 나머지"로 정의한다 — 세 선이 서로 겹치지
+      // 않고 각자 의미 있는 값을 보여주려면 이렇게 나눠야 한다.
+      const commission = Math.round(revenue * 0.05);
+      const couponDiscount = couponByBucket.get(key(d)) ?? 0;
       trend.push({
         label,
         day: d.getDate(),
-        revenue: paidByBucket.get(key(d)) ?? 0,
+        revenue,
         reservations: reservationsByBucket.get(key(d)) ?? 0,
+        commission,
+        // /admin/revenue의 "실제 순수익"과 같은 정의: 수수료 수익 - 쿠폰
+        // 할인액(사이트 부담). 쿠폰 할인이 수수료보다 크면 음수가 될 수 있고,
+        // 이건 실제로 그 기간에 손해를 봤다는 뜻이라 그대로 보여준다.
+        netProfit: commission - couponDiscount,
       });
     }
     return trend;
+  }
+
+  // 매출 관리 페이지 — 정산 지연 내역 목록. dashboardSummary()의
+  // settlementDelayed 건수랑 같은 기준(체크아웃 + 정산예정일 둘 다 지남,
+  // status는 여전히 CONFIRMED)으로 실제 어떤 예약들인지 보여준다.
+  async settlementDelayedList() {
+    const now = new Date();
+    const candidates = await this.prisma.reservation.findMany({
+      where: { status: "CONFIRMED", checkOut: { lte: now } },
+      select: {
+        id: true,
+        checkOut: true,
+        monthlyRent: true,
+        months: true,
+        room: { select: { name: true, host: { select: { name: true } } } },
+        guest: { select: { name: true } },
+      },
+      orderBy: { checkOut: "asc" },
+    });
+
+    return candidates
+      .map((r) => {
+        const payoutDue = new Date(r.checkOut.getFullYear(), r.checkOut.getMonth() + 1, 25);
+        const daysOverdue = Math.floor((now.getTime() - payoutDue.getTime()) / 86_400_000);
+        return {
+          reservationId: r.id,
+          roomName: r.room.name.trim(),
+          hostName: r.room.host.name,
+          guestName: r.guest.name,
+          checkOut: r.checkOut,
+          payoutDue,
+          amount: Math.round(r.monthlyRent * r.months * 0.95),
+          daysOverdue,
+        };
+      })
+      .filter((r) => r.daysOverdue >= 0)
+      .sort((a, b) => b.daysOverdue - a.daysOverdue);
+  }
+
+  // 정산 지연 내역 표의 "처리 완료" 버튼 — CONFIRMED(체크아웃 지났는데
+  // 아직 정산 안 된 상태)를 COMPLETED로 바꿔서 지연 목록에서 빠지게
+  // 한다. 이미 CONFIRMED가 아니면(중복 클릭 등) 에러로 막는다.
+  async markSettlementComplete(reservationId: string) {
+    const found = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      select: { id: true, status: true },
+    });
+    if (!found) {
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
+    }
+    if (found.status !== "CONFIRMED") {
+      throw new BadRequestException({
+        code: "NOT_CONFIRMED",
+        message: "확정(CONFIRMED) 상태인 예약만 처리 완료할 수 있어요.",
+      });
+    }
+    return this.prisma.reservation.update({
+      where: { id: reservationId },
+      data: { status: "COMPLETED" },
+    });
   }
 
   async monthlyTrend(months = 6) {
@@ -1654,14 +1807,14 @@ const reportNotifySchema = z.object({
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("ADMIN")
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(private readonly admin: AdminService) { }
 
   @Get("stats")
   stats() {
     return this.admin.stats();
   }
 
-@Get("dashboard/summary")
+  @Get("dashboard/summary")
   dashboardSummary() {
     return this.admin.dashboardSummary();
   }
@@ -1826,6 +1979,18 @@ export class AdminController {
     return this.admin.monthlyTrend(months ? Number(months) : undefined);
   }
 
+  // GET /admin/revenue/settlement-delayed
+  @Get("revenue/settlement-delayed")
+  settlementDelayedList() {
+    return this.admin.settlementDelayedList();
+  }
+
+  // PATCH /admin/revenue/settlement-delayed/:id/complete
+  @Patch("revenue/settlement-delayed/:id/complete")
+  markSettlementComplete(@Param("id") id: string) {
+    return this.admin.markSettlementComplete(id);
+  }
+
   // GET /admin/revenue-trend-v2?granularity=day|week|month — 매출 관리
   // 페이지 차트 전용(토글 가능).
   @Get("revenue-trend-v2")
@@ -1930,7 +2095,7 @@ export class AdminController {
 // Public (no auth): notices for the notices page / home.
 @Controller("notices")
 export class PublicNoticeController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(private readonly admin: AdminService) { }
 
   // GET /notices — anyone can read notices.
   @Get()
@@ -1942,7 +2107,7 @@ export class PublicNoticeController {
 // Public (no auth): active banners for the home screen.
 @Controller("banners")
 export class PublicBannerController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(private readonly admin: AdminService) { }
 
   // GET /banners — active banners only, ordered.
   @Get()
@@ -1960,4 +2125,4 @@ export class PublicBannerController {
   ],
   providers: [AdminService],
 })
-export class AdminModule {}
+export class AdminModule { }

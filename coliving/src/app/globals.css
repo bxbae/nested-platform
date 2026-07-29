@@ -264,6 +264,13 @@ textarea {
   box-shadow: var(--shadow-sm);
 }
 
+.admin-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: var(--shadow-xs);
+}
+
 /* ── Glass ──────────────────────────────────────────────────── */
 .glass {
   background: var(--glass);
@@ -336,6 +343,15 @@ input[type="range"] {
 .hover-card:hover {
   transform: translateY(-6px);
   box-shadow: var(--shadow-lg);
+}
+.hover-card-custom {
+  transition:
+    transform 0.1s cubic-bezier(0.2, 0.8, 0.3, 1),
+    box-shadow 0.1s ease;
+  will-change: transform;
+}
+.hover-card-custom:hover {
+  box-shadow: var(--shadow-sm);
 }
 .hover-card:hover .thumb-img {
   transform: scale(1.06);
