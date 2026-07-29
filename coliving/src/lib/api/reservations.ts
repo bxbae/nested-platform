@@ -193,6 +193,40 @@ export async function confirmBooking(input: {
   return { id: r.id, status: r.status };
 }
 
+const DEMO_HIDDEN_RESERVATION_IDS_KEY =
+  "nested:hidden-reservation-list";
+
+function readDemoHiddenReservationIds(): Set<string> {
+  if (typeof window === "undefined") {
+    return new Set();
+  }
+
+  try {
+    const value = window.localStorage.getItem(
+      DEMO_HIDDEN_RESERVATION_IDS_KEY,
+    );
+    const ids = value ? (JSON.parse(value) as unknown) : [];
+    return new Set(
+      Array.isArray(ids)
+        ? ids.filter((id): id is string => typeof id === "string")
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function writeDemoHiddenReservationIds(ids: Set<string>): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(
+    DEMO_HIDDEN_RESERVATION_IDS_KEY,
+    JSON.stringify([...ids]),
+  );
+}
+
 // ── 공동 예약 초대 (룸메이트와 함께) ─────────────────────────────────
 export type CompanionStatus =
   | "PENDING"
@@ -230,6 +264,8 @@ export interface CompanionInvite {
   } | null;
   totalDueNow: number;
   createdAt: string;
+  /** 예약 원본은 유지하면서 마이페이지 예약 관리 목록에서만 숨긴 상태 */
+  hiddenFromTrips?: boolean;
 }
 
 // GET /reservations/invites — 내가 룸메이트로 초대된 예약들
@@ -240,6 +276,29 @@ export async function listCompanionInvites(): Promise<CompanionInvite[]> {
   } catch {
     return [];
   }
+}
+
+export async function setReservationListHidden(
+  reservationId: string,
+  hidden: boolean,
+): Promise<void> {
+  if (!USE_REAL_API) {
+    const current = readDemoHiddenReservationIds();
+    if (hidden) {
+      current.add(reservationId);
+    } else {
+      current.delete(reservationId);
+    }
+    writeDemoHiddenReservationIds(current);
+    return;
+  }
+
+  await api.patch(
+    `/reservations/${reservationId}/${
+      hidden ? "list-hidden" : "list-visible"
+    }`,
+    {},
+  );
 }
 
 // PATCH /reservations/:id/companion — 초대 수락 / 거절
@@ -283,6 +342,10 @@ export async function cancelBooking(reservationId: string): Promise<void> {
 // ── My trips (예약 내역) ── GET /reservations, adapted to the Booking shape
 // the TripsList UI expects. Demo mode reads the in-repo /api/bookings route.
 import type { Booking } from "@/lib/types";
+
+export interface ManagedBooking extends Booking {
+  hiddenFromTrips?: boolean;
+}
 
 interface ApiContractChange {
   id: string;
@@ -349,6 +412,7 @@ interface ApiReservation {
   bookingMode?: "UNIT" | "BED" | "WHOLE_ROOM";
   reservedSpots?: number;
   createdAt: string;
+  hiddenFromTrips?: boolean;
   room: {
     id: string;
     name: string;
@@ -655,12 +719,20 @@ export async function setHostReservationStatus(
   await api.patch(`/reservations/${id}/host-status`, { status });
 }
 
-export async function listMyBookings(): Promise<Booking[]> {
+export async function listMyBookings(): Promise<ManagedBooking[]> {
   if (!USE_REAL_API) {
     const res = await fetch("/api/bookings");
     if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data) ? data : (data.bookings ?? []);
+    const hiddenIds = readDemoHiddenReservationIds();
+    const rows: Booking[] = Array.isArray(data)
+      ? data
+      : (data.bookings ?? []);
+
+    return rows.map((booking) => ({
+      ...booking,
+      hiddenFromTrips: hiddenIds.has(booking.id),
+    }));
   }
   try {
     const rows = await api.get<ApiReservation[]>("/reservations");
@@ -695,6 +767,7 @@ export async function listMyBookings(): Promise<Booking[]> {
         totalDueNow: companion.totalDueNow ?? 0,
       })),
       createdAt: r.createdAt,
+      hiddenFromTrips: r.hiddenFromTrips === true,
     }));
   } catch {
     return [];
