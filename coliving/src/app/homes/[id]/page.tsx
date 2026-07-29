@@ -85,10 +85,14 @@ export default async function HomeDetail({
 }) {
   const { id } = await params;
   const { hub: hubId, checkIn, checkOut } = await searchParams;
-  const base = await loadHouse(id);
+  // 방 정보와 추천 목록은 서로 의존하지 않으므로 병렬로 가져온다.
+  // (순차로 await 하면 두 요청 시간이 그대로 더해져 체감 로딩이 느렸다.)
+  const [base, similarRooms] = await Promise.all([
+    loadHouse(id),
+    getSimilarRooms(id),
+  ]);
   if (!base) notFound();
   const house = enrichHouse(base);
-  const similarRooms = await getSimilarRooms(id);
 
   const hub = hubId ? jobHubs.find((h) => h.id === hubId) : null;
   const commute = hub ? estimateCommute(house.lat, house.lng, hub.lat, hub.lng) : null;
