@@ -58,7 +58,7 @@ export function QuickCards() {
 
       <div className="stat-row" style={{ marginTop: 14, gridTemplateColumns: "repeat(2, 1fr)" }}>
         <QuickCard href="/me/payments" icon="" label="결제 내역" />
-        <QuickCard href="/me/reviews" icon="" label="리뷰 관리" />
+        <QuickCard href="/me/activity" icon="" label="내 활동" />
       </div>
     </>
   );

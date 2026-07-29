@@ -14,7 +14,7 @@ const items = [
   { href: "/me/payments", label: "결제 내역", icon: "" },
   { href: "/me/coupons", label: "내 쿠폰", icon: "" },
   { href: "/me/notifications", label: "알림", icon: "" },
-  { href: "/me/reviews", label: "리뷰 관리", icon: "" },
+  { href: "/me/activity", label: "내 활동", icon: "" },
   { href: "/support", label: "문의 내역", icon: "" },
   { href: "/me/preference", label: "생활 성향", icon: "" },
   { href: "/me/settings", label: "설정", icon: "" },

@@ -257,6 +257,133 @@ export class CommunityService {
     return { ok: true };
   }
 
+  async getMyActivity(userId: string) {
+    const [posts, comments, replies] = await Promise.all([
+      this.prisma.post.findMany({
+        where: {
+          authorId: userId,
+          deletedAt: null,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+          title: true,
+          category: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: {
+              comments: {
+                where: {
+                  deletedAt: null,
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      this.prisma.comment.findMany({
+        where: {
+          authorId: userId,
+          parentId: null,
+          deletedAt: null,
+          post: {
+            deletedAt: null,
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+          body: true,
+          createdAt: true,
+          updatedAt: true,
+          post: {
+            select: {
+              id: true,
+              title: true,
+              category: true,
+            },
+          },
+        },
+      }),
+
+      this.prisma.comment.findMany({
+        where: {
+          authorId: userId,
+          parentId: {
+            not: null,
+          },
+          deletedAt: null,
+          post: {
+            deletedAt: null,
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+          body: true,
+          createdAt: true,
+          updatedAt: true,
+          parentId: true,
+          parent: {
+            select: {
+              body: true,
+            },
+          },
+          post: {
+            select: {
+              id: true,
+              title: true,
+              category: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      posts: posts.map((post) => ({
+        id: post.id,
+        title: post.title,
+        category: post.category,
+        status: post.status,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+        commentCount: post._count.comments,
+      })),
+
+      comments: comments.map((comment) => ({
+        id: comment.id,
+        body: comment.body,
+        createdAt: comment.createdAt,
+        updatedAt: comment.updatedAt,
+        postId: comment.post.id,
+        postTitle: comment.post.title,
+        postCategory: comment.post.category,
+      })),
+
+      replies: replies.map((reply) => ({
+        id: reply.id,
+        body: reply.body,
+        createdAt: reply.createdAt,
+        updatedAt: reply.updatedAt,
+        parentCommentId: reply.parentId,
+        parentBody: reply.parent?.body ?? null,
+        postId: reply.post.id,
+        postTitle: reply.post.title,
+        postCategory: reply.post.category,
+      })),
+    };
+  }
+
   async addComment(
     authorId: string,
     postId: string,
@@ -428,6 +555,12 @@ export class CommunityController {
   ) {
     return this.community.list(category, q, status);
   }
+  @Get("me/activity")
+  @UseGuards(JwtAuthGuard)
+  myActivity(@Req() req: any) {
+    return this.community.getMyActivity(req.user.id);
+  }
+
   @Get(":id") get(@Param("id") id: string) {
     return this.community.getById(id);
   }
