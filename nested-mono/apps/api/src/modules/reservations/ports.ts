@@ -195,6 +195,8 @@ export interface ReservationRepo {
 
 // Reservation joined with a little room context, for the "my trips" list.
 export interface ReservationWithRoom extends ReservationRecord {
+  /** 마이페이지 예약 관리 목록에서만 숨긴 상태. 상세·결제·관리자 기록에는 영향이 없다. */
+  hiddenFromTrips?: boolean;
   room: { id: string; name: string; region: string; image: string | null };
   payment: {
     id: string;
