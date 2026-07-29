@@ -10,19 +10,21 @@
 //   · listReports()          → 미처리 신고 수 + 최근 신고 목록
 // 아직 스켈레톤(3단계 대상): 매출 추이 차트, 답변대기·리뷰·정산·쿠폰 카운트.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { won, wonShort } from "@/lib/format";
-import { RevenueTrendChart } from "./RevenueTrendChart";
+import { RevenueTrendChart, RevenueTrendLegend } from "./RevenueTrendChart";
+import { listAllInquiries } from "@/lib/api/inquiries";
 import {
   getStats,
   getDashboardSummary,
-  getRevenueTrend,
+  getRevenueTrendV2,
   listPendingRooms,
   listReports,
+  listCoupons,
   type AdminStats,
   type DashboardSummary,
-  type RevenueTrend,
+  type RevenueTrendV2Point,
   type MetricPoint,
   type AdminReport,
   type PendingListing,
@@ -46,31 +48,45 @@ const STATUS_LABEL: Record<string, string> = {
 export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [trend, setTrend] = useState<RevenueTrend | null>(null);
   const [pending, setPending] = useState<PendingListing[]>([]);
   const [reports, setReports] = useState<AdminReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingInquiries, setPendingInquiries] = useState<number>(0);
+  const [expiringCoupons, setExpiringCoupons] = useState<number>(0);
+
+  // 매출 추이 차트는 일/주/월 토글이 있어서, 나머지 데이터랑 분리된
+  // 별도 useEffect로 그때그때 다시 불러온다.
+  const [granularity, setGranularity] = useState<"day" | "week" | "month">("day");
+  const [trend, setTrend] = useState<RevenueTrendV2Point[] | null>(null);
+  const [trendLoading, setTrendLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-// getDashboardSummary()로 집계, getRevenueTrend()로 월별 추이를 받는다.
+        // getDashboardSummary()로 집계를 받는다.
         // listReports()는 이제 { rows, total, ... } 페이지 객체를 리턴한다
         // (신고 관리 페이지 페이징 처리 때문). 여기서는 "미처리 신고"
         // 개수·미리보기용으로 쓰는 거라 넉넉히 한 번에 받아온다.
-        const [s, sum, tr, p, r] = await Promise.all([
+        const [s, sum, p, r, iq, cp] = await Promise.all([
           getStats(),
           getDashboardSummary(),
-          getRevenueTrend(6),
           listPendingRooms(),
           listReports(),
+          listAllInquiries(),
+          listCoupons(),
         ]);
         setStats(s);
         setSummary(sum);
-        setTrend(tr);
         setPending(p);
         setReports(r.rows);
+        setPendingInquiries(iq.filter((i) => i.answer === null).length);
+        setExpiringCoupons(
+          cp.filter((c) => {
+            const daysLeft = (new Date(c.validTo).getTime() - Date.now()) / 86_400_000;
+            return c.active && daysLeft >= 0 && daysLeft <= 7;
+          }).length
+        );
       } catch (e) {
         setError(e instanceof Error ? e.message : "현황을 불러오지 못했어요.");
       } finally {
@@ -79,18 +95,33 @@ export default function AdminDashboard() {
     })();
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    setTrendLoading(true);
+    getRevenueTrendV2(granularity)
+      .then((d) => {
+        if (alive) setTrend(d);
+      })
+      .catch(() => {
+        if (alive) setTrend(null);
+      })
+      .finally(() => {
+        if (alive) setTrendLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [granularity]);
+
   const openReports = reports.filter((r) => r.status !== "RESOLVED");
   const t = summary?.today;
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 10 }}>
         <h1 className="display" style={{ fontSize: 30, marginBottom: 6 }}>
           대시보드
         </h1>
-        <p style={{ color: "var(--text-2)" }}>
-          플랫폼 운영 현황을 한눈에 확인하세요.
-        </p>
       </div>
 
       {error && (
@@ -99,39 +130,97 @@ export default function AdminDashboard() {
         </p>
       )}
 
-      {/* ── 오늘의 운영 현황 ── */}
-      <Section title="오늘의 운영 현황" hint="* 오늘 00:00 기준">
-        <div className="metric-row">
-          <MetricCard label="오늘 예약" icon="📅" point={t?.reservations} loading={loading} />
-          <MetricCard label="신규 회원" icon="👤" point={t?.newUsers} loading={loading} />
-          <MetricCard label="신규 호스트" icon="🧑‍💼" point={t?.newHosts} loading={loading} />
-          <MetricCard label="문의" icon="💬" point={t?.inquiries} loading={loading} />
-          <MetricCard label="신고" icon="🚩" point={t?.reports} loading={loading} />
-          <MetricCard label="예약 취소" icon="🚫" point={t?.cancels} loading={loading} />
+      {/* ── 오늘의 운영 현황 + 처리해야 할 업무 (카드 2개, 가로 정렬) ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div className="admin-card" style={{ padding: "10px 20px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 }}>
+            <strong style={{ fontSize: 15 }}>오늘의 운영 현황</strong>
+            <span style={{ fontSize: 11.5, color: "var(--text-2)" }}>* 오늘 00:00 기준</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", rowGap: 12, columnGap: 16 }}>
+            <TodayMetric icon="calendar" label="오늘 예약" point={t?.reservations} loading={loading} href="/admin/reservations" />
+            <TodayMetric icon="cancel" label="예약 취소" point={t?.cancels} loading={loading} href="/admin/reservations" />
+            <TodayMetric icon="user" label="신규 회원" point={t?.newUsers} loading={loading} href="/admin/members" />
+            <TodayMetric icon="host" label="신규 호스트" point={t?.newHosts} loading={loading} href="/admin/members" />
+            <TodayMetric icon="chat" label="문의" point={t?.inquiries} loading={loading} href="/admin/inquiries" />
+            <TodayMetric icon="flag" label="신고" point={t?.reports} loading={loading} href="/admin/reports" />
+          </div>
         </div>
-      </Section>
 
-      {/* ── 핵심 KPI ── */}
-      <Section title="핵심 KPI">
-        <div className="kpi-grid">
-          <KpiCard label="누적 거래액 (GMV)" value={stats ? won(stats.gmv) : "—"} loading={loading} />
-          <KpiCard label="수수료 수익" value={stats ? won(stats.commission) : "—"} loading={loading} />
-          <KpiCard label="이번 달 매출" value={summary ? won(summary.month.revenue) : "—"} loading={loading} />
-          <KpiCard label="이번 달 순수익" value={summary ? won(summary.month.netProfit) : "—"} loading={loading} />
-
-          <KpiCard label="회원 수" value={stats ? stats.users.toLocaleString() : "—"} suffix="명" loading={loading} />
-          <KpiCard label="호스트 수" value={summary ? summary.totals.hosts.toLocaleString() : "—"} suffix="명" loading={loading} />
-          <KpiCard label="숙소 수" value={stats ? stats.rooms.toLocaleString() : "—"} suffix="개" loading={loading} />
-          <KpiCard
-            label="평균 평점"
-            value={summary ? (summary.totals.avgRating != null ? summary.totals.avgRating.toFixed(2) : "—") : "—"}
-            suffix="/ 5"
-            loading={loading}
-          />
+        <div className="admin-card" style={{ padding: "10px 20px" }}>
+          <strong style={{ fontSize: 15, display: "block", marginBottom: 14 }}>처리해야 할 업무</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, justifyContent: "space-between", alignItems: "end" }}>
+            <ActionItem icon="calendar" label="신규 예약/취소" count={loading ? null : (t?.reservations.value ?? 0) + (t?.cancels.value ?? 0)} href="/admin/reservations" />
+            <ActionItem icon="home" label="승인 대기 숙소" count={loading ? null : pending.length} href="/admin/approvals" />
+            <ActionItem icon="chat" label="답변 대기 문의" count={loading ? null : pendingInquiries} href="/admin/inquiries" />
+            <ActionItem icon="flag" label="미처리 신고" count={loading ? null : openReports.length} href="/admin/reports" accent />
+            <ActionItem icon="wallet" label="정산 지연" count={loading ? null : summary?.settlementDelayed ?? 0} href="/admin/revenue" />
+            <ActionItem icon="coupon" label="만료 예정 쿠폰" count={loading ? null : expiringCoupons} href="/admin/coupons" />
+          </div>
         </div>
-      </Section>
+      </div>
 
-      {/* ── 예약 현황 ── */}
+      {/* ── 핵심 KPI + 매출 추이 (가로 배치) ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 16, marginBottom: 10 }}>
+        <div className="admin-card" style={{ padding: 20 }}>
+          <strong style={{ fontSize: 15, display: "block", marginBottom: 14 }}>핵심 KPI</strong>
+
+          {/* 이번 달 순수익 — 한 행 통으로 강조 */}
+          <div style={{ marginBottom: 16 }}>
+            <KpiField
+              label="이번 달 순수익"
+              value={summary ? won(summary.month.netProfit) : "—"}
+              deltaPct={summary?.kpiDelta.revenue}
+              loading={loading}
+              big
+            />
+          </div>
+
+          {/* 나머지 6개 — 2열 × 3행 */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 12px" }}>
+            <KpiField label="누적 거래액 (GMV)" value={stats ? won(stats.gmv) : "—"} deltaPct={summary?.kpiDelta.revenue} loading={loading} />
+            <KpiField label="수수료 수익" value={stats ? won(stats.commission) : "—"} deltaPct={summary?.kpiDelta.revenue} loading={loading} />
+            <KpiField label="이번 달 매출" value={summary ? won(summary.month.revenue) : "—"} deltaPct={summary?.kpiDelta.revenue} loading={loading} />
+            <KpiField label="회원 수" value={stats ? stats.users.toLocaleString() : "—"} suffix="명" deltaPct={summary?.kpiDelta.members} loading={loading} />
+            <KpiField label="호스트 수" value={summary ? summary.totals.hosts.toLocaleString() : "—"} suffix="명" deltaPct={summary?.kpiDelta.hosts} loading={loading} />
+            <KpiField label="숙소 수" value={stats ? stats.rooms.toLocaleString() : "—"} suffix="개" deltaPct={summary?.kpiDelta.rooms} loading={loading} />
+          </div>
+        </div>
+
+        <div className="admin-card" style={{ padding: 20, minHeight: 220 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+              <strong style={{ fontSize: 15 }}>매출 추이</strong>
+              <RevenueTrendLegend />
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {(["day", "week", "month"] as const).map((g) => (
+                <button
+                  key={g}
+                  onClick={() => setGranularity(g)}
+                  style={{
+                    fontSize: 12, padding: "5px 12px", borderRadius: "var(--r-sm)", cursor: "pointer",
+                    border: "1px solid var(--border)",
+                    background: granularity === g ? "var(--bg-2)" : "transparent",
+                    fontWeight: granularity === g ? 700 : 400,
+                    color: "var(--text)",
+                  }}
+                >
+                  {g === "day" ? "일별" : g === "week" ? "주별" : "월별"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {trendLoading || !trend ? (
+            <Pending text="일별 · 주별 · 월별 매출 차트" />
+          ) : (
+            <RevenueTrendChart data={trend} />
+          )}
+        </div>
+      </div>
+
+      {/* ── 예약 현황 ──
       <Section title="예약 현황" hint="* 전체 누적">
         <div className="metric-row">
           <MiniStat label="결제 대기" value={summary?.reservationStatus.pendingPayment} loading={loading} />
@@ -140,31 +229,7 @@ export default function AdminDashboard() {
           <MiniStat label="예약 취소" value={summary?.reservationStatus.cancelled} loading={loading} />
           <MiniStat label="노쇼" value={summary?.reservationStatus.noShow} loading={loading} />
         </div>
-      </Section>
-
-      {/* ── Action Center + 매출 추이 ── */}
-      <div className="dash-main">
-        <Section title="처리해야 할 업무">
-          <div className="action-grid">
-            <ActionCard icon="🏠" label="승인 대기 숙소" sub="승인 대기 중인 숙소" count={loading ? null : pending.length} href="/admin/approvals" />
-            <ActionCard icon="🚩" label="미처리 신고" sub="검토가 필요한 신고" count={loading ? null : openReports.length} href="/admin/reports" accent />
-            <ActionCard icon="💬" label="답변 대기 문의" sub="답변하지 않은 문의" pending href="/admin/inquiries" />
-            <ActionCard icon="⭐" label="검토 필요 리뷰" sub="확인이 필요한 리뷰" pending href="/admin/reports" />
-            <ActionCard icon="💰" label="정산 예정" sub="이번 주 정산 예정" pending href="/admin/revenue" />
-            <ActionCard icon="🎟" label="만료 예정 쿠폰" sub="7일 이내 만료" pending href="/admin/coupons" />
-          </div>
-        </Section>
-
-        <Section title="매출 추이">
-          <div className="card" style={{ padding: 20, minHeight: 220 }}>
-            {trend ? (
-              <RevenueTrendChart data={trend.trend} />
-            ) : (
-              <Pending text="일별 · 주별 · 월별 매출 차트" />
-            )}
-          </div>
-        </Section>
-      </div>
+      </Section> */}
 
       {/* ── 최근 신고 + 승인 대기 목록 ── */}
       <div className="admin-two" style={{ marginTop: 8 }}>
@@ -207,8 +272,8 @@ export default function AdminDashboard() {
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <section style={{ marginBottom: 24 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+    <section>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
         <strong style={{ fontSize: 16 }}>{title}</strong>
         {hint && <span style={{ fontSize: 12, color: "var(--text-2)" }}>{hint}</span>}
       </div>
@@ -220,7 +285,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 // 전일 대비 증감률 배지
 function DeltaBadge({ delta }: { delta: number | null }) {
   if (delta === null) {
-    return <span style={{ fontSize: 12, color: "var(--text-2)" }}>전일 대비 —</span>;
+    return <span style={{ fontSize: 12, color: "var(--text-2)" }}>—</span>;
   }
   const up = delta >= 0;
   return (
@@ -230,32 +295,46 @@ function DeltaBadge({ delta }: { delta: number | null }) {
   );
 }
 
-function MetricCard({
+function TodayMetric({
   label,
   icon,
   point,
   loading,
+  href,
 }: {
   label: string;
   icon: string;
   point?: MetricPoint;
   loading?: boolean;
+  href: string;
 }) {
   return (
-    <div className="card metric-card">
-      <div className="metric-icon" aria-hidden>{icon}</div>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: "var(--text-2)" }}>{label}</div>
-        <div className="display metric-value">
-          {loading || !point ? "—" : point.value.toLocaleString()}
+    <Link href={href}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          style={{
+            width: 34, height: 34, borderRadius: 3, background: "var(--primary-soft)",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}
+        >
+          <img src={`/icons/dashboard/${icon}.png`} alt="" width={16} height={16} />
+        </span>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11.5, color: "var(--text-2)", marginBottom: -3 }}>{label}</div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 18, fontWeight: 700 }}>
+              {loading || !point ? "—" : point.value.toLocaleString()}
+            </span>
+            {loading || !point ? (
+              <span style={{ fontSize: 11, color: "var(--text-2)" }}>—</span>
+            ) : (
+              <DeltaBadge delta={point.delta} />
+            )}
+          </div>
         </div>
-        {loading || !point ? (
-          <div style={{ fontSize: 12, color: "var(--text-2)" }}>전일 대비</div>
-        ) : (
-          <DeltaBadge delta={point.delta} />
-        )}
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -273,37 +352,53 @@ function MiniStat({ label, value, loading }: { label: string; value?: number; lo
   );
 }
 
-function KpiCard({
+function KpiField({
   label,
   value,
   suffix,
   loading,
+  deltaPct,
+  big,
 }: {
   label: string;
   value?: string;
   suffix?: string;
   loading?: boolean;
+  deltaPct?: number | null;
+  big?: boolean;
 }) {
   return (
-    <div className="card" style={{ padding: 18 }}>
-      <div style={{ fontSize: 13, color: "var(--text-2)" }}>{label}</div>
-      <div className="display" style={{ fontSize: 24, fontWeight: 700, marginTop: 6 }}>
-        {loading ? "—" : value}
-        {suffix && !loading && (
-          <span style={{ fontSize: 14, fontWeight: 500, marginLeft: 4, color: "var(--text-2)" }}>
-            {suffix}
+    <div>
+      <div style={{ fontSize: big ? 12.5 : 11, color: "var(--text-2)" }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: big ? 10 : 0 }}>
+        <div style={{ fontSize: big ? 26 : 17, fontWeight: 700, color: "var(--text)" }}>
+          {loading ? "—" : value}
+          {suffix && !loading && (
+            <span style={{ fontSize: big ? 14 : 12, fontWeight: 500, marginLeft: 3, color: "var(--text-2)" }}>
+              {suffix}
+            </span>
+          )}
+        </div>
+        {big && !loading && (
+          <span style={{ fontSize: 13, color: deltaPct != null ? (deltaPct >= 0 ? "var(--secondary)" : "var(--primary)") : "var(--text-2)" }}>
+            &nbsp; 지난달 대비 {deltaPct != null ? `${deltaPct >= 0 ? "▲" : "▼"} ${Math.abs(deltaPct)}%` : "—"}
           </span>
         )}
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>전일 대비</div>
+      {
+        !big && !loading && (
+          <div style={{ fontSize: 10.5, color: deltaPct != null ? (deltaPct >= 0 ? "var(--secondary)" : "var(--primary)") : "var(--text-2)", marginTop: 2 }}>
+            지난달 대비 &nbsp; {deltaPct != null ? `${deltaPct >= 0 ? "▲" : "▼"} ${Math.abs(deltaPct)}%` : "—"}
+          </div>
+        )
+      }
     </div>
   );
 }
 
-function ActionCard({
+function ActionItem({
   icon,
   label,
-  sub,
   count,
   href,
   accent,
@@ -311,28 +406,43 @@ function ActionCard({
 }: {
   icon: string;
   label: string;
-  sub: string;
   count?: number | null;
   href: string;
   accent?: boolean;
   pending?: boolean;
 }) {
+  const badgeStyle: CSSProperties = {
+    minWidth: 22, height: 22, padding: "0 6px", borderRadius: 99,
+    fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center",
+    justifyContent: "center", flexShrink: 0,
+  };
   const badge = pending ? (
-    <span className="action-badge pending-badge">—</span>
+    <span style={{ ...badgeStyle, background: "var(--border)", color: "var(--text-2)", fontWeight: 400 }}>—</span>
   ) : count === null ? (
-    <span className="action-badge">…</span>
+    <span style={{ ...badgeStyle, background: "var(--border)", color: "var(--text-2)", fontWeight: 400 }}>…</span>
   ) : (
-    <span className="action-badge" style={{ background: accent ? "var(--primary)" : "var(--secondary)" }}>
+    <span style={{ ...badgeStyle, background: accent ? "var(--primary)" : "var(--secondary)", color: "#fff" }}>
       {count}
     </span>
   );
   return (
-    <Link href={href} className="hover-card action-card card">
-      <div className="action-icon" aria-hidden>{icon}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
-        <div style={{ fontSize: 12, color: "var(--text-2)" }}>{sub}</div>
-      </div>
+    <Link
+      href={href}
+      className="hover-card-custom"
+      style={{
+        display: "flex", alignItems: "center", gap: 9, border: "1px solid var(--border)",
+        borderRadius: 3, padding: 8,
+      }}
+    >
+      <span
+        style={{
+          width: 26, height: 26, borderRadius: 8, background: "var(--secondary-soft)",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}
+      >
+        <img src={`/icons/dashboard/${icon}.png`} alt="" width={13} height={13} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600 }}>{label}</div>
       {badge}
     </Link>
   );
@@ -340,8 +450,8 @@ function ActionCard({
 
 function Panel({ title, href, children }: { title: string; href: string; children: React.ReactNode }) {
   return (
-    <div className="card" style={{ padding: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+    <div className="admin-card" style={{ padding: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
         <strong style={{ fontSize: 15 }}>{title}</strong>
         <Link href={href} style={{ color: "var(--secondary)", fontSize: 13, fontWeight: 600 }}>
           전체 →
@@ -359,9 +469,9 @@ function RowItem({ left, sub, right }: { left: string; sub: string; right: strin
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        padding: "10px 12px",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--r-sm)",
+        padding: "4px 5px",
+        borderBottom: "1px solid var(--border)",
+        // borderRadius: "var(--r-sm)",
       }}
     >
       <div style={{ minWidth: 0 }}>

@@ -156,6 +156,18 @@ export interface DashboardSummary {
     cancelled: number;
     noShow: number;
   };
+  // 체크아웃 지나고 정산 예정일(체크아웃 다음 달 25일)도 지났는데 아직
+  // CONFIRMED로 남아있는 예약 건수 — "이번 달 정상 정산 예정"이 아니라
+  // "밀린 정산"만 센다.
+  settlementDelayed: number;
+  // 핵심 KPI 카드용 "지난달 대비" — revenue는 GMV/수수료수익/이번달매출/
+  // 이번달순수익이 다 같이 쓰는 공용 매출 증감률.
+  kpiDelta: {
+    revenue: number | null;
+    members: number | null;
+    hosts: number | null;
+    rooms: number | null;
+  };
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
@@ -475,11 +487,34 @@ export async function getRevenueTrend(months = 6): Promise<RevenueTrend> {
   return api.get<RevenueTrend>(`/admin/revenue/monthly?months=${months}`);
 }
 
+export interface SettlementDelayed {
+  reservationId: string;
+  roomName: string;
+  hostName: string;
+  guestName: string;
+  checkOut: string;
+  payoutDue: string;
+  amount: number;
+  daysOverdue: number;
+}
+
+// GET /admin/revenue/settlement-delayed
+export async function getSettlementDelayedList(): Promise<SettlementDelayed[]> {
+  return api.get<SettlementDelayed[]>("/admin/revenue/settlement-delayed");
+}
+
+// PATCH /admin/revenue/settlement-delayed/:id/complete
+export async function completeSettlement(reservationId: string): Promise<void> {
+  await api.patch(`/admin/revenue/settlement-delayed/${reservationId}/complete`, {});
+}
+
 export interface RevenueTrendV2Point {
   label: string;
   day: number;
   revenue: number;
   reservations: number;
+  commission: number;
+  netProfit: number;
 }
 
 // GET /admin/revenue-trend-v2?granularity=day|week|month — 매출 관리

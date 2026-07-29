@@ -2,7 +2,15 @@
 
 import { useEffect, useState, type MouseEvent } from "react";
 import { won } from "@/lib/format";
-import { getRevenueTrend, getRevenueTrendV2, type RevenueTrend, type RevenueTrendV2Point } from "@/lib/api/admin";
+import {
+  getRevenueTrend,
+  getRevenueTrendV2,
+  getSettlementDelayedList,
+  completeSettlement,
+  type RevenueTrend,
+  type RevenueTrendV2Point,
+  type SettlementDelayed,
+} from "@/lib/api/admin";
 
 export default function AdminRevenue() {
   const [data, setData] = useState<RevenueTrend | null>(null);
@@ -191,6 +199,114 @@ export default function AdminRevenue() {
         </div>
         <div className="display" style={{ fontSize: 22, fontWeight: 700 }}>{won(data.payouts)}</div>
       </div>
+
+      {/* 정산 지연 내역 — 체크아웃 + 정산예정일(다음 달 25일)이 둘 다
+          지났는데 아직 지급 처리(status=CONFIRMED)가 안 된 것만. "이번 달
+          정상 정산 예정"이랑 성격이 달라서 따로 뺐다 — 저건 0이어도 정상,
+          이건 0이어야 정상이다. */}
+      <SettlementDelayedPanel />
+    </div>
+  );
+}
+
+function SettlementDelayedPanel() {
+  const [rows, setRows] = useState<SettlementDelayed[] | null>(null);
+  const [error, setError] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getSettlementDelayedList()
+      .then((r) => {
+        if (alive) setRows(r);
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function handleComplete(reservationId: string) {
+    if (busyId) return;
+    if (!confirm("이 예약을 정산 처리 완료로 표시할까요?")) return;
+    setBusyId(reservationId);
+    try {
+      await completeSettlement(reservationId);
+      // 다시 불러오지 않고, 처리된 행만 바로 목록에서 빼서 반응 속도를
+      // 높인다 — 실패하면 catch에서 다시 넣지 않고 그냥 알려서, 새로고침
+      // 했을 때 실제 상태랑 화면이 어긋나지 않게 한다.
+      setRows((prev) => prev?.filter((r) => r.reservationId !== reservationId) ?? prev);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "처리하지 못했어요.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: 20, marginTop: 20 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 15 }}>정산 지연 내역</strong>
+        <span style={{ fontSize: 12, color: "var(--text-2)" }}>
+          체크아웃 + 정산예정일(다음 달 25일)이 지났는데 아직 처리 안 된 건
+        </span>
+      </div>
+
+      {error ? (
+        <p style={{ fontSize: 13, color: "var(--text-2)", marginTop: 14 }}>불러오지 못했어요.</p>
+      ) : rows === null ? (
+        <p style={{ fontSize: 13, color: "var(--text-2)", marginTop: 14 }}>불러오는 중…</p>
+      ) : rows.length === 0 ? (
+        <p style={{ fontSize: 13, color: "var(--secondary)", marginTop: 14 }}>지연된 정산이 없어요.</p>
+      ) : (
+        <div style={{ marginTop: 12, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--text-2)", fontSize: 12 }}>
+                <th style={{ padding: "6px 8px", fontWeight: 500 }}>숙소</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500 }}>호스트</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500 }}>게스트</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500 }}>체크아웃</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500 }}>정산 예정일</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500, textAlign: "right" }}>지연 일수</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500, textAlign: "right" }}>정산 예상액</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.reservationId} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "8px" }}>{r.roomName}</td>
+                  <td style={{ padding: "8px" }}>{r.hostName}</td>
+                  <td style={{ padding: "8px" }}>{r.guestName}</td>
+                  <td style={{ padding: "8px" }}>{new Date(r.checkOut).toLocaleDateString("ko-KR")}</td>
+                  <td style={{ padding: "8px" }}>{new Date(r.payoutDue).toLocaleDateString("ko-KR")}</td>
+                  <td style={{ padding: "8px", textAlign: "right", color: "var(--primary)", fontWeight: 700 }}>
+                    {r.daysOverdue}일
+                  </td>
+                  <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{won(r.amount)}</td>
+                  <td style={{ padding: "8px", textAlign: "right" }}>
+                    <button
+                      onClick={() => handleComplete(r.reservationId)}
+                      disabled={busyId === r.reservationId}
+                      style={{
+                        fontSize: 12, padding: "5px 10px", borderRadius: "var(--r-sm)",
+                        border: "1px solid var(--border)", background: "transparent",
+                        color: "var(--secondary)", fontWeight: 600, cursor: "pointer",
+                        opacity: busyId === r.reservationId ? 0.5 : 1,
+                      }}
+                    >
+                      {busyId === r.reservationId ? "처리 중…" : "처리 완료"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
