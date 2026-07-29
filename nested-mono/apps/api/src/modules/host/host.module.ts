@@ -2,7 +2,6 @@ import { Controller, Get, UseGuards, Req, Injectable, Module } from "@nestjs/com
 import { PrismaService } from "../../prisma/prisma.service";
 import { JwtAuthGuard } from "../auth/guards/auth.guards";
 import { ReservationStatus } from "@prisma/client";
-import { expireCompanionInvites } from "../reservations/companion-invite-expiration";
 import {
   EARNING_STATUSES,
   computeOccupancyPct,
@@ -58,7 +57,6 @@ export class HostService {
   // data volume here is tiny (one host's listings), so there's no cache to
   // keep in sync. If this ever gets hot, wrap it in Redis with a short TTL.
   async dashboard(hostId: string): Promise<HostDashboard> {
-    await expireCompanionInvites(this.prisma);
     const now = new Date();
     const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
     const thisMonthStart = startOfMonth(now);
