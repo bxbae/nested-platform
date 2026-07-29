@@ -106,7 +106,12 @@ export async function login(
     { auth: false },
   );
   authStore.set(res);
-  return res.user;
+  // Login only issues a minimal user (id/email/role/...). Badge and tier
+  // fields (completedStays, reviewsWritten, verified, tier) are computed
+  // fresh in getMe, so fetch them right away instead of leaving the UI
+  // showing a stale/empty activity tier until the next reload.
+  const fresh = await fetchMe();
+  return fresh ?? res.user;
 }
 
 export function logout() {
@@ -144,6 +149,11 @@ interface ApiMe {
   preferredLocale?: "KO" | "EN";
   hasPassword?: boolean;
   createdAt?: string | null;
+  verified?: boolean;
+  tier?: "SEED" | "SPROUT" | "REGULAR" | "TRUSTED" | "ELITE";
+  tierLabel?: string;
+  completedStays?: number;
+  reviewsWritten?: number;
 }
 
 function toAuthUser(me: ApiMe): AuthUser {
@@ -158,6 +168,11 @@ function toAuthUser(me: ApiMe): AuthUser {
     avatarUrl: me.avatarUrl ?? null,
     gender: me.gender ?? "OTHER",
     genderVisibility: me.genderVisibility ?? "MATCHED_ONLY",
+    verified: me.verified,
+    tier: me.tier,
+    tierLabel: me.tierLabel,
+    completedStays: me.completedStays,
+    reviewsWritten: me.reviewsWritten,
     roommateGenderPreference: me.roommateGenderPreference ?? "ANY",
     birthDate: me.birthDate ?? null,
     preferredLocale: me.preferredLocale ?? "KO",

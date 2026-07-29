@@ -10,6 +10,7 @@ export interface Badge {
   label: string;
   icon: string;
   description: string;
+  earned: boolean;
 }
 
 export interface TenantBadges {
