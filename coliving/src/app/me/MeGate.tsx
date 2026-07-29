@@ -10,7 +10,7 @@ import { USE_REAL_API } from "@/lib/api/config";
 // seeing demo profile data. Demo mode keeps the sample data so the pages are
 // still browsable without an account.
 export function MeGate({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, ready } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [checked, setChecked] = useState(false);
@@ -21,6 +21,10 @@ export function MeGate({ children }: { children: React.ReactNode }) {
       setChecked(true);
       return;
     }
+    // Wait for the client to check localStorage before judging "logged
+    // out" — on the first hydration render `user` is null even for a
+    // logged-in visitor, and bouncing them here would be wrong.
+    if (!ready) return;
     if (!user) {
       if (!redirected.current) {
         redirected.current = true;
@@ -41,7 +45,7 @@ export function MeGate({ children }: { children: React.ReactNode }) {
     // /me/settings this effect must re-run and fall through to
     // setChecked(true). Without it the gate stayed on the loading state
     // forever for social logins (nicknameCompleted === false).
-  }, [user, router, pathname]);
+  }, [user, ready, router, pathname]);
 
   if (!checked) {
     return (

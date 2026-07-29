@@ -83,6 +83,13 @@ export const authStore = {
   get(): AuthTokens | null {
     return load();
   },
+  // True once load() has run at least once on the client (localStorage
+  // checked). Route guards should wait for this before deciding a visitor
+  // is logged out — on the very first client render `loaded` is still
+  // false, and treating that as "no session" bounces logged-in users.
+  isLoaded(): boolean {
+    return loaded;
+  },
   getAccessToken(): string | null {
     return load()?.accessToken ?? null;
   },
