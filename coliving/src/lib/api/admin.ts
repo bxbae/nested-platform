@@ -91,6 +91,42 @@ export async function getStats(): Promise<AdminStats> {
   return api.get<AdminStats>("/admin/stats");
 }
 
+// GET /admin/dashboard/summary — 대시보드 전용 집계(오늘/이번달/예약현황).
+export interface MetricPoint {
+  value: number;
+  delta: number | null; // 전일 대비 %, 어제가 0이면 null
+}
+
+export interface DashboardSummary {
+  today: {
+    reservations: MetricPoint;
+    newUsers: MetricPoint;
+    newHosts: MetricPoint;
+    inquiries: MetricPoint;
+    reports: MetricPoint;
+    cancels: MetricPoint;
+  };
+  month: {
+    revenue: number;
+    netProfit: number;
+  };
+  totals: {
+    hosts: number;
+    avgRating: number | null;
+  };
+  reservationStatus: {
+    pendingPayment: number;
+    confirmed: number;
+    completed: number;
+    cancelled: number;
+    noShow: number;
+  };
+}
+
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  return api.get<DashboardSummary>("/admin/dashboard/summary");
+}
+
 // ── Trash (휴지통 · 소프트 삭제 복구) ──
 // 삭제는 deletedAt 을 찍기만 하므로, 여기서 목록을 보고 되돌릴 수 있다.
 export interface TrashedPost {

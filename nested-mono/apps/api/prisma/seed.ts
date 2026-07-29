@@ -371,6 +371,133 @@ async function main() {
     });
   }
 
+
+  // ── 데모용 예약 · 결제 · 리뷰 (대시보드/매출 화면을 채우기 위한 더미) ──
+  // 최근 6개월에 걸쳐 예약을 분산 생성한다. 상태를 섞어 예약현황 카드가
+  // 골고루 채워지고, PAID 결제의 createdAt 을 월별로 흩어 매출추이 곡선이
+  // 그려지도록 한다. 방은 위 루프가 레코드를 변수에 담지 않으므로 DB에서
+  // 다시 조회한다. guest/host 는 위에서 만들어진 변수를 그대로 쓴다.
+  {
+    const dbRooms = await prisma.room.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+
+    if (dbRooms.length > 0) {
+      // 멱등성: 이전에 넣은 데모 결제/예약을 먼저 지운다.
+      // providerTxnId 가 "demo_txn_" 로 시작하는 결제와 그 예약을 정리.
+      const priorPayments = await prisma.payment.findMany({
+        where: { providerTxnId: { startsWith: "demo_txn_" } },
+        select: { reservationId: true },
+      });
+      const priorResIds = priorPayments.map((p) => p.reservationId);
+      if (priorResIds.length > 0) {
+        await prisma.payment.deleteMany({
+          where: { reservationId: { in: priorResIds } },
+        });
+        await prisma.reservation.deleteMany({
+          where: { id: { in: priorResIds } },
+        });
+      }
+
+      const monthsAgo = (n: number, day = 15) => {
+        const d = new Date();
+        d.setMonth(d.getMonth() - n, day);
+        d.setHours(12, 0, 0, 0);
+        return d;
+      };
+      const addMonths = (base: Date, n: number) => {
+        const d = new Date(base);
+        d.setMonth(d.getMonth() + n);
+        return d;
+      };
+
+      const demoPlan: Array<{
+        offset: number;
+        status: string;
+        pay: "PAID" | "PENDING" | "REFUNDED";
+        rent: number;
+        months: number;
+      }> = [
+        { offset: 5, status: "COMPLETED", pay: "PAID", rent: 720000, months: 3 },
+        { offset: 5, status: "COMPLETED", pay: "PAID", rent: 550000, months: 2 },
+        { offset: 4, status: "COMPLETED", pay: "PAID", rent: 890000, months: 6 },
+        { offset: 4, status: "CANCELLED_BY_GUEST", pay: "REFUNDED", rent: 600000, months: 1 },
+        { offset: 3, status: "COMPLETED", pay: "PAID", rent: 640000, months: 4 },
+        { offset: 3, status: "COMPLETED", pay: "PAID", rent: 780000, months: 3 },
+        { offset: 2, status: "CONFIRMED", pay: "PAID", rent: 950000, months: 12 },
+        { offset: 2, status: "COMPLETED", pay: "PAID", rent: 520000, months: 2 },
+        { offset: 1, status: "CONFIRMED", pay: "PAID", rent: 700000, months: 6 },
+        { offset: 1, status: "NO_SHOW", pay: "PAID", rent: 480000, months: 1 },
+        { offset: 0, status: "CONFIRMED", pay: "PAID", rent: 830000, months: 3 },
+        { offset: 0, status: "PENDING_PAYMENT", pay: "PENDING", rent: 610000, months: 2 },
+      ];
+
+      for (let i = 0; i < demoPlan.length; i++) {
+        const plan = demoPlan[i];
+        const room = dbRooms[i % dbRooms.length];
+        if (!plan || !room) continue;
+        const paidAt = monthsAgo(plan.offset, 10 + (i % 15));
+        const checkIn = new Date(paidAt);
+        const checkOut = addMonths(checkIn, plan.months);
+
+        const deposit = plan.rent * 2;
+        const cleaningFee = 50000;
+        const maintenanceFee = 70000;
+        const serviceFee = Math.round(plan.rent * 0.05);
+        const totalDueNow =
+          plan.rent + deposit + cleaningFee + maintenanceFee + serviceFee;
+
+        const reservation = await prisma.reservation.create({
+          data: {
+            roomId: room.id,
+            guestId: guest.id,
+            checkIn,
+            checkOut,
+            originalCheckOut: checkOut,
+            months: plan.months,
+            status: plan.status as any,
+            monthlyRent: plan.rent,
+            deposit,
+            cleaningFee,
+            maintenanceFee,
+            serviceFee,
+            totalDueNow,
+            createdAt: paidAt,
+          },
+        });
+
+        if (plan.pay !== "PENDING") {
+          await prisma.payment.create({
+            data: {
+              reservationId: reservation.id,
+              provider: "TOSS",
+              providerTxnId: `demo_txn_${i}_${paidAt.getTime()}`,
+              amount: totalDueNow,
+              status: plan.pay,
+              createdAt: paidAt,
+            },
+          });
+        }
+
+        if (plan.status === "COMPLETED") {
+          await prisma.review.create({
+            data: {
+              roomId: room.id,
+              authorId: guest.id,
+              rating: 4 + (i % 2),
+              body: "위치도 좋고 방도 깨끗했어요. 다음에 또 이용하고 싶습니다.",
+              createdAt: checkOut,
+            },
+          });
+        }
+      }
+
+      console.log(
+        `Demo data: ${demoPlan.length} reservations with payments/reviews across 6 months.`,
+      );
+    }
+  }
   console.log(`Seed complete: 1 host, 1 guest, ${rooms.length} rooms (with photos/amenities, no seeded reviews), 1 coupon, 3 posts.`);
 }
 

@@ -823,6 +823,106 @@ export class AdminService {
     };
   }
 
+  // 대시보드 전용 집계. 카드가 많아 요청을 하나로 묶는다.
+  // 오늘/어제 값을 함께 구해 "전일 대비" 증감률까지 계산해 돌려준다.
+  async dashboardSummary() {
+    const now = new Date();
+
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const between = (from: Date, to: Date) => ({ gte: from, lt: to });
+    const CANCELLED = ["CANCELLED_BY_GUEST", "CANCELLED_BY_HOST"] as const;
+
+    const [
+      todayReservations,
+      todayNewUsers,
+      todayNewHosts,
+      todayInquiries,
+      todayReports,
+      todayCancels,
+      ydayReservations,
+      ydayNewUsers,
+      ydayNewHosts,
+      ydayInquiries,
+      ydayReports,
+      ydayCancels,
+      monthPaidAgg,
+      hostCount,
+      ratingAgg,
+      reservationsByStatus,
+    ] = await Promise.all([
+      this.prisma.reservation.count({ where: { createdAt: between(todayStart, now) } }),
+      this.prisma.user.count({ where: { createdAt: between(todayStart, now) } }),
+      this.prisma.user.count({ where: { role: "HOST", createdAt: between(todayStart, now) } }),
+      this.prisma.inquiry.count({ where: { createdAt: between(todayStart, now) } }),
+      this.prisma.report.count({ where: { createdAt: between(todayStart, now) } }),
+      this.prisma.reservation.count({
+        where: { status: { in: CANCELLED as any }, createdAt: between(todayStart, now) },
+      }),
+      this.prisma.reservation.count({ where: { createdAt: between(yesterdayStart, todayStart) } }),
+      this.prisma.user.count({ where: { createdAt: between(yesterdayStart, todayStart) } }),
+      this.prisma.user.count({ where: { role: "HOST", createdAt: between(yesterdayStart, todayStart) } }),
+      this.prisma.inquiry.count({ where: { createdAt: between(yesterdayStart, todayStart) } }),
+      this.prisma.report.count({ where: { createdAt: between(yesterdayStart, todayStart) } }),
+      this.prisma.reservation.count({
+        where: { status: { in: CANCELLED as any }, createdAt: between(yesterdayStart, todayStart) },
+      }),
+      this.prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: { status: "PAID", createdAt: { gte: monthStart } },
+      }),
+      this.prisma.user.count({ where: { role: "HOST" } }),
+      this.prisma.review.aggregate({ _avg: { rating: true } }),
+      this.prisma.reservation.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+      }),
+    ]);
+
+    const delta = (today: number, yesterday: number): number | null =>
+      yesterday === 0 ? null : Math.round(((today - yesterday) / yesterday) * 100);
+
+    const monthRevenue = monthPaidAgg._sum.amount ?? 0;
+
+    const statusCount: Record<string, number> = {};
+    for (const row of reservationsByStatus) {
+      statusCount[row.status] = row._count._all;
+    }
+    const sumStatus = (...keys: string[]) =>
+      keys.reduce((acc, k) => acc + (statusCount[k] ?? 0), 0);
+
+    return {
+      today: {
+        reservations: { value: todayReservations, delta: delta(todayReservations, ydayReservations) },
+        newUsers: { value: todayNewUsers, delta: delta(todayNewUsers, ydayNewUsers) },
+        newHosts: { value: todayNewHosts, delta: delta(todayNewHosts, ydayNewHosts) },
+        inquiries: { value: todayInquiries, delta: delta(todayInquiries, ydayInquiries) },
+        reports: { value: todayReports, delta: delta(todayReports, ydayReports) },
+        cancels: { value: todayCancels, delta: delta(todayCancels, ydayCancels) },
+      },
+      month: {
+        revenue: monthRevenue,
+        netProfit: Math.round(monthRevenue * 0.05),
+      },
+      totals: {
+        hosts: hostCount,
+        avgRating: ratingAgg._avg.rating
+          ? Math.round(ratingAgg._avg.rating * 100) / 100
+          : null,
+      },
+      reservationStatus: {
+        pendingPayment: statusCount["PENDING_PAYMENT"] ?? 0,
+        confirmed: statusCount["CONFIRMED"] ?? 0,
+        completed: statusCount["COMPLETED"] ?? 0,
+        cancelled: sumStatus("CANCELLED_BY_GUEST", "CANCELLED_BY_HOST"),
+        noShow: statusCount["NO_SHOW"] ?? 0,
+      },
+    };
+  }
+
   // all reservations (관리자용 예약 조회)
   // Optional status filter; newest first; simple offset pagination. Joins the
   // room name and guest so the admin table can show who booked what without
@@ -1155,6 +1255,11 @@ export class AdminController {
   @Get("stats")
   stats() {
     return this.admin.stats();
+  }
+
+  @Get("dashboard/summary")
+  dashboardSummary() {
+    return this.admin.dashboardSummary();
   }
 
   @Get("members")
