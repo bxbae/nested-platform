@@ -186,12 +186,14 @@ model User {
   tenantReviewsWritten  TenantReview[]               @relation("TenantReviewAuthor")
   tenantReviewsReceived TenantReview[]               @relation("TenantReviewTenant")
 
-  friendshipsA         Friendship[]         @relation("FriendshipUserA")
-  friendshipsB         Friendship[]         @relation("FriendshipUserB")
-  directConversationsA DirectConversation[] @relation("DirectParticipantA")
-  directConversationsB DirectConversation[] @relation("DirectParticipantB")
-  directMessages       DirectMessage[]      @relation("DirectMessageSender")
-  ownedCoupons         Coupon[]             @relation("CouponOwner")
+  friendshipsA           Friendship[]         @relation("FriendshipUserA")
+  friendshipsB           Friendship[]         @relation("FriendshipUserB")
+  friendRequestsSent     FriendRequest[]      @relation("FriendRequestRequester")
+  friendRequestsReceived FriendRequest[]      @relation("FriendRequestReceiver")
+  directConversationsA   DirectConversation[] @relation("DirectParticipantA")
+  directConversationsB   DirectConversation[] @relation("DirectParticipantB")
+  directMessages         DirectMessage[]      @relation("DirectMessageSender")
+  ownedCoupons           Coupon[]             @relation("CouponOwner")
 
   @@index([provider, providerId])
 }
@@ -530,6 +532,30 @@ model Message {
   @@index([chatRoomId, createdAt])
 }
 
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model FriendRequest {
+  id          String @id @default(cuid())
+  pairKey     String @unique
+  requesterId String
+  receiverId  String
+
+  requester User @relation("FriendRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("FriendRequestReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  status      FriendRequestStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  respondedAt DateTime?
+
+  @@index([requesterId, status, createdAt])
+  @@index([receiverId, status, createdAt])
+}
+
 // ── Friendships ───────────────────────────────────────────────────
 // A friendship is stored once. userAId/userBId are sorted before creation.
 model Friendship {
@@ -609,6 +635,9 @@ enum NotificationType {
   INQUIRY_CREATED
   INQUIRY_ANSWERED
   INQUIRY_STATUS_CHANGED
+
+  FRIEND_REQUESTED
+  FRIEND_ADDED
 
   RESERVATION_REQUESTED
   RESERVATION_CONFIRMED
