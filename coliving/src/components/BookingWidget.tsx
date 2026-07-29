@@ -78,6 +78,7 @@ export function BookingWidget({
 
   const [checkIn, setCheckIn] = useState(normalizedInitialCheckIn);
   const [checkOut, setCheckOut] = useState(normalizedInitialCheckOut);
+  const companionInviteAllowed = checkIn > todayISO;
   const [name, setName] = useState("");
   const [step, setStep] = useState<Step>("config");
   const [busy, setBusy] = useState(false);
@@ -93,12 +94,29 @@ export function BookingWidget({
     isBedBooking ? "bed" : "unit",
   );
   const [reservedSpots, setReservedSpots] = useState(1);
-  // 여러 자리는 대표자가 전액 결제한다. 동반 입주자는 전체 사용자 검색이
-  // 아니라 현재 친구 목록에서만 여러 명 선택할 수 있다.
+  // 친구 초대가 있으면 대표자는 본인 1자리만 결제한다.
+  // 나머지 친구는 초대를 수락한 뒤 각자 1자리 금액을 결제한다.
   const [inviteFriend, setInviteFriend] = useState(false);
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [selectedCompanionIds, setSelectedCompanionIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (
+      inviteFriend &&
+      (!companionInviteAllowed ||
+        bookingMode !== "bed" ||
+        reservedSpots < 2)
+    ) {
+      setInviteFriend(false);
+      setSelectedCompanionIds([]);
+    }
+  }, [
+    inviteFriend,
+    companionInviteAllowed,
+    bookingMode,
+    reservedSpots,
+  ]);
 
   const minimumCheckOut = minimumCheckOutISO(checkIn, house.minStayMonths);
   const stayDuration = formatStayDuration(checkIn, checkOut);
@@ -111,7 +129,8 @@ export function BookingWidget({
   // Local estimate, used only until the server quote arrives (and in demo mode).
   // The server is authoritative for money — coupon validity lives there — so
   // `price` below prefers the quoted breakdown whenever we have one.
-  const priceUnits = isBedBooking ? reservedSpots : 1;
+  const priceUnits =
+    isBedBooking && inviteFriend ? 1 : isBedBooking ? reservedSpots : 1;
   const localPrice = computePrice({
     monthlyRent: house.monthlyRent * priceUnits,
     deposit: house.deposit * priceUnits,
@@ -159,6 +178,7 @@ export function BookingWidget({
         couponCode: appliedCoupon || undefined,
         bookingMode,
         reservedSpots,
+        companionCount: inviteFriend ? Math.max(0, reservedSpots - 1) : 0,
       });
       setAvail({
         loading: false,
@@ -171,7 +191,15 @@ export function BookingWidget({
     } catch {
       setAvail({ loading: false, available: null, reason: "확인 중 오류가 발생했습니다." });
     }
-  }, [house.id, checkIn, checkOut, appliedCoupon, bookingMode, reservedSpots]);
+  }, [
+    house.id,
+    checkIn,
+    checkOut,
+    appliedCoupon,
+    bookingMode,
+    reservedSpots,
+    inviteFriend,
+  ]);
 
   useEffect(() => {
     const t = setTimeout(checkAvailability, 250);
@@ -195,6 +223,7 @@ export function BookingWidget({
 
   // ── 예약 요청 → hold ──
   async function toggleFriendInvite(on: boolean) {
+    if (on && !companionInviteAllowed) return;
     setInviteFriend(on);
     if (!on) {
       setSelectedCompanionIds([]);
@@ -310,7 +339,10 @@ export function BookingWidget({
     validStay &&
     avail.available === true &&
     !avail.loading &&
-    (!inviteFriend || selectedCompanionIds.length > 0);
+    (!inviteFriend ||
+      (companionInviteAllowed &&
+        bookingMode === "bed" &&
+        selectedCompanionIds.length === Math.max(0, reservedSpots - 1)));
   const reservationClosed = avail.available === false && !avail.couponError;
 
   // 본인이 등록한 숙소면 예약 위젯 대신 숙소 관리로 이동하는 버튼을 표시
@@ -481,7 +513,7 @@ export function BookingWidget({
                   <BookingChoice
                     active={bookingMode === "bed" && reservedSpots >= 2}
                     title="여러 자리 예약"
-                    description="대표자가 선택한 자리 수의 금액을 한 번에 결제해요."
+                    description="친구 초대를 사용하면 대표자와 친구가 각자 본인 1자리 금액을 결제해요."
                     onClick={() => chooseBedBooking("group")}
                   />
                 )}
@@ -537,17 +569,42 @@ export function BookingWidget({
                 </div>
               )}
 
-              {reservedSpots >= 2 && (
+              {bookingMode === "bed" && reservedSpots >= 2 && (
                 <div style={{ marginTop: 10 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 13.5,
+                      cursor: companionInviteAllowed ? "pointer" : "not-allowed",
+                      opacity: companionInviteAllowed ? 1 : 0.6,
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={inviteFriend}
+                      disabled={!companionInviteAllowed}
                       onChange={(event) => toggleFriendInvite(event.target.checked)}
-                      style={{ width: 15, height: 15, cursor: "pointer" }}
+                      style={{
+                        width: 15,
+                        height: 15,
+                        cursor: companionInviteAllowed ? "pointer" : "not-allowed",
+                      }}
                     />
                     친구 목록에서 동반 입주자 선택
                   </label>
+                  {!companionInviteAllowed && (
+                    <p
+                      style={{
+                        fontSize: 12,
+                        color: "var(--primary)",
+                        marginTop: 5,
+                      }}
+                    >
+                      입주 당일에는 룸메이트 초대를 보낼 수 없습니다.
+                    </p>
+                  )}
 
                   {inviteFriend && (
                     <div style={{ marginTop: 8 }}>
@@ -614,8 +671,13 @@ export function BookingWidget({
                             })}
                           </div>
                           <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6, lineHeight: 1.6 }}>
-                            최대 {Math.max(0, reservedSpots - 1)}명 · 현재 {selectedCompanionIds.length}명 선택.
-                            대표 예약자가 {reservedSpots}자리 전체 금액을 결제하고 선택한 친구에게 참여 요청이 전달됩니다.
+                            필요한 친구 {Math.max(0, reservedSpots - 1)}명 · 현재 {selectedCompanionIds.length}명 선택.
+                            대표 예약자는 본인 1자리만 결제하고, 선택한 친구 {Math.max(0, reservedSpots - 1)}명은 초대 수락 후 각자 1자리 금액을 결제합니다.
+                            {selectedCompanionIds.length !== Math.max(0, reservedSpots - 1) && (
+                              <span style={{ display: "block", color: "var(--primary)", marginTop: 3 }}>
+                                선택한 자리 수에 맞게 친구를 모두 선택해야 예약할 수 있습니다.
+                              </span>
+                            )}
                           </p>
                         </>
                       )}

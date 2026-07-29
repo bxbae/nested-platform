@@ -219,6 +219,13 @@ export default function HostReservations() {
       <div style={{ display: "grid", gap: 12 }}>
         {shown.map((b) => {
           const st = STATUS[b.status];
+          const individualPaymentCompanions = b.companions.filter(
+            (companion) => companion.requiresIndividualPayment,
+          );
+          const paidIndividualCompanions =
+            individualPaymentCompanions.filter(
+              (companion) => companion.status === "PAID",
+            ).length;
           return (
             <div
               key={b.id}
@@ -263,13 +270,37 @@ export default function HostReservations() {
                   </div>
                   {b.companions.length > 0 && (
                     <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 3 }}>
-                      동반 입주자: {b.companions.map((companion) => `${companion.name}(${companionStatusLabel(companion.status)})`).join(", ")}
+                      동반 입주자:{" "}
+                      {b.companions
+                        .map((companion) => {
+                          const deadline =
+                            companion.status === "PAYMENT_PENDING" &&
+                            companion.paymentDeadline
+                              ? ` · ${formatCompanionDeadline(companion.paymentDeadline)}까지`
+                              : "";
+                          return `${companion.name}(${companionStatusLabel(companion.status)}${deadline})`;
+                        })
+                        .join(", ")}
                     </div>
                   )}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <strong style={{ fontSize: 17 }}>{won(b.totalDueNow)}</strong>
-                  <div style={{ fontSize: 12, color: "var(--text-2)" }}>입주 시 결제</div>
+                  <div style={{ fontSize: 12, color: "var(--text-2)" }}>
+                    대표 예약자 결제
+                  </div>
+                  {individualPaymentCompanions.length > 0 && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--secondary)",
+                        marginTop: 4,
+                      }}
+                    >
+                      룸메이트 결제 {paidIndividualCompanions}/
+                      {individualPaymentCompanions.length}명 완료
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -534,8 +565,29 @@ function bookingTypeLabel(reservation: HostReservation): string {
   return "단독형 숙소 예약";
 }
 
-function companionStatusLabel(status: "PENDING" | "ACCEPTED" | "DECLINED"): string {
-  if (status === "ACCEPTED") return "수락";
+function companionStatusLabel(
+  status:
+    | "PENDING"
+    | "ACCEPTED"
+    | "DECLINED"
+    | "PAYMENT_PENDING"
+    | "PAID"
+    | "EXPIRED",
+): string {
+  if (status === "PAID") return "결제 완료";
+  if (status === "PAYMENT_PENDING") return "수락·결제 대기";
+  if (status === "ACCEPTED") return "수락 완료";
   if (status === "DECLINED") return "거절";
+  if (status === "EXPIRED") return "기한 만료";
   return "응답 대기";
+}
+
+function formatCompanionDeadline(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${String(date.getMonth() + 1).padStart(2, "0")}.${String(
+    date.getDate(),
+  ).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
 }

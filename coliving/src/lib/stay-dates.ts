@@ -1,8 +1,16 @@
 export const PLATFORM_MIN_STAY_MONTHS = 1;
 export const PLATFORM_MAX_STAY_MONTHS = 24;
 
+export function normalizeISODate(value: string): string {
+  const normalized = String(value ?? "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : "";
+}
+
 export function parseISODate(value: string): Date {
-  const [year, month, day] = value.split("-").map(Number);
+  const normalized = normalizeISODate(value);
+  if (!normalized) return new Date(Number.NaN);
+
+  const [year, month, day] = normalized.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
@@ -20,24 +28,38 @@ export function addCalendarMonths(date: Date, months: number): Date {
 }
 
 export function addCalendarMonthsISO(value: string, months: number): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
-  return toLocalISODate(addCalendarMonths(parseISODate(value), months));
+  const normalized = normalizeISODate(value);
+  if (!normalized) return "";
+  return toLocalISODate(addCalendarMonths(parseISODate(normalized), months));
 }
 
 export function minimumCheckOutISO(
   checkIn: string,
   minStayMonths = PLATFORM_MIN_STAY_MONTHS,
 ): string {
-  return addCalendarMonthsISO(checkIn, Math.max(PLATFORM_MIN_STAY_MONTHS, minStayMonths));
+  return addCalendarMonthsISO(
+    checkIn,
+    Math.max(PLATFORM_MIN_STAY_MONTHS, minStayMonths),
+  );
 }
 
-export function completedCalendarMonths(checkIn: string, checkOut: string): number {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut)) {
+export function completedCalendarMonths(
+  checkIn: string,
+  checkOut: string,
+): number {
+  const startValue = normalizeISODate(checkIn);
+  const endValue = normalizeISODate(checkOut);
+  if (!startValue || !endValue) return 0;
+
+  const start = parseISODate(startValue);
+  const end = parseISODate(endValue);
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime()) ||
+    end <= start
+  ) {
     return 0;
   }
-  const start = parseISODate(checkIn);
-  const end = parseISODate(checkOut);
-  if (end <= start) return 0;
 
   let months =
     (end.getFullYear() - start.getFullYear()) * 12 +
@@ -50,11 +72,15 @@ export function stayDurationParts(checkIn: string, checkOut: string): {
   months: number;
   days: number;
 } {
-  const months = completedCalendarMonths(checkIn, checkOut);
-  if (months <= 0 && checkOut <= checkIn) return { months: 0, days: 0 };
+  const startValue = normalizeISODate(checkIn);
+  const endValue = normalizeISODate(checkOut);
+  if (!startValue || !endValue || endValue <= startValue) {
+    return { months: 0, days: 0 };
+  }
 
-  const start = parseISODate(checkIn);
-  const end = parseISODate(checkOut);
+  const months = completedCalendarMonths(startValue, endValue);
+  const start = parseISODate(startValue);
+  const end = parseISODate(endValue);
   const monthAnchor = addCalendarMonths(start, months);
   const days = Math.max(
     0,
@@ -76,6 +102,7 @@ export function isStayAtLeastMonths(
   checkOut: string,
   minStayMonths = PLATFORM_MIN_STAY_MONTHS,
 ): boolean {
+  const normalizedCheckOut = normalizeISODate(checkOut);
   const minimum = minimumCheckOutISO(checkIn, minStayMonths);
-  return Boolean(minimum && checkOut >= minimum);
+  return Boolean(minimum && normalizedCheckOut && normalizedCheckOut >= minimum);
 }

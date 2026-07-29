@@ -58,6 +58,7 @@ export async function checkAvailability(input: {
   couponCode?: string;
   bookingMode?: BookingMode;
   reservedSpots?: number;
+  companionCount?: number;
 }): Promise<AvailabilityResult> {
   if (!USE_REAL_API) {
     const params = new URLSearchParams({
@@ -80,6 +81,9 @@ export async function checkAvailability(input: {
         checkOut: input.checkOut,
         ...(input.bookingMode ? { bookingMode: input.bookingMode.toUpperCase() } : {}),
         ...(input.reservedSpots ? { reservedSpots: input.reservedSpots } : {}),
+        ...(input.companionCount != null
+          ? { companionCount: input.companionCount }
+          : {}),
         ...(input.couponCode ? { couponCode: input.couponCode } : {}),
       }
     );
@@ -190,16 +194,40 @@ export async function confirmBooking(input: {
 }
 
 // ── 공동 예약 초대 (룸메이트와 함께) ─────────────────────────────────
-export type CompanionStatus = "PENDING" | "ACCEPTED" | "DECLINED";
+export type CompanionStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "PAYMENT_PENDING"
+  | "PAID"
+  | "EXPIRED";
 
 export interface CompanionInvite {
   id: string;
   roomId: string;
   room: { id: string; name: string; region: string; image: string | null };
+  inviter?: { id: string; name: string };
   checkIn: string;
   checkOut: string;
   months: number;
+  reservationStatus?: string;
   companionStatus: CompanionStatus | null;
+  requiresIndividualPayment?: boolean;
+  inviteExpiresAt?: string | null;
+  paymentDeadline?: string | null;
+  paidAt?: string | null;
+  expiredAt?: string | null;
+  individualPayment?: {
+    monthlyRent: number;
+    deposit: number;
+    cleaningFee: number;
+    maintenanceFee: number;
+    serviceFee: number;
+    discount: number;
+    totalDueNow: number;
+    provider?: string | null;
+    providerTxnId?: string | null;
+  } | null;
   totalDueNow: number;
   createdAt: string;
 }
@@ -218,8 +246,26 @@ export async function listCompanionInvites(): Promise<CompanionInvite[]> {
 export async function respondToInvite(
   reservationId: string,
   decision: "accept" | "decline",
-): Promise<void> {
-  await api.patch(`/reservations/${reservationId}/companion`, { decision });
+): Promise<{
+  status: CompanionStatus;
+  requiresIndividualPayment: boolean;
+  paymentDeadline: string | null;
+  totalDueNow: number;
+}> {
+  return api.patch(`/reservations/${reservationId}/companion`, { decision });
+}
+
+export async function confirmCompanionPayment(input: {
+  reservationId: string;
+  amount: number;
+  provider?: "TOSS" | "PORTONE" | "STRIPE";
+  paymentKey?: string;
+}): Promise<void> {
+  await api.post(`/reservations/${input.reservationId}/companion/payment`, {
+    provider: input.provider ?? "TOSS",
+    paymentKey: input.paymentKey ?? `demo_companion_${Date.now()}`,
+    amount: input.amount,
+  });
 }
 
 export async function cancelBooking(reservationId: string): Promise<void> {
@@ -313,6 +359,12 @@ interface ApiReservation {
   };
   companions?: {
     status: CompanionStatus;
+    requiresIndividualPayment?: boolean;
+    inviteExpiresAt?: string | null;
+    paymentDeadline?: string | null;
+    paidAt?: string | null;
+    expiredAt?: string | null;
+    totalDueNow?: number;
     user: { id: string; name: string; avatarColor: string };
   }[];
   payment: { id: string; provider: string; amount: number; status: string; createdAt: string } | null;
@@ -429,6 +481,28 @@ export async function listMyPayments(): Promise<PaymentRecord[]> {
       }
     }
 
+    const companionInvites = await listCompanionInvites();
+    for (const invite of companionInvites) {
+      if (
+        invite.companionStatus !== "PAID" ||
+        !invite.paidAt ||
+        !invite.individualPayment
+      ) {
+        continue;
+      }
+      records.push({
+        id: `companion-${invite.id}`,
+        houseName: `${invite.room.name} · 룸메이트 1자리`,
+        amount: invite.individualPayment.totalDueNow,
+        method:
+          PROVIDER_LABELS[invite.individualPayment.provider ?? ""] ??
+          invite.individualPayment.provider ??
+          "개별 결제",
+        date: invite.paidAt.slice(0, 10).replace(/-/g, "."),
+        status: "완료",
+      });
+    }
+
     return records.sort((a, b) => b.date.localeCompare(a.date));
   } catch {
     return [];
@@ -467,7 +541,16 @@ export interface HostReservation {
   reservedSpots?: number;
   rentalUnit?: "whole" | "private_room" | "bed" | null;
   capacity?: number | null;
-  companions: { name: string; status: CompanionStatus }[];
+  companions: {
+    name: string;
+    requiresIndividualPayment?: boolean;
+    status: CompanionStatus;
+    inviteExpiresAt?: string | null;
+    paymentDeadline?: string | null;
+    paidAt?: string | null;
+    expiredAt?: string | null;
+    totalDueNow?: number;
+  }[];
   latestContractChange?: ContractChangeRequest | null;
   createdAt: string;
 }
@@ -539,7 +622,14 @@ export async function listHostReservations(): Promise<HostReservation[]> {
       capacity: r.room.capacity ?? null,
       companions: (r.companions ?? []).map((companion) => ({
         name: companion.user.name,
+        requiresIndividualPayment:
+          companion.requiresIndividualPayment ?? false,
         status: companion.status,
+        inviteExpiresAt: companion.inviteExpiresAt ?? null,
+        paymentDeadline: companion.paymentDeadline ?? null,
+        paidAt: companion.paidAt ?? null,
+        expiredAt: companion.expiredAt ?? null,
+        totalDueNow: companion.totalDueNow ?? 0,
       })),
       latestContractChange: mapContractChange(r.contractChanges?.[0]),
       createdAt: r.createdAt,
@@ -595,6 +685,15 @@ export async function listMyBookings(): Promise<Booking[]> {
       checkOut: r.checkOut?.slice(0, 10),
       extensionMonths: r.extensionMonths ?? null,
       latestContractChange: mapContractChange(r.contractChanges?.[0]),
+      companions: (r.companions ?? []).map((companion) => ({
+        name: companion.user.name,
+        requiresIndividualPayment:
+          companion.requiresIndividualPayment ?? false,
+        status: companion.status,
+        paymentDeadline: companion.paymentDeadline ?? null,
+        paidAt: companion.paidAt ?? null,
+        totalDueNow: companion.totalDueNow ?? 0,
+      })),
       createdAt: r.createdAt,
     }));
   } catch {

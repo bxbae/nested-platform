@@ -20,6 +20,7 @@ import {
   confirmPaymentSchema,
   hostStatusSchema,
   companionResponseSchema,
+  companionPaymentSchema,
   contractChangeQuoteSchema,
   earlyCheckoutRequestSchema,
   contractChangeDecisionSchema,
@@ -29,6 +30,7 @@ import {
   type QuoteDto,
   type CreateReservationDto,
   type CompanionResponseDto,
+  type CompanionPaymentDto,
   type ConfirmPaymentDto,
   type HostStatusDto,
   type ContractChangeQuoteDto,
@@ -172,6 +174,18 @@ export class ReservationsController {
     dto: CompanionResponseDto,
   ) {
     return this.service.respondToCompanionInvite(id, userId, dto.decision);
+  }
+
+  @Post("reservations/:id/companion/payment")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  payCompanion(
+    @Param("id") id: string,
+    @CurrentGuest() userId: string,
+    @Body(new ZodValidationPipe(companionPaymentSchema))
+    dto: CompanionPaymentDto,
+  ) {
+    return this.service.confirmCompanionPayment(id, userId, dto);
   }
 
   @Patch("reservations/:id/cancel")

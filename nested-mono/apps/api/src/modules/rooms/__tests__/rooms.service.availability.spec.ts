@@ -17,6 +17,9 @@ describe("RoomsService — 날짜 기반 가용성 검색", () => {
         count: jest.fn(async () => roomRows.length),
       },
       reservation: { findMany: jest.fn(async () => reservationRows) },
+      reservationCompanionMember: {
+        findMany: jest.fn(async () => []),
+      },
       calendarBlock: { findMany: jest.fn(async () => blockRows) },
     };
     const redis: any = {

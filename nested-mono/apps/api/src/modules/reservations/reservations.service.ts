@@ -32,12 +32,19 @@ import type {
   QuoteDto,
   CreateReservationDto,
   ConfirmPaymentDto,
+  CompanionPaymentDto,
   ContractChangeQuoteDto,
   ContractChangePaymentDto,
 } from "./dto/reservation.dto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 import { calculateRangeInventory } from "./reservation-inventory.util";
+import {
+  companionInviteExpiresAt,
+  companionPaymentDeadline,
+  daysUntilCheckIn,
+  expireCompanionInvites,
+} from "./companion-invite-expiration";
 
 // DI tokens for the ports (bound to Prisma/PSP impls in the module).
 export const RESERVATION_REPO = Symbol("RESERVATION_REPO");
@@ -70,6 +77,7 @@ export class ReservationsService {
       remainingSpots: number | null;
     }
   > {
+    if (this.prisma) await expireCompanionInvites(this.prisma);
     const room = await this.repo.findRoom(dto.roomId);
     if (!room)
       throw new NotFoundException({
@@ -95,7 +103,29 @@ export class ReservationsService {
       checkOut,
     );
 
-    const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
+    const companionCount = Math.max(0, dto.companionCount ?? 0);
+    if (
+      companionCount > 0 &&
+      (room.rentalUnit !== "BED" ||
+        booking.bookingMode !== "BED" ||
+        companionCount !== booking.reservedSpots - 1)
+    ) {
+      throw new BadRequestException({
+        code: "COMPANION_COUNT_MISMATCH",
+        message:
+          "개별 결제 친구 수는 다인실 선택 자리 수보다 1명 적어야 합니다.",
+      });
+    }
+    if (companionCount > 0 && daysUntilCheckIn(dto.checkIn) <= 0) {
+      throw new BadRequestException({
+        code: "SAME_DAY_COMPANION_INVITE_NOT_ALLOWED",
+        message: "입주 당일에는 룸메이트 초대를 보낼 수 없습니다.",
+      });
+    }
+    const units =
+      room.rentalUnit === "BED"
+        ? Math.max(1, booking.reservedSpots - companionCount)
+        : 1;
     const pricingInput = this.scaledPricing(room, units);
     const coupon = await this.resolveCoupon(
       dto.couponCode,
@@ -121,6 +151,7 @@ export class ReservationsService {
     dto: CreateReservationDto,
     guestId: string,
   ): Promise<ReservationRecord> {
+    if (this.prisma) await expireCompanionInvites(this.prisma);
     const room = await this.repo.findRoom(dto.roomId);
     if (!room)
       throw new NotFoundException({
@@ -135,10 +166,21 @@ export class ReservationsService {
       });
     }
 
-    const companionIds = [...new Set([
-      ...(dto.companionIds ?? []),
-      ...(dto.companionId ? [dto.companionId] : []),
-    ])];
+    const individualCompanionIds = [
+      ...new Set(dto.companionIds ?? []),
+    ];
+    // companionId 는 대표자 전액 결제 방식의 기존 클라이언트 호환 필드다.
+    // 신규 화면은 companionIds 를 사용하며 다인실 1자리씩 개별 결제한다.
+    const legacyCompanionId =
+      individualCompanionIds.length === 0 ? (dto.companionId ?? null) : null;
+    const companionIds = [
+      ...new Set([
+        ...individualCompanionIds,
+        ...(legacyCompanionId ? [legacyCompanionId] : []),
+      ]),
+    ];
+    const usesIndividualCompanionPayment =
+      individualCompanionIds.length > 0;
 
     if (companionIds.includes(guestId)) {
       throw new BadRequestException({
@@ -161,11 +203,14 @@ export class ReservationsService {
       dto.reservedSpots,
     );
 
-    const usesMultiCompanionSelection = (dto.companionIds?.length ?? 0) > 0;
-    if (usesMultiCompanionSelection && room.rentalUnit !== "BED") {
+    if (
+      usesIndividualCompanionPayment &&
+      (room.rentalUnit !== "BED" || booking.bookingMode !== "BED")
+    ) {
       throw new BadRequestException({
         code: "COMPANION_REQUIRES_SHARED_ROOM",
-        message: "친구 다중 선택은 공유형 다인실 예약에서만 사용할 수 있습니다.",
+        message:
+          "개별 결제 룸메이트 초대는 공유형 다인실의 여러 자리 예약에서만 사용할 수 있습니다.",
       });
     }
     if (room.rentalUnit === "BED" && companionIds.length > 0 && booking.reservedSpots < 2) {
@@ -174,10 +219,30 @@ export class ReservationsService {
         message: "친구와 함께 예약하려면 두 자리 이상을 선택해야 합니다.",
       });
     }
-    if (room.rentalUnit === "BED" && companionIds.length > Math.max(0, booking.reservedSpots - 1)) {
+    if (
+      room.rentalUnit === "BED" &&
+      companionIds.length > Math.max(0, booking.reservedSpots - 1)
+    ) {
       throw new BadRequestException({
         code: "TOO_MANY_COMPANIONS",
         message: `선택한 ${booking.reservedSpots}자리에는 친구를 최대 ${Math.max(0, booking.reservedSpots - 1)}명까지 초대할 수 있습니다.`,
+      });
+    }
+    if (
+      usesIndividualCompanionPayment &&
+      individualCompanionIds.length !== booking.reservedSpots - 1
+    ) {
+      throw new BadRequestException({
+        code: "COMPANION_COUNT_MISMATCH",
+        message:
+          "대표 예약자는 본인 1자리만 결제합니다. 선택한 전체 자리 수보다 1명 적게 친구를 선택해주세요.",
+      });
+    }
+    if (usesIndividualCompanionPayment && daysUntilCheckIn(dto.checkIn) <= 0) {
+      throw new BadRequestException({
+        code: "SAME_DAY_COMPANION_INVITE_NOT_ALLOWED",
+        message:
+          "입주 당일에는 룸메이트 초대를 보낼 수 없습니다. 호스트에게 직접 문의해주세요.",
       });
     }
     if (companionIds.length > 0) {
@@ -204,7 +269,14 @@ export class ReservationsService {
       checkOut,
     );
 
-    const units = room.rentalUnit === "BED" ? booking.reservedSpots : 1;
+    // 친구 초대가 있으면 대표자는 본인 1자리만 결제한다.
+    // 예약 행의 reservedSpots는 초대 자리까지 임시 확보하는 재고 값이다.
+    const units =
+      room.rentalUnit === "BED"
+        ? usesIndividualCompanionPayment
+          ? 1
+          : booking.reservedSpots
+        : 1;
     const pricingInput = this.scaledPricing(room, units);
     const coupon = await this.resolveCoupon(
       dto.couponCode,
@@ -219,13 +291,35 @@ export class ReservationsService {
     });
 
     try {
-      const legacyCompanionId = companionIds[0] ?? null;
-      return await this.repo.createHold({
+      const firstCompanionId = companionIds[0] ?? null;
+      const inviteExpiresAt = usesIndividualCompanionPayment
+        ? companionInviteExpiresAt(dto.checkIn)
+        : null;
+      const hold = await this.repo.createHold({
         roomId: room.id,
         guestId,
         companionIds,
-        companionId: legacyCompanionId,
-        companionStatus: legacyCompanionId ? "PENDING" : null,
+        companionInviteExpiresAt: inviteExpiresAt,
+        companionPrice: usesIndividualCompanionPayment
+          ? {
+              monthlyRent: price.monthlyRent,
+              deposit: price.deposit,
+              cleaningFee: price.cleaningFee,
+              maintenanceFee: price.maintenanceFee,
+              serviceFee: price.serviceFee,
+              discount: 0,
+              totalDueNow:
+                price.monthlyRent +
+                price.deposit +
+                price.cleaningFee +
+                price.maintenanceFee +
+                price.serviceFee,
+            }
+          : undefined,
+        companionRequiresIndividualPayment:
+          usesIndividualCompanionPayment,
+        companionId: firstCompanionId,
+        companionStatus: firstCompanionId ? "PENDING" : null,
         companionRespondedAt: null,
         checkIn: dto.checkIn,
         checkOut,
@@ -244,6 +338,22 @@ export class ReservationsService {
         totalDueNow: price.dueNow,
         couponId: coupon.couponId,
       });
+
+      if (this.prisma && companionIds.length > 0) {
+        await this.prisma.notification.createMany({
+          data: companionIds.map((userId) => ({
+            userId,
+            type: "RESERVATION" as const,
+            title: "룸메이트 초대가 도착했어요",
+            body: usesIndividualCompanionPayment
+              ? `"${room.name}"에서 본인 1자리 결제가 필요한 초대가 왔습니다.`
+              : `"${room.name}" 룸메이트 초대가 왔습니다.`,
+            targetUrl: "/me/trips",
+          })),
+        });
+      }
+
+      return hold;
     } catch (e) {
       if (
         e &&
@@ -264,6 +374,7 @@ export class ReservationsService {
     dto: ConfirmPaymentDto,
     guestId: string,
   ): Promise<ReservationRecord> {
+    if (this.prisma) await expireCompanionInvites(this.prisma);
     const reservation = await this.repo.findById(dto.reservationId);
     if (!reservation)
       throw new NotFoundException({
@@ -374,43 +485,346 @@ export class ReservationsService {
     return r;
   }
 
-  // Cancel a reservation (guest-initiated). Guests can only cancel their own.
-  // 동반자 초대 수락/거절. 초대받은 본인만 응답할 수 있고, 한 번 응답하면
-  // 번복할 수 없다 — 예약자가 그 결과를 보고 다음 결정을 하기 때문이다.
+  // 동반자 초대 수락/거절. 대표 예약은 초대한 자리까지 임시 점유하고,
+  // 거절·만료 시 해당 1자리를 즉시 잔여 자리로 복구한다.
   async respondToCompanionInvite(
     id: string,
     userId: string,
     decision: "accept" | "decline",
-  ): Promise<ReservationRecord> {
-    const r = await this.repo.findById(id);
-    if (!r) {
-      throw new NotFoundException({
-        code: "RESERVATION_NOT_FOUND",
-        message: "예약을 찾을 수 없습니다.",
-      });
+  ) {
+    // Unit tests and non-Prisma adapters keep the legacy in-memory response path.
+    if (!this.prisma) {
+      const reservation = await this.repo.findById(id);
+      if (!reservation) {
+        throw new NotFoundException({
+          code: "RESERVATION_NOT_FOUND",
+          message: "예약을 찾을 수 없습니다.",
+        });
+      }
+      const companionStatus = await this.repo.findCompanionStatus(id, userId);
+      if (!companionStatus) {
+        throw new ForbiddenException({
+          code: "FORBIDDEN",
+          message: "초대받은 사람만 응답할 수 있습니다.",
+        });
+      }
+      if (companionStatus !== "PENDING") {
+        throw new BadRequestException({
+          code: "ALREADY_RESPONDED",
+          message: "이미 응답한 초대입니다.",
+        });
+      }
+      return this.repo.updateCompanionStatus(
+        id,
+        userId,
+        decision === "accept" ? "ACCEPTED" : "DECLINED",
+      );
     }
-    const companionStatus = await this.repo.findCompanionStatus(id, userId);
-    if (!companionStatus) {
+
+    const prisma = this.requirePrisma();
+    await expireCompanionInvites(prisma);
+
+    return prisma.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(
+        'SELECT "id" FROM "Reservation" WHERE "id" = $1 FOR UPDATE',
+        id,
+      );
+
+      const member = await tx.reservationCompanionMember.findUnique({
+        where: {
+          reservationId_userId: {
+            reservationId: id,
+            userId,
+          },
+        },
+        include: {
+          reservation: {
+            include: {
+              room: {
+                select: {
+                  id: true,
+                  name: true,
+                  hostId: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!member) {
+        throw new ForbiddenException({
+          code: "FORBIDDEN",
+          message: "초대받은 사람만 응답할 수 있습니다.",
+        });
+      }
+      if (member.status !== "PENDING") {
+        throw new BadRequestException({
+          code: "ALREADY_RESPONDED",
+          message: "이미 응답했거나 만료된 초대입니다.",
+        });
+      }
+
+      // 기존 초대는 대표자가 전체 금액을 결제한 흐름일 수 있다.
+      // 마이그레이션 후에도 다시 결제시키지 않고 기존 수락/거절만 유지한다.
+      if (!member.requiresIndividualPayment) {
+        const respondedAt = new Date();
+        const legacyStatus =
+          decision === "accept" ? ("ACCEPTED" as const) : ("DECLINED" as const);
+
+        await tx.reservationCompanionMember.update({
+          where: { id: member.id },
+          data: {
+            status: legacyStatus,
+            respondedAt,
+          },
+        });
+        if (member.reservation.companionId === userId) {
+          await tx.reservation.update({
+            where: { id },
+            data: {
+              companionStatus: legacyStatus,
+              companionRespondedAt: respondedAt,
+            },
+          });
+        }
+
+        return {
+          status: legacyStatus,
+          companionId: userId,
+          companionStatus: legacyStatus,
+          requiresIndividualPayment: false,
+          paymentDeadline: null,
+          totalDueNow: 0,
+        };
+      }
+
+      if (member.reservation.status !== "CONFIRMED") {
+        throw new ConflictException({
+          code: "REPRESENTATIVE_PAYMENT_PENDING",
+          message: "대표 예약자의 결제가 완료된 뒤 초대를 수락할 수 있습니다.",
+        });
+      }
+      if (daysUntilCheckIn(member.reservation.checkIn) <= 0) {
+        throw new BadRequestException({
+          code: "SAME_DAY_COMPANION_INVITE_NOT_ALLOWED",
+          message:
+            "입주 당일에는 룸메이트 초대를 수락할 수 없습니다. 호스트에게 문의해주세요.",
+        });
+      }
+
+      const respondedAt = new Date();
+
+      if (decision === "decline") {
+        await tx.reservationCompanionMember.update({
+          where: { id: member.id },
+          data: {
+            status: "DECLINED",
+            respondedAt,
+          },
+        });
+        await tx.reservation.update({
+          where: { id },
+          data: {
+            reservedSpots: Math.max(
+              1,
+              member.reservation.reservedSpots - 1,
+            ),
+            ...(member.reservation.companionId === userId
+              ? {
+                  companionStatus: "DECLINED",
+                  companionRespondedAt: respondedAt,
+                }
+              : {}),
+          },
+        });
+        await tx.notification.create({
+          data: {
+            userId: member.reservation.guestId,
+            type: "RESERVATION",
+            title: "룸메이트 초대가 거절되었어요",
+            body: `"${member.reservation.room.name}" 초대 1건이 거절되어 자리가 다시 공개되었습니다.`,
+            targetUrl: "/me/trips",
+          },
+        });
+        return {
+          status: "DECLINED" as const,
+          companionId: userId,
+          companionStatus: "DECLINED" as const,
+          requiresIndividualPayment: true,
+          paymentDeadline: null,
+          totalDueNow: member.totalDueNow,
+        };
+      }
+
+      const paymentDeadline = companionPaymentDeadline(
+        member.reservation.checkIn,
+        respondedAt,
+      );
+      await tx.reservationCompanionMember.update({
+        where: { id: member.id },
+        data: {
+          status: "PAYMENT_PENDING",
+          respondedAt,
+          paymentDeadline,
+        },
+      });
+      if (member.reservation.companionId === userId) {
+        await tx.reservation.update({
+          where: { id },
+          data: {
+            companionStatus: "PAYMENT_PENDING",
+            companionRespondedAt: respondedAt,
+          },
+        });
+      }
+      await tx.notification.create({
+        data: {
+          userId: member.reservation.guestId,
+          type: "PAYMENT",
+          title: "룸메이트가 초대를 수락했어요",
+          body: `"${member.reservation.room.name}" 초대자가 본인 1자리 결제를 진행 중입니다.`,
+          targetUrl: "/me/trips",
+        },
+      });
+
+      return {
+        status: "PAYMENT_PENDING" as const,
+        companionId: userId,
+        companionStatus: "PAYMENT_PENDING" as const,
+        requiresIndividualPayment: true,
+        paymentDeadline,
+        totalDueNow: member.totalDueNow,
+      };
+    });
+  }
+
+  async confirmCompanionPayment(
+    id: string,
+    userId: string,
+    dto: CompanionPaymentDto,
+  ) {
+    const prisma = this.requirePrisma();
+    await expireCompanionInvites(prisma);
+
+    const member = await prisma.reservationCompanionMember.findUnique({
+      where: {
+        reservationId_userId: {
+          reservationId: id,
+          userId,
+        },
+      },
+      include: {
+        reservation: {
+          include: {
+            room: {
+              select: {
+                name: true,
+                hostId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!member) {
       throw new ForbiddenException({
         code: "FORBIDDEN",
-        message: "초대받은 사람만 응답할 수 있습니다.",
+        message: "초대받은 사람만 결제할 수 있습니다.",
       });
     }
-    if (companionStatus !== "PENDING") {
-      throw new BadRequestException({
-        code: "ALREADY_RESPONDED",
-        message: "이미 응답한 초대입니다.",
+    if (!member.requiresIndividualPayment) {
+      throw new ConflictException({
+        code: "LEGACY_COMPANION_INVITE",
+        message: "기존 초대는 대표 예약자가 결제한 예약입니다.",
       });
     }
-    return this.repo.updateCompanionStatus(
-      id,
-      userId,
-      decision === "accept" ? "ACCEPTED" : "DECLINED",
-    );
+    if (member.status === "PAID") return member;
+    if (member.status !== "PAYMENT_PENDING") {
+      throw new ConflictException({
+        code: "PAYMENT_NOT_PENDING",
+        message: "결제 대기 중인 룸메이트 초대가 아닙니다.",
+      });
+    }
+    if (
+      !member.paymentDeadline ||
+      member.paymentDeadline.getTime() < Date.now()
+    ) {
+      await expireCompanionInvites(prisma);
+      throw new ConflictException({
+        code: "COMPANION_PAYMENT_EXPIRED",
+        message: "개인 결제 기한이 지나 확보된 자리가 해제되었습니다.",
+      });
+    }
+    if (dto.amount !== member.totalDueNow) {
+      throw new UnprocessableEntityException({
+        code: "AMOUNT_MISMATCH",
+        message: "결제 금액이 본인 1자리 금액과 일치하지 않습니다.",
+      });
+    }
+
+    const verification = await this.payments.verify({
+      provider: dto.provider,
+      paymentKey: dto.paymentKey,
+      expectedAmount: member.totalDueNow,
+    });
+    if (!verification.ok || verification.paidAmount !== member.totalDueNow) {
+      throw new UnprocessableEntityException({
+        code: "PAYMENT_UNVERIFIED",
+        message: verification.reason ?? "결제 검증에 실패했습니다.",
+      });
+    }
+
+    const paidAt = new Date();
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.reservationCompanionMember.update({
+        where: { id: member.id },
+        data: {
+          status: "PAID",
+          paidAt,
+          paymentProvider: dto.provider,
+          paymentTxnId: verification.providerTxnId,
+        },
+      });
+
+      if (member.reservation.companionId === userId) {
+        await tx.reservation.update({
+          where: { id },
+          data: {
+            companionStatus: "PAID",
+            companionRespondedAt: paidAt,
+          },
+        });
+      }
+
+      const recipients = [
+        member.reservation.guestId,
+        member.reservation.room.hostId,
+      ].filter((value, index, list) => list.indexOf(value) === index);
+
+      await tx.notification.createMany({
+        data: recipients.map((recipientId) => ({
+          userId: recipientId,
+          type: "PAYMENT" as const,
+          title: "룸메이트 결제가 완료되었어요",
+          body: `"${member.reservation.room.name}" 공동예약의 1자리 결제가 완료되었습니다.`,
+          targetUrl:
+            recipientId === member.reservation.room.hostId
+              ? "/host/reservations"
+              : "/me/trips",
+        })),
+      });
+
+      return result;
+    });
+
+    return updated;
   }
 
   // 내가 동반자로 초대된 예약 목록
-  listCompanionInvites(userId: string) {
+  async listCompanionInvites(userId: string) {
+    if (this.prisma) await expireCompanionInvites(this.prisma);
     return this.repo.listByCompanion(userId);
   }
 
@@ -1057,12 +1471,14 @@ export class ReservationsService {
   // All reservations for the logged-in guest (my trips).
   async listMine(guestId: string) {
     await this.expireStaleExtensionPayments();
+    if (this.prisma) await expireCompanionInvites(this.prisma);
     return this.repo.listByGuest(guestId);
   }
 
   // All reservations across every room this host owns (host 예약 관리 inbox).
   async listForHost(hostId: string) {
     await this.expireStaleExtensionPayments();
+    if (this.prisma) await expireCompanionInvites(this.prisma);
     return this.repo.listByHost(hostId);
   }
 

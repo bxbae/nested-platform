@@ -256,6 +256,14 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
           const activeChange = Boolean(
             change && ACTIVE_CHANGE_STATUSES.has(change.status),
           );
+          const companions = booking.companions ?? [];
+          const confirmedCompanionCount = companions.filter(
+            (companion) =>
+              companion.status === "PAID" ||
+              companion.status === "ACCEPTED",
+          ).length;
+          const confirmedGroupCount =
+            companions.length > 0 ? 1 + confirmedCompanionCount : 1;
 
           const statusLabel = cancelled
             ? "취소됨"
@@ -367,6 +375,51 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
                 <span>청소비 {won(booking.cleaningFee)}</span>
                 <span>수수료 {won(booking.serviceFee)}</span>
               </div>
+
+              {companions.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: "13px 14px",
+                    borderRadius: 12,
+                    background: "var(--bg-2)",
+                    border: "1px solid var(--border)",
+                    fontSize: 13,
+                  }}
+                >
+                  <strong>
+                    공동예약 현황 {confirmedGroupCount}/{1 + companions.length}명 확정
+                  </strong>
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 5,
+                      marginTop: 8,
+                      color: "var(--text-2)",
+                    }}
+                  >
+                    <span>대표 예약자 · 결제 완료</span>
+                    {companions.map((companion) => (
+                      <span key={`${booking.id}-${companion.name}`}>
+                        {companion.name} · {companionStatusText(companion.status)}
+                        {companion.status === "PAYMENT_PENDING" &&
+                        companion.paymentDeadline
+                          ? ` · 결제 마감 ${formatDeadline(companion.paymentDeadline)}`
+                          : ""}
+                      </span>
+                    ))}
+                  </div>
+                  <p
+                    style={{
+                      marginTop: 8,
+                      color: "var(--text-2)",
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    미결제·거절·만료된 초대 자리는 자동으로 공개 잔여 자리로 복구됩니다.
+                  </p>
+                </div>
+              )}
 
               {change && (
                 <div
@@ -659,4 +712,32 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
       )}
     </div>
   );
+}
+
+
+function companionStatusText(
+  status:
+    | "PENDING"
+    | "ACCEPTED"
+    | "DECLINED"
+    | "PAYMENT_PENDING"
+    | "PAID"
+    | "EXPIRED",
+): string {
+  if (status === "PAID") return "결제 완료";
+  if (status === "PAYMENT_PENDING") return "수락 · 결제 대기";
+  if (status === "DECLINED") return "초대 거절";
+  if (status === "EXPIRED") return "기한 만료";
+  if (status === "ACCEPTED") return "기존 수락";
+  return "초대 확인 전";
+}
+
+function formatDeadline(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${String(date.getMonth() + 1).padStart(2, "0")}.${String(
+    date.getDate(),
+  ).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
 }

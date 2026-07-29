@@ -12,6 +12,8 @@ const stayRequestBaseSchema = z.object({
   months: z.coerce.number().int().min(1).max(24).optional(),
   bookingMode: z.enum(["UNIT", "BED", "WHOLE_ROOM"]).optional(),
   reservedSpots: z.coerce.number().int().min(1).max(20).optional(),
+  // 견적에서 대표 예약자가 직접 결제하지 않는 초대 자리 수.
+  companionCount: z.coerce.number().int().min(0).max(19).optional(),
   couponCode: z.string().trim().min(1).optional(),
 });
 
@@ -42,8 +44,8 @@ export const quoteSchema = stayRequestBaseSchema.superRefine(validateStayRequest
 export type QuoteDto = z.infer<typeof quoteSchema>;
 
 // ── Create reservation ── same inputs; server recomputes price.
-// companionId 를 주면 공동 예약이 된다: 결제는 예약자가 전액 하고, 상대에게는
-// 초대(PENDING)가 걸린다. 상대가 수락해야 함께 사는 것으로 확정된다.
+// companionId/companionIds를 주면 대표자는 본인 1자리만 결제한다.
+// 초대받은 친구는 수락 후 각자 1자리 금액을 결제해야 자리가 확정된다.
 export const createReservationSchema = stayRequestBaseSchema
   .extend({
     // 기존 단일 초대 필드는 운영 중인 클라이언트와 예약 호환을 위해 유지한다.
@@ -69,6 +71,14 @@ export const companionResponseSchema = z.object({
   decision: z.enum(["accept", "decline"]),
 });
 export type CompanionResponseDto = z.infer<typeof companionResponseSchema>;
+
+// 초대받은 사용자의 본인 1자리 개별 결제.
+export const companionPaymentSchema = z.object({
+  provider: z.enum(["TOSS", "PORTONE", "STRIPE"]),
+  paymentKey: z.string().min(1),
+  amount: z.number().int().positive(),
+});
+export type CompanionPaymentDto = z.infer<typeof companionPaymentSchema>;
 
 // ── Confirm payment ── verify against PSP then mark CONFIRMED
 export const confirmPaymentSchema = z.object({

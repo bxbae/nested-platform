@@ -23,6 +23,7 @@ import {
   addCalendarMonths,
   fullCalendarMonthsBetween,
 } from "../reservations/pricing";
+import { expireCompanionInvites } from "../reservations/companion-invite-expiration";
 
 export interface RoomSearchQuery {
   region?: string;
@@ -165,6 +166,7 @@ export class RoomsService {
 
   // ── Search / list (검색 API) — cursor pagination + filters ──
   async search(query: RoomSearchQuery) {
+    await expireCompanionInvites(this.prisma);
     const take = Math.min(Math.max(Math.trunc(query.take ?? 20), 1), 50);
     const requestedWindow = this.parseRequestedWindow(query);
     const where: any = { published: true };
@@ -616,6 +618,7 @@ export class RoomsService {
     month: number,
     requestedSpots = 1,
   ) {
+    await expireCompanionInvites(this.prisma);
     const room = await this.prisma.room.findUnique({
       where: { id },
       select: {
@@ -800,6 +803,7 @@ export class RoomsService {
 
   // ── Read one ──
   async findOne(id: string) {
+    await expireCompanionInvites(this.prisma);
     const room = await this.prisma.room.findUnique({
       where: { id },
       include: {
@@ -864,6 +868,7 @@ export class RoomsService {
 
   // Every room I host, published or not, newest first. Powers 숙소 관리.
   async listForHost(hostId: string) {
+    await expireCompanionInvites(this.prisma);
     const rooms = await this.prisma.room.findMany({
       where: { hostId },
       orderBy: { createdAt: "desc" },
@@ -893,7 +898,11 @@ export class RoomsService {
         guest: { select: { name: true } },
         companion: { select: { name: true } },
         companions: {
-          where: { status: { in: ["PENDING", "ACCEPTED"] } },
+          where: {
+            status: {
+              in: ["PENDING", "ACCEPTED", "PAYMENT_PENDING", "PAID"],
+            },
+          },
           select: { user: { select: { name: true } } },
         },
       },
