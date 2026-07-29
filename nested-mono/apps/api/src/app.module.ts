@@ -32,6 +32,7 @@ import { UsersModule } from "./modules/users/users.module";
 import { FriendsModule } from "./modules/friends/friends.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { TransitModule } from './modules/transit/transit.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -74,5 +75,6 @@ import { TransitModule } from './modules/transit/transit.module';
     ReportsModule,
     TransitModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}
