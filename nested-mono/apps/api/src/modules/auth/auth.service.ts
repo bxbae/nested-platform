@@ -55,7 +55,7 @@ export class AuthService {
         // Badge inputs: admin identity check + activity counts.
         verifiedAt: true,
         _count: { select: { reviews: true } },
-        reservations: { where: { status: "COMPLETED" }, select: { id: true } },
+        reservations: { where: { status: { in: ["COMPLETED", "EARLY_CHECKOUT_APPROVED"] } }, select: { id: true } },
       },
     });
     if (!user) return null;

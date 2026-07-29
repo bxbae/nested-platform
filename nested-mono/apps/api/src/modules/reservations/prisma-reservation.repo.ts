@@ -242,16 +242,21 @@ export class PrismaReservationRepo implements ReservationRepo {
         },
       },
     });
-    return rows.map((r: (typeof rows)[number]) => ({
-      ...r,
-      room: {
-        id: r.room.id,
-        name: r.room.name,
-        region: r.room.region,
-        image: r.room.images[0]?.url ?? null,
-      },
-      payment: r.payment ?? null,
-    }));
+    return rows.map((r: (typeof rows)[number]) => {
+      const { guestHiddenAt, ...reservation } = r;
+
+      return {
+        ...reservation,
+        hiddenFromTrips: Boolean(guestHiddenAt),
+        room: {
+          id: r.room.id,
+          name: r.room.name,
+          region: r.room.region,
+          image: r.room.images[0]?.url ?? null,
+        },
+        payment: r.payment ?? null,
+      };
+    });
   }
 
   // Every reservation across the listings this host owns (the 예약 관리 inbox).
@@ -397,6 +402,7 @@ export class PrismaReservationRepo implements ReservationRepo {
             paymentDeadline: true,
             paidAt: true,
             expiredAt: true,
+            hiddenAt: true,
             monthlyRent: true,
             deposit: true,
             cleaningFee: true,
@@ -420,10 +426,17 @@ export class PrismaReservationRepo implements ReservationRepo {
       },
     });
     return rows.map((r: (typeof rows)[number]) => {
-      const { companions, ...reservation } = r;
+      const {
+        companions,
+        legacyCompanionHiddenAt,
+        ...reservation
+      } = r;
       const membership = companions[0];
       return {
         ...reservation,
+        hiddenFromTrips: Boolean(
+          membership?.hiddenAt ?? legacyCompanionHiddenAt,
+        ),
         companionId: companionId,
         companionStatus: membership?.status ?? r.companionStatus,
         companionRespondedAt: membership?.respondedAt ?? r.companionRespondedAt,

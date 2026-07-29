@@ -1,27 +1,28 @@
 "use client";
 
-// Real search map (Leaflet + OSM). Price-pill markers stay synced with list
-// hover. Loaded client-only via next/dynamic from SearchMap.
-
 import { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
+import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import type { House } from "@/lib/types";
-import { wonShort } from "@/lib/format";
 
-function pill(house: House, active: boolean) {
-  const bg = active ? "#111" : "#fff";
-  const fg = active ? "#fff" : "#111";
+import { wonShort } from "@/lib/format";
+import type { House } from "@/lib/types";
+
+function pricePill(house: House, active: boolean) {
+  const background = active ? "#ff5a5f" : "#ffffff";
+  const foreground = active ? "#ffffff" : "#222222";
+  const scale = active ? 1.12 : 1;
+
   return L.divIcon({
-    // Leaflet 기본 .leaflet-div-icon 배경/테두리가 알약 모양을 덮지 않도록
-    // 전용 클래스를 준다 (globals.css 에서 배경 제거).
     className: "price-pill-icon",
     html: `<div style="
-      background:${bg};color:${fg};font-weight:700;font-size:12px;
-      padding:4px 9px;border-radius:999px;white-space:nowrap;
-      border:1.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.25);
-      transform:translate(-50%,-50%)">${wonShort(house.monthlyRent)}</div>`,
+      background:${background};color:${foreground};font-weight:800;font-size:12px;
+      padding:5px 10px;border-radius:999px;white-space:nowrap;
+      border:1.5px solid rgba(255,255,255,.96);
+      box-shadow:${active ? "0 8px 22px rgba(255,90,95,.34)" : "0 3px 10px rgba(0,0,0,.2)"};
+      transform:translate(-50%,-50%) scale(${scale});
+      transition:transform .16s ease, background .16s ease, box-shadow .16s ease;
+    ">${wonShort(house.monthlyRent)}</div>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
@@ -29,15 +30,18 @@ function pill(house: House, active: boolean) {
 
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap();
-  // 배열 참조가 아니라 "실제 좌표 값"이 바뀌었을 때만 다시 맞추도록,
-  // 좌표들을 문자열로 직렬화해서 의존성으로 사용한다. 이러면 상위에서
-  // 배열이 새로 만들어져도(참조만 다르고 값은 같으면) 재실행되지 않는다.
-  const key = points.map((p) => p.join(",")).join("|");
+  const key = points.map((point) => point.join(",")).join("|");
+
   useEffect(() => {
     if (points.length === 0) return;
-    map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 14 });
+
+    map.fitBounds(L.latLngBounds(points), {
+      padding: [34, 34],
+      maxZoom: 14,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, key]);
+
   return null;
 }
 
@@ -45,13 +49,15 @@ export default function SearchMapInner({
   houses,
   hover,
   onHover,
+  onSelect,
 }: {
   houses: House[];
   hover: string | null;
   onHover: (id: string | null) => void;
+  onSelect?: (house: House) => void;
 }) {
   const points = useMemo<[number, number][]>(
-    () => houses.map((h) => [h.lat, h.lng] as [number, number]),
+    () => houses.map((house) => [house.lat, house.lng]),
     [houses],
   );
   const center: [number, number] = points[0] ?? [37.5665, 126.978];
@@ -61,7 +67,7 @@ export default function SearchMapInner({
       center={center}
       zoom={12}
       scrollWheelZoom={false}
-      style={{ width: "100%", height: "100%", minHeight: 300 }}
+      style={{ width: "100%", height: "100%", minHeight: 320 }}
       attributionControl={false}
     >
       <TileLayer
@@ -69,17 +75,24 @@ export default function SearchMapInner({
         attribution="&copy; OpenStreetMap"
       />
       <FitBounds points={points} />
-      {houses.map((h) => (
-        <Marker
-          key={h.id}
-          position={[h.lat, h.lng]}
-          icon={pill(h, hover === h.id)}
-          eventHandlers={{
-            mouseover: () => onHover(h.id),
-            mouseout: () => onHover(null),
-          }}
-        />
-      ))}
+
+      {houses.map((house) => {
+        const active = hover === house.id;
+
+        return (
+          <Marker
+            key={house.id}
+            position={[house.lat, house.lng]}
+            icon={pricePill(house, active)}
+            zIndexOffset={active ? 1000 : 0}
+            eventHandlers={{
+              mouseover: () => onHover(house.id),
+              mouseout: () => onHover(null),
+              click: () => onSelect?.(house),
+            }}
+          />
+        );
+      })}
     </MapContainer>
   );
 }

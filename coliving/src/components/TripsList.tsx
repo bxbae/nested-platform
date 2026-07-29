@@ -21,17 +21,28 @@ import {
   quoteContractChange,
   cancelContractChange,
   confirmExtensionPayment,
+  setReservationListHidden,
   type ContractChangeQuote,
+  type ManagedBooking,
 } from "@/lib/api/reservations";
 
 type ChangeModalState = {
-  booking: Booking;
+  booking: ManagedBooking;
   type: ContractChangeType;
 } | null;
+
+type ReservationTab = "current" | "past";
 
 const ACTIVE_CHANGE_STATUSES = new Set([
   "HOST_REVIEW",
   "PAYMENT_PENDING",
+]);
+
+const TERMINAL_RESERVATION_STATUSES = new Set([
+  "COMPLETED",
+  "CANCELLED_BY_GUEST",
+  "CANCELLED_BY_HOST",
+  "NO_SHOW",
 ]);
 
 function addDays(value: string, days: number): string {
@@ -58,14 +69,88 @@ function changeStatusLabel(change: ContractChangeRequest): string {
   return labels[change.status];
 }
 
+function startOfToday(): Date {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function isDateBeforeToday(value?: string | null): boolean {
+  if (!value) return false;
+  const date = parseISODate(value);
+  return date < startOfToday();
+}
+
+function isDateAfterToday(value: string): boolean {
+  const date = parseISODate(value);
+  return date > startOfToday();
+}
+
+function isPastReservation(booking: ManagedBooking): boolean {
+  const raw = booking.rawStatus ?? "";
+
+  return (
+    TERMINAL_RESERVATION_STATUSES.has(raw) ||
+    isDateBeforeToday(booking.checkOut)
+  );
+}
+
+function reservationStatusLabel(booking: ManagedBooking): string {
+  const raw = booking.rawStatus ?? "";
+
+  if (raw === "CANCELLED_BY_GUEST") return "게스트 취소";
+  if (raw === "CANCELLED_BY_HOST") return "호스트 취소";
+  if (raw === "COMPLETED") return "퇴실 완료";
+  if (raw === "NO_SHOW") return "노쇼";
+  if (raw === "PENDING_PAYMENT") return "결제 대기";
+  if (raw === "EARLY_CHECKOUT_REQUESTED") return "조기 퇴실 요청 중";
+  if (raw === "EARLY_CHECKOUT_APPROVED") return "조기 퇴실 승인";
+  if (raw === "EXTENSION_REQUESTED") return "계약 연장 요청 중";
+
+  if (isDateBeforeToday(booking.checkOut)) {
+    return "기간 종료";
+  }
+
+  if (raw === "CONFIRMED") {
+    return isDateAfterToday(booking.moveIn) ? "입주 예정" : "입주 중";
+  }
+
+  return booking.status === "cancelled" ? "취소됨" : "예약 확정";
+}
+
+function statusChipStyle(booking: ManagedBooking) {
+  const past = isPastReservation(booking);
+  const raw = booking.rawStatus ?? "";
+  const warning = raw === "PENDING_PAYMENT";
+
+  return {
+    background: past
+      ? "var(--bg-2)"
+      : warning
+        ? "var(--warning)"
+        : "var(--secondary)",
+    color: past ? "var(--text-2)" : "#fff",
+    border: past ? "1px solid var(--border)" : "none",
+  };
+}
+
 export function TripsList({ bare = false }: { bare?: boolean }) {
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookings, setBookings] = useState<ManagedBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [modal, setModal] = useState<ChangeModalState>(null);
   const [requestedCheckOut, setRequestedCheckOut] = useState("");
   const [quote, setQuote] = useState<ContractChangeQuote | null>(null);
   const [changeError, setChangeError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ReservationTab>("current");
+  const [expandedPastIds, setExpandedPastIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [lastHidden, setLastHidden] = useState<{
+    id: string;
+    houseName: string;
+  } | null>(null);
 
   async function load() {
     try {
@@ -82,6 +167,24 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
     void load();
   }, []);
 
+  const visibleBookings = bookings.filter(
+    (booking) => booking.hiddenFromTrips !== true,
+  );
+  const currentBookings = visibleBookings.filter(
+    (booking) => !isPastReservation(booking),
+  );
+  const pastBookings = visibleBookings.filter(isPastReservation);
+
+  useEffect(() => {
+    if (
+      !loading &&
+      currentBookings.length === 0 &&
+      pastBookings.length > 0
+    ) {
+      setActiveTab("past");
+    }
+  }, [loading, currentBookings.length, pastBookings.length]);
+
   async function cancel(id: string) {
     if (busyId) return;
     setBusyId(id);
@@ -93,7 +196,7 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
     }
   }
 
-  function openChange(booking: Booking, type: ContractChangeType) {
+  function openChange(booking: ManagedBooking, type: ContractChangeType) {
     if (!booking.checkOut) return;
     const defaultDate =
       type === "EXTENSION"
@@ -168,7 +271,7 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
     }
   }
 
-  async function cancelChange(booking: Booking) {
+  async function cancelChange(booking: ManagedBooking) {
     if (busyId) return;
     setBusyId(booking.id);
     try {
@@ -179,7 +282,7 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
     }
   }
 
-  async function payExtension(booking: Booking) {
+  async function payExtension(booking: ManagedBooking) {
     const change = booking.latestContractChange;
     if (!change || change.status !== "PAYMENT_PENDING" || busyId) return;
     setBusyId(booking.id);
@@ -194,6 +297,76 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
     }
   }
 
+  async function hidePastBooking(booking: ManagedBooking) {
+    if (busyId) return;
+    setBusyId(booking.id);
+    setListError(null);
+
+    try {
+      await setReservationListHidden(booking.id, true);
+      setBookings((current) =>
+        current.map((item) =>
+          item.id === booking.id
+            ? { ...item, hiddenFromTrips: true }
+            : item,
+        ),
+      );
+      setLastHidden({
+        id: booking.id,
+        houseName: booking.houseName.trim(),
+      });
+    } catch (error) {
+      setListError(
+        error instanceof Error
+          ? error.message
+          : "예약을 목록에서 숨기지 못했습니다.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function undoHidden() {
+    if (!lastHidden || busyId) return;
+
+    const target = lastHidden;
+    setBusyId(target.id);
+    setListError(null);
+
+    try {
+      await setReservationListHidden(target.id, false);
+      setBookings((current) =>
+        current.map((item) =>
+          item.id === target.id
+            ? { ...item, hiddenFromTrips: false }
+            : item,
+        ),
+      );
+      setLastHidden(null);
+      setActiveTab("past");
+    } catch (error) {
+      setListError(
+        error instanceof Error
+          ? error.message
+          : "숨김을 되돌리지 못했습니다.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function togglePastDetails(id: string) {
+    setExpandedPastIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
   return (
     <div
       className={bare ? "" : "wrap"}
@@ -205,7 +378,7 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
     >
       {!bare && (
         <>
-          <span className="eyebrow">예약 내역</span>
+          <span className="eyebrow">예약 관리</span>
           <h1
             className="display"
             style={{ fontSize: 40, marginTop: 8, marginBottom: 24 }}
@@ -214,17 +387,85 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
           </h1>
         </>
       )}
+
       {bare && (
-        <h1 className="display" style={{ fontSize: 30, marginBottom: 20 }}>
+        <h2 className="display" style={{ fontSize: 22, marginBottom: 14 }}>
           예약 내역
-        </h1>
+        </h2>
+      )}
+
+      <div
+        role="tablist"
+        aria-label="예약 내역 구분"
+        style={{
+          display: "flex",
+          gap: 8,
+          marginBottom: 18,
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <ReservationTabButton
+          selected={activeTab === "current"}
+          onClick={() => setActiveTab("current")}
+          label="진행 중·예정"
+          count={currentBookings.length}
+        />
+        <ReservationTabButton
+          selected={activeTab === "past"}
+          onClick={() => setActiveTab("past")}
+          label="지난 예약"
+          count={pastBookings.length}
+        />
+      </div>
+
+      {lastHidden && (
+        <div
+          role="status"
+          className="card"
+          style={{
+            marginBottom: 14,
+            padding: "12px 14px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            background: "var(--bg-2)",
+          }}
+        >
+          <span style={{ fontSize: 13.5 }}>
+            “{lastHidden.houseName}” 예약을 내 목록에서 숨겼습니다.
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost press"
+            style={{ fontSize: 12.5, padding: "7px 12px" }}
+            disabled={busyId === lastHidden.id}
+            onClick={() => void undoHidden()}
+          >
+            되돌리기
+          </button>
+        </div>
+      )}
+
+      {listError && (
+        <p
+          role="alert"
+          style={{
+            color: "var(--primary)",
+            fontSize: 13,
+            marginBottom: 12,
+          }}
+        >
+          {listError}
+        </p>
       )}
 
       {loading && (
         <div style={{ color: "var(--text-2)" }}>불러오는 중…</div>
       )}
 
-      {!loading && bookings.length === 0 && (
+      {!loading && visibleBookings.length === 0 && (
         <div
           className="card"
           style={{
@@ -235,7 +476,7 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
           }}
         >
           <p style={{ color: "var(--text-2)", marginBottom: 16 }}>
-            아직 예약이 없어요. 새로운 집을 찾아보세요.
+            아직 표시할 예약이 없어요. 새로운 집을 찾아보세요.
           </p>
           <Link href="/browse" className="btn btn-primary">
             숙소 둘러보기
@@ -243,255 +484,253 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 14 }}>
-        {bookings.map((booking) => {
-          const raw = booking.rawStatus ?? "";
-          const cancelled =
-            raw === "CANCELLED_BY_GUEST" ||
-            raw === "CANCELLED_BY_HOST" ||
-            booking.status === "cancelled";
-          const held = raw === "PENDING_PAYMENT";
-          const completed = raw === "COMPLETED";
-          const change = booking.latestContractChange ?? null;
-          const activeChange = Boolean(
-            change && ACTIVE_CHANGE_STATUSES.has(change.status),
-          );
-          const companions = booking.companions ?? [];
-          const confirmedCompanionCount = companions.filter(
-            (companion) =>
-              companion.status === "PAID" ||
-              companion.status === "ACCEPTED",
-          ).length;
-          const confirmedGroupCount =
-            companions.length > 0 ? 1 + confirmedCompanionCount : 1;
+      {!loading &&
+        visibleBookings.length > 0 &&
+        activeTab === "current" &&
+        currentBookings.length === 0 && (
+          <EmptyReservationState message="현재 진행 중이거나 예정된 예약이 없어요." />
+        )}
 
-          const statusLabel = cancelled
-            ? "취소됨"
-            : held
-              ? "결제 대기"
-              : completed
-                ? "이용 완료"
-                : raw === "EARLY_CHECKOUT_APPROVED"
-                  ? "조기 퇴실 승인"
-                  : "예약 확정";
+      {!loading &&
+        visibleBookings.length > 0 &&
+        activeTab === "past" &&
+        pastBookings.length === 0 && (
+          <EmptyReservationState message="아직 지난 예약이 없어요." />
+        )}
 
-          return (
-            <div
-              key={booking.id}
-              className="card"
-              style={{ padding: 22, opacity: cancelled ? 0.55 : 1 }}
-            >
+      {activeTab === "current" && (
+        <div style={{ display: "grid", gap: 14 }}>
+          {currentBookings.map((booking) => {
+            const raw = booking.rawStatus ?? "";
+            const held = raw === "PENDING_PAYMENT";
+            const change = booking.latestContractChange ?? null;
+            const activeChange = Boolean(
+              change && ACTIVE_CHANGE_STATUSES.has(change.status),
+            );
+            const companions = booking.companions ?? [];
+            const confirmedCompanionCount = companions.filter(
+              (companion) =>
+                companion.status === "PAID" ||
+                companion.status === "ACCEPTED",
+            ).length;
+            const confirmedGroupCount =
+              companions.length > 0 ? 1 + confirmedCompanionCount : 1;
+
+            return (
               <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: 16,
-                  flexWrap: "wrap",
-                }}
+                key={booking.id}
+                className="card"
+                style={{ padding: 22 }}
               >
-                <div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <strong style={{ fontSize: 18 }}>
-                      {booking.houseName.trim()}
-                    </strong>
-                    <span
-                      className="chip"
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 16,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <div
                       style={{
-                        background: cancelled
-                          ? "var(--bg-2)"
-                          : held
-                            ? "var(--warning)"
-                            : "var(--secondary)",
-                        color: cancelled ? "var(--text-2)" : "#fff",
-                        border: cancelled
-                          ? "1px solid var(--border)"
-                          : "none",
-                        fontSize: 11.5,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
-                      {statusLabel}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      color: "var(--text-2)",
-                      marginTop: 4,
-                    }}
-                  >
-                    {booking.moveIn} ~ {booking.checkOut} ·{" "}
-                    {booking.checkOut
-                      ? formatStayDuration(
-                          booking.moveIn,
-                          booking.checkOut,
-                        )
-                      : `${booking.months}개월`}
-                    {booking.reservedSpots &&
-                    booking.reservedSpots > 1
-                      ? ` · ${booking.reservedSpots}자리`
-                      : ""}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div
-                    className="display"
-                    style={{ fontSize: 22, fontWeight: 600 }}
-                  >
-                    {won(booking.totalDueNow)}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text-2)",
-                    }}
-                  >
-                    최초 예약 결제액
-                  </div>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 20,
-                  marginTop: 16,
-                  paddingTop: 14,
-                  borderTop: "1px solid var(--border)",
-                  fontSize: 13.5,
-                  color: "var(--text-2)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span>월세 {won(booking.monthlyRent)}</span>
-                <span>보증금 {won(booking.deposit)}</span>
-                <span>청소비 {won(booking.cleaningFee)}</span>
-                <span>수수료 {won(booking.serviceFee)}</span>
-              </div>
-
-              {companions.length > 0 && (
-                <div
-                  style={{
-                    marginTop: 14,
-                    padding: "13px 14px",
-                    borderRadius: 12,
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--border)",
-                    fontSize: 13,
-                  }}
-                >
-                  <strong>
-                    공동예약 현황 {confirmedGroupCount}/{1 + companions.length}명 확정
-                  </strong>
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 5,
-                      marginTop: 8,
-                      color: "var(--text-2)",
-                    }}
-                  >
-                    <span>대표 예약자 · 결제 완료</span>
-                    {companions.map((companion) => (
-                      <span key={`${booking.id}-${companion.name}`}>
-                        {companion.name} · {companionStatusText(companion.status)}
-                        {companion.status === "PAYMENT_PENDING" &&
-                        companion.paymentDeadline
-                          ? ` · 결제 마감 ${formatDeadline(companion.paymentDeadline)}`
-                          : ""}
+                      <strong style={{ fontSize: 18 }}>
+                        {booking.houseName.trim()}
+                      </strong>
+                      <span
+                        className="chip"
+                        style={{
+                          ...statusChipStyle(booking),
+                          fontSize: 11.5,
+                        }}
+                      >
+                        {reservationStatusLabel(booking)}
                       </span>
-                    ))}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "var(--text-2)",
+                        marginTop: 4,
+                      }}
+                    >
+                      {booking.moveIn} ~ {booking.checkOut} ·{" "}
+                      {booking.checkOut
+                        ? formatStayDuration(
+                            booking.moveIn,
+                            booking.checkOut,
+                          )
+                        : `${booking.months}개월`}
+                      {booking.reservedSpots &&
+                      booking.reservedSpots > 1
+                        ? ` · ${booking.reservedSpots}자리`
+                        : ""}
+                    </div>
                   </div>
-                  <p
-                    style={{
-                      marginTop: 8,
-                      color: "var(--text-2)",
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    미결제·거절·만료된 초대 자리는 자동으로 공개 잔여 자리로 복구됩니다.
-                  </p>
+                  <div style={{ textAlign: "right" }}>
+                    <div
+                      className="display"
+                      style={{ fontSize: 22, fontWeight: 600 }}
+                    >
+                      {won(booking.totalDueNow)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-2)",
+                      }}
+                    >
+                      최초 예약 결제액
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              {change && (
                 <div
                   style={{
-                    marginTop: 14,
-                    padding: "13px 14px",
-                    borderRadius: 12,
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--border)",
-                    fontSize: 13,
+                    display: "flex",
+                    gap: 20,
+                    marginTop: 16,
+                    paddingTop: 14,
+                    borderTop: "1px solid var(--border)",
+                    fontSize: 13.5,
+                    color: "var(--text-2)",
+                    flexWrap: "wrap",
                   }}
                 >
-                  <strong>{changeStatusLabel(change)}</strong>
+                  <span>월세 {won(booking.monthlyRent)}</span>
+                  <span>보증금 {won(booking.deposit)}</span>
+                  <span>청소비 {won(booking.cleaningFee)}</span>
+                  <span>수수료 {won(booking.serviceFee)}</span>
+                </div>
+
+                {companions.length > 0 && (
                   <div
                     style={{
-                      color: "var(--text-2)",
-                      marginTop: 5,
-                      lineHeight: 1.6,
+                      marginTop: 14,
+                      padding: "13px 14px",
+                      borderRadius: 12,
+                      background: "var(--bg-2)",
+                      border: "1px solid var(--border)",
+                      fontSize: 13,
                     }}
                   >
-                    기존 퇴실일 {change.originalCheckOut} → 요청 퇴실일{" "}
-                    {change.requestedCheckOut}
-                    {change.type === "EXTENSION" &&
-                      change.additionalAmount > 0 && (
+                    <strong>
+                      공동예약 현황 {confirmedGroupCount}/
+                      {1 + companions.length}명 확정
+                    </strong>
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 5,
+                        marginTop: 8,
+                        color: "var(--text-2)",
+                      }}
+                    >
+                      <span>대표 예약자 · 결제 완료</span>
+                      {companions.map((companion) => (
+                        <span key={`${booking.id}-${companion.name}`}>
+                          {companion.name} ·{" "}
+                          {companionStatusText(companion.status)}
+                          {companion.status === "PAYMENT_PENDING" &&
+                          companion.paymentDeadline
+                            ? ` · 결제 마감 ${formatDeadline(
+                                companion.paymentDeadline,
+                              )}`
+                            : ""}
+                        </span>
+                      ))}
+                    </div>
+                    <p
+                      style={{
+                        marginTop: 8,
+                        color: "var(--text-2)",
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      미결제·거절·만료된 초대 자리는 자동으로 공개 잔여
+                      자리로 복구됩니다.
+                    </p>
+                  </div>
+                )}
+
+                {change && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: "13px 14px",
+                      borderRadius: 12,
+                      background: "var(--bg-2)",
+                      border: "1px solid var(--border)",
+                      fontSize: 13,
+                    }}
+                  >
+                    <strong>{changeStatusLabel(change)}</strong>
+                    <div
+                      style={{
+                        color: "var(--text-2)",
+                        marginTop: 5,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      기존 퇴실일 {change.originalCheckOut} → 요청 퇴실일{" "}
+                      {change.requestedCheckOut}
+                      {change.type === "EXTENSION" &&
+                        change.additionalAmount > 0 && (
+                          <>
+                            <br />
+                            추가 결제액 {won(change.additionalAmount)}
+                          </>
+                        )}
+                      {change.type === "EARLY_CHECKOUT" &&
+                        change.estimatedRefund > 0 && (
+                          <>
+                            <br />
+                            예상 조정·환불액 {won(change.estimatedRefund)}
+                          </>
+                        )}
+                      {change.rejectReason && (
                         <>
                           <br />
-                          추가 결제액 {won(change.additionalAmount)}
+                          거절 사유: {change.rejectReason}
                         </>
                       )}
-                    {change.type === "EARLY_CHECKOUT" &&
-                      change.estimatedRefund > 0 && (
-                        <>
-                          <br />
-                          예상 조정·환불액 {won(change.estimatedRefund)}
-                        </>
-                      )}
-                    {change.rejectReason && (
-                      <>
-                        <br />
-                        거절 사유: {change.rejectReason}
-                      </>
+                    </div>
+
+                    {change.status === "PAYMENT_PENDING" && (
+                      <button
+                        className="btn btn-primary press"
+                        style={{ marginTop: 10, fontSize: 13 }}
+                        disabled={busyId === booking.id}
+                        onClick={() => void payExtension(booking)}
+                      >
+                        추가 금액 {won(change.additionalAmount)} 결제하기
+                      </button>
+                    )}
+
+                    {activeChange && (
+                      <button
+                        className="btn btn-ghost press"
+                        style={{
+                          marginTop: 10,
+                          marginLeft: 8,
+                          fontSize: 13,
+                        }}
+                        disabled={busyId === booking.id}
+                        onClick={() => void cancelChange(booking)}
+                      >
+                        요청 취소
+                      </button>
                     )}
                   </div>
+                )}
 
-                  {change.status === "PAYMENT_PENDING" && (
-                    <button
-                      className="btn btn-primary press"
-                      style={{ marginTop: 10, fontSize: 13 }}
-                      disabled={busyId === booking.id}
-                      onClick={() => void payExtension(booking)}
-                    >
-                      추가 금액 {won(change.additionalAmount)} 결제하기
-                    </button>
-                  )}
-
-                  {activeChange && (
-                    <button
-                      className="btn btn-ghost press"
-                      style={{ marginTop: 10, marginLeft: 8, fontSize: 13 }}
-                      disabled={busyId === booking.id}
-                      onClick={() => void cancelChange(booking)}
-                    >
-                      요청 취소
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {!cancelled &&
-                !completed &&
-                raw === "CONFIRMED" &&
-                !activeChange && (
+                {raw === "CONFIRMED" && !activeChange && (
                   <div
                     style={{
                       display: "flex",
@@ -526,10 +765,235 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
                     </button>
                   </div>
                 )}
-            </div>
-          );
-        })}
-      </div>
+
+                {held && (
+                  <p
+                    style={{
+                      marginTop: 14,
+                      color: "var(--text-2)",
+                      fontSize: 13,
+                    }}
+                  >
+                    결제가 완료되면 예약이 확정됩니다.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {activeTab === "past" && (
+        <div style={{ display: "grid", gap: 10 }}>
+          {pastBookings.map((booking) => {
+            const expanded = expandedPastIds.has(booking.id);
+            const companions = booking.companions ?? [];
+
+            return (
+              <article
+                key={booking.id}
+                className="card"
+                style={{
+                  padding: 17,
+                  opacity: 0.9,
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "minmax(0, 1.4fr) minmax(180px, .9fr) auto",
+                    alignItems: "center",
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <Link href={`/homes/${booking.houseId}`}>
+                      <strong
+                        style={{
+                          display: "block",
+                          fontSize: 15.5,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {booking.houseName.trim()}
+                      </strong>
+                    </Link>
+                    <span
+                      style={{
+                        display: "block",
+                        marginTop: 4,
+                        color: "var(--text-2)",
+                        fontSize: 12.5,
+                      }}
+                    >
+                      {booking.moveIn} ~ {booking.checkOut}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span
+                      className="chip"
+                      style={{
+                        ...statusChipStyle(booking),
+                        fontSize: 11,
+                      }}
+                    >
+                      {reservationStatusLabel(booking)}
+                    </span>
+                    <strong
+                      style={{
+                        display: "block",
+                        marginTop: 6,
+                        fontSize: 14,
+                      }}
+                    >
+                      {won(booking.totalDueNow)}
+                    </strong>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                      gap: 7,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12.5, padding: "7px 11px" }}
+                      aria-expanded={expanded}
+                      onClick={() => togglePastDetails(booking.id)}
+                    >
+                      {expanded ? "상세 닫기" : "상세 보기"}
+                    </button>
+                    <Link
+                      href={`/homes/${booking.houseId}`}
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12.5, padding: "7px 11px" }}
+                    >
+                      다시 예약
+                    </Link>
+                    <details style={{ position: "relative" }}>
+                      <summary
+                        aria-label="예약 메뉴 열기"
+                        style={{
+                          listStyle: "none",
+                          cursor: "pointer",
+                          width: 34,
+                          height: 34,
+                          borderRadius: 9,
+                          border: "1px solid var(--border)",
+                          display: "grid",
+                          placeItems: "center",
+                          userSelect: "none",
+                        }}
+                      >
+                        ⋯
+                      </summary>
+                      <div
+                        className="card"
+                        style={{
+                          position: "absolute",
+                          right: 0,
+                          top: 40,
+                          zIndex: 20,
+                          width: 170,
+                          padding: 7,
+                          boxShadow: "var(--shadow)",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          style={{
+                            width: "100%",
+                            border: 0,
+                            background: "transparent",
+                            padding: "9px 10px",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            color: "var(--text)",
+                            fontSize: 13,
+                          }}
+                          disabled={busyId === booking.id}
+                          onClick={() => void hidePastBooking(booking)}
+                        >
+                          내 목록에서 숨기기
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+
+                {expanded && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      paddingTop: 14,
+                      borderTop: "1px solid var(--border)",
+                      display: "grid",
+                      gap: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 18,
+                        flexWrap: "wrap",
+                        color: "var(--text-2)",
+                        fontSize: 13,
+                      }}
+                    >
+                      <span>월세 {won(booking.monthlyRent)}</span>
+                      <span>보증금 {won(booking.deposit)}</span>
+                      <span>청소비 {won(booking.cleaningFee)}</span>
+                      <span>관리비 {won(booking.maintenanceFee)}</span>
+                      <span>수수료 {won(booking.serviceFee)}</span>
+                    </div>
+
+                    {companions.length > 0 && (
+                      <div
+                        style={{
+                          padding: "11px 12px",
+                          borderRadius: 10,
+                          background: "var(--bg-2)",
+                          fontSize: 12.5,
+                          color: "var(--text-2)",
+                        }}
+                      >
+                        <strong
+                          style={{
+                            color: "var(--text)",
+                            display: "block",
+                            marginBottom: 6,
+                          }}
+                        >
+                          결제 참여자
+                        </strong>
+                        <span>대표 예약자</span>
+                        {companions.map((companion) => (
+                          <span
+                            key={`${booking.id}-past-${companion.name}`}
+                            style={{ display: "block", marginTop: 4 }}
+                          >
+                            {companion.name} ·{" "}
+                            {companionStatusText(companion.status)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
 
       {modal && (
         <div
@@ -714,6 +1178,79 @@ export function TripsList({ bare = false }: { bare?: boolean }) {
   );
 }
 
+function ReservationTabButton({
+  selected,
+  onClick,
+  label,
+  count,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "11px 14px",
+        marginBottom: -1,
+        border: "none",
+        borderBottom: selected
+          ? "2px solid var(--primary)"
+          : "2px solid transparent",
+        background: "transparent",
+        color: selected ? "var(--primary)" : "var(--text-2)",
+        fontSize: 14,
+        fontWeight: selected ? 700 : 500,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+      <span
+        style={{
+          minWidth: 21,
+          height: 21,
+          padding: "0 6px",
+          borderRadius: 999,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: selected
+            ? "rgba(255, 90, 95, 0.12)"
+            : "var(--bg-2)",
+          fontSize: 11,
+          fontWeight: 700,
+        }}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function EmptyReservationState({ message }: { message: string }) {
+  return (
+    <div
+      className="card"
+      style={{
+        padding: 34,
+        textAlign: "center",
+        color: "var(--text-2)",
+        border: "1px dashed var(--border)",
+        background: "transparent",
+      }}
+    >
+      {message}
+    </div>
+  );
+}
 
 function companionStatusText(
   status:
@@ -728,7 +1265,7 @@ function companionStatusText(
   if (status === "PAYMENT_PENDING") return "수락 · 결제 대기";
   if (status === "DECLINED") return "초대 거절";
   if (status === "EXPIRED") return "기한 만료";
-  if (status === "ACCEPTED") return "기존 수락";
+  if (status === "ACCEPTED") return "수락 완료";
   return "초대 확인 전";
 }
 

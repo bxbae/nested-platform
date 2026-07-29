@@ -826,6 +826,119 @@ export class ReservationsService {
     return this.repo.listByCompanion(userId);
   }
 
+  /**
+   * 예약 원본을 삭제하지 않고 현재 사용자의 예약 관리 목록에서만 숨긴다.
+   * 대표 예약자는 Reservation.guestHiddenAt, 초대받은 사용자는
+   * ReservationCompanionMember.hiddenAt을 사용한다.
+   */
+  async setMyListHidden(
+    id: string,
+    userId: string,
+    hidden: boolean,
+  ): Promise<{ ok: true; hidden: boolean }> {
+    const prisma = this.requirePrisma();
+
+    const reservation = await prisma.reservation.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        guestId: true,
+        companionId: true,
+        companionStatus: true,
+        status: true,
+        checkOut: true,
+        companions: {
+          where: { userId },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!reservation) {
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "예약을 찾을 수 없습니다.",
+      });
+    }
+
+    const member = reservation.companions[0] ?? null;
+    const isGuest = reservation.guestId === userId;
+    const isLegacyCompanion =
+      !member && reservation.companionId === userId;
+
+    if (!isGuest && !member && !isLegacyCompanion) {
+      throw new ForbiddenException({
+        code: "FORBIDDEN",
+        message: "본인의 예약이나 룸메이트 초대만 숨길 수 있습니다.",
+      });
+    }
+
+    if (hidden) {
+      const terminalReservationStatuses = new Set<ReservationStatus>([
+        "CANCELLED_BY_GUEST",
+        "CANCELLED_BY_HOST",
+        "COMPLETED",
+        "NO_SHOW",
+      ]);
+      const terminalCompanionStatuses = new Set([
+        "DECLINED",
+        "EXPIRED",
+      ]);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const reservationEnded =
+        terminalReservationStatuses.has(reservation.status) ||
+        reservation.checkOut < today;
+
+      const companionStatus =
+        member?.status ??
+        (isLegacyCompanion ? reservation.companionStatus : null);
+
+      const companionEnded =
+        reservationEnded ||
+        (companionStatus != null &&
+          terminalCompanionStatuses.has(companionStatus));
+
+      const canHide = isGuest
+        ? reservationEnded
+        : companionEnded;
+
+      if (!canHide) {
+        throw new BadRequestException({
+          code: "ACTIVE_ITEM_CANNOT_BE_HIDDEN",
+          message:
+            "진행 중인 예약과 룸메이트 초대는 숨길 수 없습니다. 종료된 뒤 다시 시도해주세요.",
+        });
+      }
+    }
+
+    const hiddenAt = hidden ? new Date() : null;
+
+    if (isGuest) {
+      await prisma.reservation.update({
+        where: { id },
+        data: { guestHiddenAt: hiddenAt },
+      });
+    } else if (member) {
+      await prisma.reservationCompanionMember.update({
+        where: { id: member.id },
+        data: { hiddenAt },
+      });
+    } else {
+      await prisma.reservation.update({
+        where: { id },
+        data: { legacyCompanionHiddenAt: hiddenAt },
+      });
+    }
+
+    return { ok: true, hidden };
+  }
+
   // 취소되면 그 예약의 Payment도 REFUNDED로 바꾼다 — 안 그러면 관리자
   // 매출 관리의 "총 거래액(GMV)"이 취소된 예약 금액까지 그대로 포함해서
   // 계산된다 (GMV 쿼리가 status='PAID'인 것만 더하기 때문). 게스트 취소,

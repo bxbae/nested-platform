@@ -6,6 +6,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { UserBadges } from "@/components/UserBadges";
 import {
   addFriend,
+  getFriendStatus,
   removeFriend,
   type FriendProfile,
 } from "@/lib/api/friends";
@@ -84,6 +85,52 @@ export default function UserProfilePage() {
     };
   }, [userId]);
 
+  const profileUserId = profile?.userId ?? null;
+  const profileIsFriend = profile?.isFriend ?? false;
+  const profileRequestState = profile?.friendRequestState ?? "NONE";
+
+  useEffect(() => {
+    if (!profileUserId || profileIsFriend || profileRequestState !== "SENT") {
+      return;
+    }
+
+    const targetUserId = profileUserId;
+    let alive = true;
+
+    async function refreshFriendStatus() {
+      try {
+        const status = await getFriendStatus(targetUserId);
+
+        if (!alive) return;
+
+        setProfile((current) => {
+          if (!current || current.userId !== targetUserId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            isFriend: status.isFriend,
+            friendRequestState: status.requestState,
+            friendRequestId: status.requestId,
+          };
+        });
+      } catch {
+        // 일시적인 통신 오류가 발생해도
+        // 다음 주기에 다시 확인한다.
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshFriendStatus();
+    }, 4000);
+
+    return () => {
+      alive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [profileUserId, profileIsFriend, profileRequestState]);
+
   const lifestyleItems = useMemo(() => {
     if (!profile?.lifestyle) return [];
 
@@ -100,17 +147,49 @@ export default function UserProfilePage() {
   }, [profile]);
 
   async function toggleFriend() {
-    if (!profile || profile.isMe || friendBusy) return;
+    if (!profile || profile.isMe || friendBusy) {
+      return;
+    }
+
+    if (profile.friendRequestState === "SENT") {
+      return;
+    }
+
+    if (profile.friendRequestState === "RECEIVED") {
+      const requestUrl = profile.friendRequestId
+        ? `/me/friends?tab=requests&requestId=${encodeURIComponent(
+            profile.friendRequestId,
+          )}`
+        : "/me/friends?tab=requests";
+
+      router.push(requestUrl);
+      return;
+    }
 
     setFriendBusy(true);
+
     try {
       if (profile.isFriend) {
         await removeFriend(profile.userId);
-        setProfile({ ...profile, isFriend: false });
-      } else {
-        await addFriend(profile.userId);
-        setProfile({ ...profile, isFriend: true });
+
+        setProfile({
+          ...profile,
+          isFriend: false,
+          friendRequestState: "NONE",
+          friendRequestId: null,
+        });
+
+        return;
       }
+
+      const result = await addFriend(profile.userId);
+
+      setProfile({
+        ...profile,
+        isFriend: result.isFriend,
+        friendRequestState: result.requestState,
+        friendRequestId: result.requestId,
+      });
     } finally {
       setFriendBusy(false);
     }
@@ -122,16 +201,18 @@ export default function UserProfilePage() {
     setMessageBusy(true);
     try {
       const conversation = await openDirectConversation(profile.userId);
-      router.push(
-        `/me/messages?direct=${encodeURIComponent(conversation.id)}`,
-      );
+      router.push(`/me/messages?direct=${encodeURIComponent(conversation.id)}`);
     } finally {
       setMessageBusy(false);
     }
   }
 
   if (loading) {
-    return <div className="wrap" style={stateStyle}>프로필을 불러오는 중…</div>;
+    return (
+      <div className="wrap" style={stateStyle}>
+        프로필을 불러오는 중…
+      </div>
+    );
   }
 
   if (error || !profile) {
@@ -146,7 +227,10 @@ export default function UserProfilePage() {
     profile.intro || profile.bio || "등록된 자기소개가 없습니다.";
 
   return (
-    <main className="wrap" style={{ maxWidth: 1180, paddingTop: 42, paddingBottom: 72 }}>
+    <main
+      className="wrap"
+      style={{ maxWidth: 1180, paddingTop: 42, paddingBottom: 72 }}
+    >
       <section className="card" style={headerCardStyle}>
         <UserAvatar
           name={profile.name}
@@ -157,7 +241,14 @@ export default function UserProfilePage() {
         />
 
         <div style={{ flex: 1, minWidth: 220 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
             <h1 className="display" style={{ margin: 0, fontSize: 34 }}>
               {profile.name}
             </h1>
@@ -169,7 +260,9 @@ export default function UserProfilePage() {
             />
           </div>
 
-          <p style={{ margin: "8px 0 0", color: "var(--text-2)", fontSize: 14 }}>
+          <p
+            style={{ margin: "8px 0 0", color: "var(--text-2)", fontSize: 14 }}
+          >
             {[
               profile.ageGroup ? `${profile.ageGroup}대` : null,
               ROLE_LABEL[profile.role],
@@ -194,14 +287,26 @@ export default function UserProfilePage() {
             <button
               type="button"
               className="btn btn-ghost press"
-              disabled={friendBusy}
+              disabled={friendBusy || profile.friendRequestState === "SENT"}
               onClick={() => void toggleFriend()}
+              style={{
+                opacity:
+                  profile.friendRequestState === "SENT" && !friendBusy
+                    ? 0.65
+                    : 1,
+                cursor:
+                  profile.friendRequestState === "SENT" ? "default" : "pointer",
+              }}
             >
               {friendBusy
                 ? "처리 중…"
                 : profile.isFriend
                   ? "친구 삭제"
-                  : "친구 추가"}
+                  : profile.friendRequestState === "SENT"
+                    ? "수락 요청 중"
+                    : profile.friendRequestState === "RECEIVED"
+                      ? "받은 요청 확인"
+                      : "친구 추가"}
             </button>
           </div>
         )}
@@ -211,12 +316,21 @@ export default function UserProfilePage() {
         <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
           <section className="card" style={sectionCardStyle}>
             <h2 style={sectionTitleStyle}>자기소개</h2>
-            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 15,
+                lineHeight: 1.8,
+                whiteSpace: "pre-wrap",
+              }}
+            >
               {introduction}
             </p>
 
             <div style={{ marginTop: 22 }}>
-              <h3 style={{ ...sectionTitleStyle, fontSize: 15, marginBottom: 10 }}>
+              <h3
+                style={{ ...sectionTitleStyle, fontSize: 15, marginBottom: 10 }}
+              >
                 생활 키워드
               </h3>
               {profile.keywords.length > 0 ? (
@@ -238,7 +352,14 @@ export default function UserProfilePage() {
           </section>
 
           <section className="card" style={sectionCardStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "center",
+              }}
+            >
               <h2 style={sectionTitleStyle}>생활 성향</h2>
               <span style={{ fontSize: 12, color: "var(--text-2)" }}>
                 사용자가 공개한 정보
@@ -249,7 +370,10 @@ export default function UserProfilePage() {
               <div style={lifestyleGridStyle}>
                 {lifestyleItems.map((item) => (
                   <div key={item.axis} style={lifestyleItemStyle}>
-                    <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>
+                    <span
+                      aria-hidden="true"
+                      style={{ fontSize: 22, lineHeight: 1 }}
+                    >
                       {item.icon}
                     </span>
                     <div>
@@ -257,7 +381,10 @@ export default function UserProfilePage() {
                         {item.label}
                       </strong>
                       <span style={{ color: "var(--text-2)", fontSize: 12.5 }}>
-                        {SURVEY.find((survey) => survey.axis === item.axis)?.question}
+                        {
+                          SURVEY.find((survey) => survey.axis === item.axis)
+                            ?.question
+                        }
                       </span>
                     </div>
                   </div>
@@ -290,7 +417,9 @@ export default function UserProfilePage() {
               </div>
 
               <div style={{ marginTop: 24 }}>
-                <h3 style={{ ...sectionTitleStyle, fontSize: 15 }}>잘 맞는 이유</h3>
+                <h3 style={{ ...sectionTitleStyle, fontSize: 15 }}>
+                  잘 맞는 이유
+                </h3>
                 {match.reasons.length > 0 ? (
                   <div style={{ display: "grid", gap: 10 }}>
                     {match.reasons.map((reason) => (
@@ -301,18 +430,35 @@ export default function UserProfilePage() {
                     ))}
                   </div>
                 ) : (
-                  <p style={mutedTextStyle}>일부 생활 성향에서 공통점이 있습니다.</p>
+                  <p style={mutedTextStyle}>
+                    일부 생활 성향에서 공통점이 있습니다.
+                  </p>
                 )}
               </div>
 
               {match.adjustmentPoints.length > 0 && (
                 <div style={warningStyle}>
-                  <strong style={{ display: "block", marginBottom: 8, color: "var(--primary)" }}>
+                  <strong
+                    style={{
+                      display: "block",
+                      marginBottom: 8,
+                      color: "var(--primary)",
+                    }}
+                  >
                     조율이 필요한 부분
                   </strong>
                   <div style={{ display: "grid", gap: 8 }}>
                     {match.adjustmentPoints.map((point) => (
-                      <div key={point} style={{ display: "flex", gap: 8, fontSize: 13.5, lineHeight: 1.5, color: "var(--primary)" }}>
+                      <div
+                        key={point}
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          fontSize: 13.5,
+                          lineHeight: 1.5,
+                          color: "var(--primary)",
+                        }}
+                      >
                         <span aria-hidden="true">⚠</span>
                         <span>{point}</span>
                       </div>
@@ -325,8 +471,9 @@ export default function UserProfilePage() {
             <section className="card" style={sectionCardStyle}>
               <h2 style={sectionTitleStyle}>공개 프로필 안내</h2>
               <p style={{ ...mutedTextStyle, lineHeight: 1.7 }}>
-                이메일, 전화번호, 생년월일, 상세 주소는 공개하지 않습니다.
-                생활 성향 설문이 모두 완료된 경우에만 룸메이트 매칭 요약이 표시됩니다.
+                이메일, 전화번호, 생년월일, 상세 주소는 공개하지 않습니다. 생활
+                성향 설문이 모두 완료된 경우에만 룸메이트 매칭 요약이
+                표시됩니다.
               </p>
             </section>
           )}
@@ -349,11 +496,16 @@ function Score({
 }) {
   return (
     <div style={{ ...scoreStyle, gridColumn: wide ? "1 / -1" : undefined }}>
-      <span aria-hidden="true" style={{ color: "var(--primary)", fontSize: 18 }}>
+      <span
+        aria-hidden="true"
+        style={{ color: "var(--primary)", fontSize: 18 }}
+      >
         {icon}
       </span>
       <div>
-        <span style={{ display: "block", color: "var(--text-2)", fontSize: 11.5 }}>
+        <span
+          style={{ display: "block", color: "var(--text-2)", fontSize: 11.5 }}
+        >
           {label}
         </span>
         <strong style={{ display: "block", marginTop: 4, fontSize: 23 }}>
