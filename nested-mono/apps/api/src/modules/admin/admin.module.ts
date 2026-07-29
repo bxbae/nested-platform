@@ -1133,6 +1133,72 @@ export class AdminService {
   // Aggregates the last `months` calendar months (default 6) in the DB with
   // date_trunc, so the admin charts show real data instead of the lib/admin
   // mock. Returns one row per month, oldest→newest, with zero-filled gaps.
+  // 매출 관리 페이지의 차트 전용 — 일/주/월 토글로 매출·순수익을 같은
+  // 스케일(원)로 같이 보여준다. monthlyTrend()(6개월 고정, 카드용 총합
+  // 계산)와는 별개 — 거긴 요약 카드 계산에 계속 쓰인다.
+  async revenueTrendByGranularity(granularity: "day" | "week" | "month") {
+    const now = new Date();
+    const bucket = granularity;
+    const periods = granularity === "day" ? 31 : granularity === "week" ? 8 : 6;
+    const msPerPeriod =
+      granularity === "day" ? 86_400_000 : granularity === "week" ? 7 * 86_400_000 : 30 * 86_400_000;
+    const start = new Date(now.getTime() - periods * msPerPeriod);
+
+    const [paymentRows, reservationRows] = await Promise.all([
+      this.prisma.$queryRawUnsafe<{ bucket: Date; paid: bigint }[]>(
+        `SELECT date_trunc('${bucket}', "createdAt") AS bucket,
+                COALESCE(SUM(CASE WHEN "status" = 'PAID' THEN "amount" ELSE 0 END), 0) AS paid
+         FROM "Payment"
+         WHERE "createdAt" >= $1
+         GROUP BY 1
+         ORDER BY 1`,
+        start,
+      ),
+      this.prisma.$queryRawUnsafe<{ bucket: Date; count: bigint }[]>(
+        `SELECT date_trunc('${bucket}', "createdAt") AS bucket, COUNT(*) AS count
+         FROM "Reservation"
+         WHERE "createdAt" >= $1
+         GROUP BY 1
+         ORDER BY 1`,
+        start,
+      ),
+    ]);
+
+    // 일/주는 "월-일"까지, 월은 "연-월"까지만 키에 넣는다 — 그 단위보다
+    // 더 세밀한 시각 차이는 같은 버킷으로 취급하겠다는 뜻이라, 시/분 단위
+    // 타임존 오차는 여기서 자연스럽게 흡수된다.
+    const key = (d: Date) =>
+      granularity === "month"
+        ? `${d.getFullYear()}-${d.getMonth()}`
+        : `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const paidByBucket = new Map(paymentRows.map((r) => [key(new Date(r.bucket)), Number(r.paid)]));
+    const reservationsByBucket = new Map(reservationRows.map((r) => [key(new Date(r.bucket)), Number(r.count)]));
+
+    const trend: { label: string; day: number; revenue: number; reservations: number }[] = [];
+    for (let i = periods - 1; i >= 0; i--) {
+      let d: Date;
+      if (granularity === "month") {
+        d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      } else if (granularity === "week") {
+        const w = new Date(now.getTime() - i * 7 * 86_400_000);
+        const dow = (w.getDay() + 6) % 7; // 월요일=0으로 맞춤
+        d = new Date(w.getFullYear(), w.getMonth(), w.getDate() - dow);
+      } else {
+        const day = new Date(now.getTime() - i * 86_400_000);
+        d = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+      }
+      const label =
+        granularity === "month" ? `${d.getMonth() + 1}월` : granularity === "day" ? `${d.getDate()}일` : `${d.getMonth() + 1}/${d.getDate()}`;
+      trend.push({
+        label,
+        day: d.getDate(),
+        revenue: paidByBucket.get(key(d)) ?? 0,
+        reservations: reservationsByBucket.get(key(d)) ?? 0,
+      });
+    }
+    return trend;
+  }
+
   async monthlyTrend(months = 6) {
     // Start of the window: first day of the month, (months-1) months ago.
     const now = new Date();
@@ -1682,6 +1748,14 @@ export class AdminController {
   @Get("revenue/monthly")
   monthlyTrend(@Query("months") months?: string) {
     return this.admin.monthlyTrend(months ? Number(months) : undefined);
+  }
+
+  // GET /admin/revenue-trend-v2?granularity=day|week|month — 매출 관리
+  // 페이지 차트 전용(토글 가능).
+  @Get("revenue-trend-v2")
+  revenueTrendV2(@Query("granularity") granularity?: string) {
+    const g = granularity === "day" || granularity === "week" || granularity === "month" ? granularity : "day";
+    return this.admin.revenueTrendByGranularity(g);
   }
 
   // ── Notices (공지 관리) ──

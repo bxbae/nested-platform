@@ -475,6 +475,21 @@ export async function getRevenueTrend(months = 6): Promise<RevenueTrend> {
   return api.get<RevenueTrend>(`/admin/revenue/monthly?months=${months}`);
 }
 
+export interface RevenueTrendV2Point {
+  label: string;
+  day: number;
+  revenue: number;
+  reservations: number;
+}
+
+// GET /admin/revenue-trend-v2?granularity=day|week|month — 매출 관리
+// 페이지 차트 전용(일/주/월 토글).
+export async function getRevenueTrendV2(
+  granularity: "day" | "week" | "month",
+): Promise<RevenueTrendV2Point[]> {
+  return api.get<RevenueTrendV2Point[]>(`/admin/revenue-trend-v2?granularity=${granularity}`);
+}
+
 // ── Notices (공지 관리 + 공개 조회) ───────────────────────────────────
 export interface AdminNotice {
   id: string;

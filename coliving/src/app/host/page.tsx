@@ -75,11 +75,11 @@ export default function HostDashboardPage() {
         className="stat-row"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}
       >
-        <ClickableStat
+        {/* <ClickableStat
           label="이번 달 확정 매출"
           value={loading ? "…" : won(data?.confirmedRevenue ?? 0)}
           hint="확정·정산 대상 예약"
-        />
+        /> */}
         <ClickableStat
           href="/host/settlements"
           label="정산 예정액"
