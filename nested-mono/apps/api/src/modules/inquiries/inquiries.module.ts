@@ -1,6 +1,6 @@
 // ── 고객센터 문의 ────────────────────────────────────────────────────
-// 로그인한 사용자가 운영팀에 문의를 남기고, 운영팀이 답변하면 알림이 간다.
-// 신고(Report)와 달리 대상이 없고 1:1 문의라 구조가 단순하다.
+// 로그인한 사용자가 운영팀에 문의를 남기면 관리자에게 알림이 간다.
+// 운영팀이 답변을 등록하거나 처리 상태를 변경하면 문의자에게 알림이 간다.
 import {
   Body,
   Controller,
@@ -29,12 +29,14 @@ const createSchema = z.object({
 });
 
 const answerSchema = z.object({
-  // 상태만 바꾸는 경우도 있어서 answer 는 선택값이다.
+  // 답변 없이 상태만 변경할 수도 있으므로 선택값이다.
   answer: z.string().trim().max(4000).optional(),
   status: z.enum(["RECEIVED", "IN_PROGRESS", "RESOLVED"]).optional(),
 });
 
-const STATUS_LABEL: Record<string, string> = {
+type InquiryStatusValue = "RECEIVED" | "IN_PROGRESS" | "RESOLVED";
+
+const STATUS_LABEL: Record<InquiryStatusValue, string> = {
   RECEIVED: "대기 중",
   IN_PROGRESS: "처리 중",
   RESOLVED: "완료",
@@ -47,101 +49,271 @@ export class InquiriesService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  async create(authorId: string, input: { title: string; body: string }) {
-    return this.prisma.inquiry.create({
-      data: { authorId, title: input.title, body: input.body },
+  /**
+   * 문의 등록
+   * 문의와 관리자 알림을 하나의 트랜잭션에서 저장한다.
+   */
+  async create(
+    authorId: string,
+    input: {
+      title: string;
+      body: string;
+    },
+  ) {
+    const author = await this.prisma.user.findUnique({
+      where: {
+        id: authorId,
+      },
+      select: {
+        name: true,
+      },
     });
+
+    if (!author) {
+      throw new NotFoundException({
+        code: "USER_NOT_FOUND",
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const inquiry = await tx.inquiry.create({
+        data: {
+          authorId,
+          title: input.title,
+          body: input.body,
+        },
+      });
+
+      const admins = await tx.user.findMany({
+        where: {
+          role: "ADMIN",
+          suspended: false,
+          deletedAt: null,
+
+          // 관리자가 직접 문의한 경우
+          // 자기 자신에게 알림을 보내지 않는다.
+          id: {
+            not: authorId,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      const notifications = await Promise.all(
+        admins.map((admin) =>
+          tx.notification.create({
+            data: {
+              userId: admin.id,
+              type: "INQUIRY_CREATED",
+              title: "새 문의가 접수되었어요",
+              body:
+                `${author.name}님이 ` + `"${input.title}" 문의를 등록했습니다.`,
+              targetUrl: "/admin/inquiries",
+            },
+          }),
+        ),
+      );
+
+      return {
+        inquiry,
+        notifications,
+      };
+    });
+
+    // 트랜잭션이 성공한 이후에만 실시간 알림 전송
+    for (const notification of result.notifications) {
+      this.notificationsGateway.emitToUser(notification.userId, notification);
+    }
+
+    return result.inquiry;
   }
 
-  // 내 문의 목록 — 답변 여부를 바로 볼 수 있게 답변도 함께 내려준다.
+  /**
+   * 로그인한 사용자의 문의 목록
+   */
   async listMine(authorId: string, take = 10, skip = 0) {
-    const where = { authorId };
+    const where = {
+      authorId,
+    };
+
     const [rows, total] = await Promise.all([
       this.prisma.inquiry.findMany({
         where,
-      orderBy: { createdAt: "desc" },
+        orderBy: {
+          createdAt: "desc",
+        },
         take,
         skip,
       }),
-      this.prisma.inquiry.count({ where }),
+
+      this.prisma.inquiry.count({
+        where,
+      }),
     ]);
-    return { rows, total, take, skip };
+
+    return {
+      rows,
+      total,
+      take,
+      skip,
+    };
   }
 
-  // 관리자용 전체 목록
+  /**
+   * 관리자용 전체 문의 목록
+   */
   async listAll(status?: string) {
     const rows = await this.prisma.inquiry.findMany({
-      where: status ? { status: status as any } : {},
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      where: status
+        ? {
+            status: status as InquiryStatusValue,
+          }
+        : {},
+      orderBy: [
+        {
+          status: "asc",
+        },
+        {
+          createdAt: "desc",
+        },
+      ],
       take: 200,
-      include: { author: { select: { id: true, name: true, email: true } } },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
     });
-    return rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      body: r.body,
-      status: r.status,
-      answer: r.answer,
-      answeredAt: r.answeredAt,
-      createdAt: r.createdAt,
-      authorId: r.author.id,
-      authorName: r.author.name,
-      authorEmail: r.author.email,
+
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      status: row.status,
+      answer: row.answer,
+      answeredAt: row.answeredAt,
+      createdAt: row.createdAt,
+      authorId: row.author.id,
+      authorName: row.author.name,
+      authorEmail: row.author.email,
     }));
   }
 
-  // 답변 저장 + 상태 변경. 답변 본문이 새로 들어온 경우에만 알림을 보낸다
-  // (상태만 바꿀 때마다 알림이 가면 문의자에게 소음이 된다).
+  /**
+   * 관리자 답변 및 문의 상태 변경
+   */
   async answer(
     adminId: string,
     id: string,
-    input: { answer?: string; status?: string },
+    input: {
+      answer?: string;
+      status?: InquiryStatusValue;
+    },
   ) {
     const inquiry = await this.prisma.inquiry.findUnique({
-      where: { id },
-      select: { id: true, authorId: true, title: true, answer: true },
+      where: {
+        id,
+      },
+      select: {
+        id: true,
+        authorId: true,
+        title: true,
+        answer: true,
+        status: true,
+      },
     });
-    if (!inquiry)
+
+    if (!inquiry) {
       throw new NotFoundException({
         code: "INQUIRY_NOT_FOUND",
         message: "문의를 찾을 수 없습니다.",
       });
+    }
 
     const hasNewAnswer =
       typeof input.answer === "string" &&
       input.answer.length > 0 &&
       input.answer !== inquiry.answer;
 
-    const updated = await this.prisma.inquiry.update({
-      where: { id },
-      data: {
-        ...(input.status ? { status: input.status as any } : {}),
-        ...(hasNewAnswer
-          ? {
-              answer: input.answer,
-              answeredAt: new Date(),
-              answeredBy: adminId,
-              // 답변을 달면 자동으로 완료 처리 (관리자가 상태를 따로 지정하면 그 값이 우선).
-              ...(input.status ? {} : { status: "RESOLVED" as any }),
-            }
-          : {}),
-      },
-    });
+    // 답변을 등록하면서 상태를 지정하지 않으면
+    // 기존 정책대로 자동 완료 처리한다.
+    const nextStatus: InquiryStatusValue =
+      input.status ?? (hasNewAnswer ? "RESOLVED" : inquiry.status);
 
-    if (hasNewAnswer) {
-      const notification = await this.prisma.notification.create({
+    const statusChanged = nextStatus !== inquiry.status;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.inquiry.update({
+        where: {
+          id,
+        },
         data: {
-          userId: inquiry.authorId,
-          type: "INQUIRY_ANSWERED",
-          title: "문의에 답변이 등록되었어요",
-          body: `"${inquiry.title}" 문의에 운영팀 답변이 도착했습니다.`,
-          targetUrl: "/support",
+          status: nextStatus,
+
+          ...(hasNewAnswer
+            ? {
+                answer: input.answer,
+                answeredAt: new Date(),
+                answeredBy: adminId,
+              }
+            : {}),
         },
       });
-      this.notificationsGateway.emitToUser(inquiry.authorId, notification);
+
+      const notificationTitle =
+        hasNewAnswer && statusChanged
+          ? "문의 답변과 처리 상태가 업데이트됐어요"
+          : hasNewAnswer
+            ? "문의에 답변이 등록되었어요"
+            : "문의 처리 상태가 변경되었어요";
+
+      const notificationBody =
+        hasNewAnswer && statusChanged
+          ? `"${inquiry.title}" 문의에 운영팀 답변이 등록되었고 상태가 ${STATUS_LABEL[nextStatus]}으로 변경되었습니다.`
+          : hasNewAnswer
+            ? `"${inquiry.title}" 문의에 운영팀 답변이 도착했습니다.`
+            : `"${inquiry.title}" 문의 상태가 ${STATUS_LABEL[nextStatus]}으로 변경되었습니다.`;
+
+      // 답변 또는 상태가 실제로 변경된 경우에만 생성
+      const notification =
+        hasNewAnswer || statusChanged
+          ? await tx.notification.create({
+              data: {
+                userId: inquiry.authorId,
+                type: hasNewAnswer
+                  ? "INQUIRY_ANSWERED"
+                  : "INQUIRY_STATUS_CHANGED",
+                title: notificationTitle,
+                body: notificationBody,
+                targetUrl: `/support?inquiryId=${inquiry.id}`,
+              },
+            })
+          : null;
+
+      return {
+        updated,
+        notification,
+      };
+    });
+
+    if (result.notification) {
+      this.notificationsGateway.emitToUser(
+        inquiry.authorId,
+        result.notification,
+      );
     }
 
-    return { ...updated, statusLabel: STATUS_LABEL[updated.status] };
+    return {
+      ...result.updated,
+      statusLabel: STATUS_LABEL[result.updated.status],
+    };
   }
 }
 
@@ -153,7 +325,8 @@ export class InquiriesController {
   @UseGuards(JwtAuthGuard)
   create(
     @Req() req: any,
-    @Body(new ZodValidationPipe(createSchema)) dto: any,
+    @Body(new ZodValidationPipe(createSchema))
+    dto: z.infer<typeof createSchema>,
   ) {
     return this.inquiries.create(req.user.id, dto);
   }
@@ -188,15 +361,14 @@ export class AdminInquiriesController {
   answer(
     @Req() req: any,
     @Param("id") id: string,
-    @Body(new ZodValidationPipe(answerSchema)) dto: any,
+    @Body(new ZodValidationPipe(answerSchema))
+    dto: z.infer<typeof answerSchema>,
   ) {
     return this.inquiries.answer(req.user.id, id, dto);
   }
 }
 
 @Module({
-  // NotificationsGateway 를 주입받으므로 해당 모듈을 가져와야 한다
-  // (community.module.ts 와 같은 구조).
   imports: [NotificationsModule],
   controllers: [InquiriesController, AdminInquiriesController],
   providers: [InquiriesService],

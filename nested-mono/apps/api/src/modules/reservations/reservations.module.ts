@@ -7,6 +7,7 @@ import {
 } from "./reservations.service";
 import { PrismaReservationRepo } from "./prisma-reservation.repo";
 import { PspPaymentGateway } from "./psp-payment.gateway";
+import { CompanionInviteExpirationScheduler } from "./companion-invite-expiration.scheduler";
 import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
@@ -14,6 +15,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
   controllers: [ReservationsController],
   providers: [
     ReservationsService,
+    CompanionInviteExpirationScheduler,
     { provide: RESERVATION_REPO, useClass: PrismaReservationRepo },
     { provide: PAYMENT_GATEWAY, useClass: PspPaymentGateway },
   ],
