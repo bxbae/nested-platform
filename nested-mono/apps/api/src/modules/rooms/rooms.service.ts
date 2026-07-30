@@ -1143,33 +1143,29 @@ export class RoomsService {
         },
       });
 
-      const admins = await tx.user.findMany({
-        where: {
-          role: "ADMIN",
-          suspended: false,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
+      return { room };
+    }, { timeout: 15000 });
 
-      const notifications = await Promise.all(
-        admins.map((admin) =>
-          tx.notification.create({
-            data: {
-              userId: admin.id,
-              type: "SYSTEM",
-              title: "새 숙소가 등록되었어요",
-              body: `"${room.name}" 새로운 숙소가 등록 되었습니다.`,
-              targetUrl: "/admin/approvals",
-            },
-          }),
-        ),
-      );
-
-      return { room, notifications };
+    const notifiedAdmins = await this.prisma.user.findMany({
+      where: {
+        role: "ADMIN",
+        suspended: false,
+        deletedAt: null,
+      },
+      select: { id: true },
     });
 
-    for (const notification of result.notifications) {
+    const notifications = await this.prisma.notification.createManyAndReturn({
+      data: notifiedAdmins.map((admin) => ({
+        userId: admin.id,
+        type: "SYSTEM",
+        title: "새 숙소가 등록되었어요",
+        body: `"${result.room.name}" 새로운 숙소가 등록 되었습니다.`,
+        targetUrl: "/admin/approvals",
+      })),
+    });
+
+    for (const notification of notifications) {
       this.notificationsGateway?.emitToUser(notification.userId, notification);
     }
 
