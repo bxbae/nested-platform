@@ -51,3 +51,4 @@ coliving/.env.local
 nested-mono/apps/api/.env
 master
 nested-platform.zip
+erd-source.tar.gz
