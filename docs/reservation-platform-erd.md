@@ -1,9 +1,23 @@
 # Nested 공유주거 플랫폼 — ERD (schema.prisma 기준)
 
-> 출처: `nested-mono/apps/api/prisma/schema.prisma` (2026-07-27 업로드본)
-> 구성: Core ERD / Community ERD / Ops·Admin ERD
+> 출처: `nested-mono/apps/api/prisma/schema.prisma` (2026-07-30 업데이트본)
+> 구성: Core ERD / Community ERD
+> 규모: 모델 35개 · Enum 33개
 
-이전 버전은 도메인 추정으로 그린 초안이었고, 이 문서는 **실제 Prisma 스키마를 그대로 반영**합니다. cuid 문자열 PK, enum, self-relation, 1:1 옵셔널 관계 등 스키마의 실제 설계를 그대로 옮겼습니다.
+이 문서는 **실제 Prisma 스키마를 그대로 반영**합니다. cuid 문자열 PK, enum, self-relation, 1:1 옵셔널 관계 등 스키마의 실제 설계를 그대로 옮겼습니다.
+
+## 이번 업데이트 반영 (2026-07-27 → 07-30)
+
+- **예약 목록 숨김** — `Reservation.guestHiddenAt` / `legacyCompanionHiddenAt`, `ReservationCompanionMember.hiddenAt` 추가. 마이페이지 예약 관리 목록에서만 개인별로 숨김 처리(데이터는 유지).
+- **다인실 개별 결제** — `ReservationCompanionMember.requiresIndividualPayment` 및 멤버별 금액(`monthlyRent`/`deposit`/… )·만료(`inviteExpiresAt`/`paymentDeadline`) 필드.
+- **고객센터 문의** — `Inquiry` 모델 + `InquiryStatus`(RECEIVED/IN_PROGRESS/RESOLVED). 로그인 사용자 1:N, 운영팀 답변 시 알림.
+- **친구 요청 워크플로우** — `FriendRequest` + `FriendRequestStatus`. 수락 시 `Friendship`으로 확정.
+- **커뮤니티 소프트 삭제** — `Post.deletedAt`, `Comment.deletedAt`. 관리자 휴지통에서 복구.
+- **평점 캐시** — `Room.avgRating`, `Room.reviewCount`(검색 목록 성능용, 원본은 `Review`).
+- **쿠폰 연결** — `Reservation.couponId → Coupon`, `Coupon.ownerId → User` FK 정식 연결(이전 초안의 "고아 테이블" 서술은 더 이상 유효하지 않음).
+- **알림 타입 확장** — `NotificationType`에 `INQUIRY_*`, `ROOM_UNPUBLISHED`, `FRIEND_REQUESTED`/`FRIEND_ADDED` 추가.
+
+> ※ 활동 등급 세분화·성취 배지는 서비스 로직(계산 결과)이라 스키마에는 영향이 없어 ERD에는 나타나지 않습니다.
 
 ---
 
@@ -28,6 +42,8 @@ erDiagram
     RESERVATION ||--o| PAYMENT : has
     RESERVATION ||--o| SETTLEMENT : has
     RESERVATION ||--o| TENANT_REVIEW : has
+    COUPON ||--o{ RESERVATION : applied_to
+    USER ||--o{ COUPON : owns
     ROOM ||--o{ REVIEW : has
     USER ||--o{ REVIEW : writes
     USER ||--o{ SETTLEMENT : receives
@@ -45,31 +61,33 @@ erDiagram
         string id PK "cuid"
         string email UK
         string passwordHash "nullable, OAuth-only는 null"
-        string name
+        string name "공개용 닉네임"
         boolean nicknameCompleted
         enum role "GUEST, HOST, ADMIN"
-        string provider "google 등, nullable"
+        string provider "nullable, google 등"
         string providerId "nullable"
         string avatarColor
-        string avatarUrl "nullable"
+        string avatarUrl "nullable, S3"
         string bio "nullable"
-        datetime birthDate "nullable"
+        datetime birthDate "nullable, 연령대·생일쿠폰"
         string job "nullable"
-        boolean suspended
-        datetime emailVerified "nullable, 미인증시 null"
-        datetime verifiedAt "관리자 신원확인, nullable"
-        datetime deletedAt "탈퇴시점, nullable"
-        enum gender "MALE, FEMALE, OTHER"
-        enum preferredLocale "KO, EN"
+        boolean suspended "관리자 정지"
+        datetime emailVerified "nullable, 미인증 시 로그인 차단"
+        datetime verifiedAt "nullable, 관리자 신원확인"
+        datetime deletedAt "nullable, 자진 탈퇴"
         datetime createdAt
+        enum gender "MALE, FEMALE, OTHER"
+        enum genderVisibility "PUBLIC, MATCHED_ONLY, PRIVATE"
+        enum roommateGenderPreference "ANY, MALE, FEMALE"
+        enum preferredLocale "KO, EN"
     }
 
     ROOM {
-        string id PK
+        string id PK "cuid"
         string hostId FK
-        string propertyId FK "nullable"
+        string propertyId FK "nullable, 독립 매물 가능"
         string name
-        string region
+        string region "레거시 호환"
         string city "nullable"
         string district "nullable"
         string neighborhood "nullable"
@@ -77,17 +95,19 @@ erDiagram
         string roadAddress "nullable, 비공개"
         string jibunAddress "nullable, 비공개"
         string detailAddress "nullable, 비공개"
+        string zipCode "nullable"
+        string address "nullable, 레거시"
         float lat
         float lng
         boolean verifiedByHost
-        float avgRating "캐시"
-        int reviewCount "캐시"
-        enum roomType "ONE_ROOM, SHARE_ROOM, WHOLE_HOUSE, APARTMENT (레거시)"
-        enum rentalUnit "WHOLE, PRIVATE_ROOM, BED (신규, nullable)"
-        enum buildingType "STUDIO, APARTMENT, OFFICETEL, HOUSE (nullable)"
-        string sharedFacilities "SharedFacility[]"
-        boolean classificationReviewRequired
-        int capacity "nullable"
+        float avgRating "리뷰 집계 캐시"
+        int reviewCount "리뷰 집계 캐시"
+        enum roomType "레거시 분류, 자동계산"
+        enum rentalUnit "nullable, WHOLE/PRIVATE_ROOM/BED"
+        enum buildingType "nullable, STUDIO/APARTMENT/OFFICETEL/HOUSE"
+        enum sharedFacilities "배열, 공유시설"
+        boolean classificationReviewRequired "분류 검수 대상"
+        int capacity "nullable, 최대 인원"
         int bedrooms "nullable"
         enum genderPolicy "ANY, MALE_ONLY, FEMALE_ONLY"
         int monthlyRent
@@ -104,7 +124,7 @@ erDiagram
     }
 
     PROPERTY {
-        string id PK
+        string id PK "cuid"
         string hostId FK
         string title
         string address
@@ -119,8 +139,8 @@ erDiagram
     }
 
     HOST_PROFILE {
-        string id PK
-        string userId FK,UK
+        string id PK "cuid"
+        string userId FK,UK "1:1"
         string bio "nullable"
         boolean superhost
         int responseRate
@@ -130,26 +150,26 @@ erDiagram
     }
 
     IMAGE {
-        string id PK
+        string id PK "cuid"
         string roomId FK
         string url
         int order
     }
 
     AMENITY {
-        string id PK
-        string key UK "wifi, parking, rooftop 등"
+        string id PK "cuid"
+        string key UK "wifi, parking 등"
         string label
         string icon "nullable"
     }
 
     ROOM_AMENITY {
-        string roomId FK
-        string amenityId FK
+        string roomId PK,FK
+        string amenityId PK,FK
     }
 
     CALENDAR_BLOCK {
-        string id PK
+        string id PK "cuid"
         string roomId FK
         datetime date
         boolean blocked
@@ -157,18 +177,20 @@ erDiagram
     }
 
     RESERVATION {
-        string id PK
+        string id PK "cuid"
         string roomId FK
-        string guestId FK "대표자, 결제자"
-        string companionId FK "동반 룸메이트, nullable"
-        enum companionStatus "PENDING, ACCEPTED, DECLINED, nullable"
+        string guestId FK "대표 예약자"
+        string companionId FK "nullable, 레거시 단일 초대"
+        enum companionStatus "nullable"
         datetime companionRespondedAt "nullable"
         datetime checkIn
         datetime checkOut
-        datetime originalCheckOut "nullable, 변경 이력 비교용"
-        datetime actualCheckOut "nullable"
+        datetime originalCheckOut "nullable, 최초 종료일 보존"
+        datetime actualCheckOut "nullable, 실제 퇴실일"
+        datetime guestHiddenAt "nullable, 게스트 목록 숨김"
+        datetime legacyCompanionHiddenAt "nullable, 레거시 초대 숨김"
         int months
-        enum status "PENDING_PAYMENT..EXTENSION_REQUESTED (9종)"
+        enum status "PENDING_PAYMENT, CONFIRMED, …"
         enum bookingMode "UNIT, BED, WHOLE_ROOM"
         int reservedSpots
         int monthlyRent
@@ -178,25 +200,41 @@ erDiagram
         int serviceFee
         int discount
         int totalDueNow
-        int extensionMonths "nullable"
+        string couponId FK "nullable"
+        int extensionMonths "nullable, 연장 대기"
         datetime createdAt
     }
 
     RESERVATION_COMPANION_MEMBER {
-        string id PK
+        string id PK "cuid"
         string reservationId FK
         string userId FK
-        enum status "PENDING, ACCEPTED, DECLINED"
+        enum status "PENDING, ACCEPTED, …"
         datetime respondedAt "nullable"
+        boolean requiresIndividualPayment "개별 결제 여부"
+        datetime inviteExpiresAt "nullable"
+        datetime paymentDeadline "nullable"
+        datetime paidAt "nullable"
+        datetime expiredAt "nullable"
+        datetime hiddenAt "nullable, 목록 숨김"
+        int monthlyRent "멤버별 1자리 금액"
+        int deposit
+        int cleaningFee
+        int maintenanceFee
+        int serviceFee
+        int discount
+        int totalDueNow
+        string paymentProvider "nullable"
+        string paymentTxnId "nullable"
         datetime createdAt
     }
 
     CONTRACT_CHANGE_REQUEST {
-        string id PK
+        string id PK "cuid"
         string reservationId FK
         string requesterId
         enum type "EARLY_CHECKOUT, EXTENSION"
-        enum status "HOST_REVIEW..COMPLETED (7종)"
+        enum status "HOST_REVIEW, PAYMENT_PENDING, …"
         datetime originalCheckOut
         datetime requestedCheckOut
         int additionalRent
@@ -214,41 +252,23 @@ erDiagram
         datetime paidAt "nullable"
         datetime appliedAt "nullable"
         datetime actualCheckOut "nullable"
+        datetime createdAt
+        datetime updatedAt
     }
 
     PAYMENT {
-        string id PK
-        string reservationId FK,UK
-        string provider "TOSS | PORTONE | STRIPE"
+        string id PK "cuid"
+        string reservationId FK,UK "1:1"
+        string provider "TOSS, PORTONE, STRIPE"
         string providerTxnId
         int amount
         enum status "PENDING, PAID, REFUNDED, FAILED"
         datetime createdAt
     }
 
-    REVIEW {
-        string id PK
-        string roomId FK
-        string authorId FK
-        int rating
-        string body
-        string hostReply "nullable"
-        datetime createdAt
-    }
-
-    TENANT_REVIEW {
-        string id PK
-        string reservationId FK,UK
-        string authorId FK "호스트"
-        string tenantId FK "게스트"
-        int rating
-        string body
-        datetime createdAt
-    }
-
     SETTLEMENT {
-        string id PK
-        string reservationId FK,UK
+        string id PK "cuid"
+        string reservationId FK,UK "1:1"
         string hostId FK
         int grossAmount
         int commission
@@ -259,15 +279,50 @@ erDiagram
         datetime createdAt
     }
 
+    COUPON {
+        string id PK "cuid"
+        string code UK
+        string type "FIXED | PERCENT"
+        int value
+        int maxDiscount "nullable"
+        int minSpend "첫 달 월세 기준"
+        datetime validFrom
+        datetime validTo
+        int usageLimit "nullable"
+        int usedCount
+        string kind "GENERAL | BIRTHDAY"
+        string ownerId FK "nullable, 생일 쿠폰 소유자"
+    }
+
+    REVIEW {
+        string id PK "cuid"
+        string roomId FK
+        string authorId FK
+        int rating
+        string body
+        string hostReply "nullable"
+        datetime createdAt
+    }
+
+    TENANT_REVIEW {
+        string id PK "cuid"
+        string reservationId FK,UK "1:1"
+        string authorId FK "호스트"
+        string tenantId FK "입주자"
+        int rating
+        string body
+        datetime createdAt
+    }
+
     WISHLIST {
-        string id PK
+        string id PK "cuid"
         string userId FK
-        string name "기본값: 찜 목록"
+        string name
         datetime createdAt
     }
 
     FAVORITE {
-        string id PK
+        string id PK "cuid"
         string userId FK
         string roomId FK
         string wishlistId FK "nullable"
@@ -275,67 +330,89 @@ erDiagram
     }
 
     REFRESH_TOKEN {
-        string id PK
+        string id PK "cuid"
         string userId FK
-        string tokenHash
+        string tokenHash "해시만 저장"
         datetime expiresAt
         datetime createdAt
     }
 
     PASSWORD_RESET_TOKEN {
-        string id PK
+        string id PK "cuid"
         string userId FK
-        string tokenHash UK
+        string tokenHash UK "해시만 저장"
         datetime expiresAt
-        datetime usedAt "nullable"
+        datetime usedAt "nullable, 재사용 방지"
+        datetime createdAt
     }
 
     EMAIL_VERIFICATION_TOKEN {
-        string id PK
+        string id PK "cuid"
         string userId FK
-        string tokenHash UK
+        string tokenHash UK "해시만 저장"
         datetime expiresAt
-        datetime usedAt "nullable"
+        datetime usedAt "nullable, 재사용 방지"
+        datetime createdAt
     }
 ```
 
-**스키마에서 확인한 설계 의도 (코드 주석 기준)**
-- `Room.propertyId`는 nullable — 독립 매물(Property 없이 등록된 Room)이 있을 수 있음.
-- `roomType`(레거시) vs `rentalUnit`/`buildingType`(신규 3축 분류)이 공존 — 마이그레이션 중인 상태로 보임, 신규 필드는 nullable.
-- `Reservation`은 `companionId`로 공동 예약(룸메이트) 지원 — 대표자가 결제, 동반자는 별도 동의(`CompanionStatus`) 필요.
-- `Reservation.originalCheckOut` / `actualCheckOut`을 별도로 둬서 연장·조기퇴실 이력과 실제 값을 구분.
-- `Payment`, `Settlement`, `TenantReview`는 모두 `Reservation`과 1:1(`@unique`) — 예약 1건당 각각 최대 1개.
+### Core ERD — 스키마에서 확인한 설계 의도
 
-⚠️ **`Coupon` 모델은 스키마에 존재하지만 다른 모델과 FK로 연결되어 있지 않습니다.** `Reservation.discount` 필드는 있는데 `couponId` 참조가 없어, 실제로는 사용되지 않거나 애플리케이션 레이어에서만 처리되는 것으로 보입니다 — 이전 초안 ERD에서 `RESERVATION }o--o| COUPON`으로 그렸던 관계는 실제 스키마에는 없습니다.
+- `Room.propertyId`는 nullable — 독립 매물(Property 없이 등록된 Room)이 있을 수 있음.
+- 숙소 분류가 2원화되어 공존 — 레거시 `roomType`과 신규 3축(`rentalUnit`/`buildingType`/`sharedFacilities`). 신규 필드는 nullable로 시작하며, 애매한 건은 `classificationReviewRequired`로 검수 대상 표시.
+- `Room.avgRating`·`reviewCount`는 `Review` 집계 캐시 — 검색 목록에서 매번 집계하지 않도록 리뷰 생성 시 미리 계산. 원본 데이터는 여전히 `Review` 테이블(`reviews.module.ts`의 `create()`가 갱신 책임).
+- `Reservation`은 공동 예약(룸메이트) 지원 — 대표자(`guest`) 외에 레거시 단일 초대(`companionId` + `CompanionStatus`)와 신규 다인실 초대(`ReservationCompanionMember`)가 공존. `requiresIndividualPayment=true`인 멤버만 개별 결제·자동 만료 흐름을 사용.
+- 예약 목록 숨김은 3곳에 분리 — 게스트는 `Reservation.guestHiddenAt`, 레거시 초대는 `legacyCompanionHiddenAt`, 다인실 초대 멤버는 `ReservationCompanionMember.hiddenAt`. 숨김은 목록 표시용일 뿐 데이터는 보존.
+- 조기 퇴실·연장은 `ContractChangeRequest`로 관리 — 상태 머신(`HOST_REVIEW → PAYMENT_PENDING → APPROVED …`)과 정산 금액을 함께 보관.
+- `Payment`·`Settlement`은 예약과 1:1. `Settlement`은 호스트 정산(수수료·순액·정산 예정일).
+- `Coupon`은 `Reservation.couponId`(SetNull)와 `Coupon.ownerId`(생일 쿠폰 소유자)로 정식 연결 — 할인은 첫 달 월세에만 적용되고 결제 확정 시 사용 처리.
+- `TenantReview`는 호스트 → 입주자 역방향 평가로, 게스트 → 숙소인 `Review`와 방향이 반대. 예약 1건당 1개.
+- 인증·세션 토큰(`RefreshToken`/`PasswordResetToken`/`EmailVerificationToken`)은 해시만 저장 — 유출 시에도 원본 토큰 복원 불가.
 
 ---
 
-## 2. Community ERD
+## 2. Community ERD (게시판·채팅·DM·룸메이트 매칭·문의·알림)
 
 ```mermaid
 erDiagram
-    ROOM ||--o{ POST : "board of"
     USER ||--o{ POST : writes
-    POST ||--o{ COMMENT : has
     USER ||--o{ COMMENT : writes
-    COMMENT ||--o{ COMMENT : replies_to
-    ROOM ||--o{ CHAT_ROOM : has
+    ROOM ||--o{ POST : hosts_board
+    POST ||--o{ COMMENT : has
+    COMMENT ||--o{ COMMENT : replies
+    ROOM ||--o{ CHAT_ROOM : about
     USER ||--o{ CHAT_ROOM : "guest of"
     USER ||--o{ CHAT_ROOM : "host of"
     CHAT_ROOM ||--o{ MESSAGE : has
     USER ||--o{ MESSAGE : sends
-    USER ||--o{ FRIENDSHIP : "userA of"
-    USER ||--o{ FRIENDSHIP : "userB of"
-    USER ||--o{ DIRECT_CONVERSATION : "participantA of"
-    USER ||--o{ DIRECT_CONVERSATION : "participantB of"
+    USER ||--o{ FRIEND_REQUEST : "sends (requester)"
+    USER ||--o{ FRIEND_REQUEST : "receives (receiver)"
+    USER ||--o{ FRIENDSHIP : "user A"
+    USER ||--o{ FRIENDSHIP : "user B"
+    USER ||--o{ DIRECT_CONVERSATION : "participant A"
+    USER ||--o{ DIRECT_CONVERSATION : "participant B"
     DIRECT_CONVERSATION ||--o{ DIRECT_MESSAGE : has
     USER ||--o{ DIRECT_MESSAGE : sends
     USER ||--o| ROOMMATE_PREFERENCE : has
     USER ||--o{ NOTIFICATION : receives
+    USER ||--o{ INQUIRY : writes
+    USER ||--o{ REPORT : "files (reporter)"
+    USER ||--o{ REPORT : "reported (nullable)"
+
+    USER {
+        string id PK "cuid"
+        string email UK
+        string name "공개용 닉네임"
+        enum role "GUEST, HOST, ADMIN"
+        string avatarUrl "nullable"
+        enum gender "MALE, FEMALE, OTHER"
+        enum genderVisibility "PUBLIC, MATCHED_ONLY, PRIVATE"
+        enum roommateGenderPreference "ANY, MALE, FEMALE"
+    }
 
     POST {
-        string id PK
-        string roomId FK "숙소(하우스) 게시판"
+        string id PK "cuid"
+        string roomId FK "하우스 게시판"
         string authorId FK
         enum category "NOTICE, EVENT, CHORE, MARKET, CHAT, SEEKING"
         enum status "OPEN, IN_PROGRESS, COMPLETED, CLOSED"
@@ -343,71 +420,82 @@ erDiagram
         string body
         boolean pinned
         json lifestyleSnapshot "nullable"
-        string sharedLifestyleFields "string[]"
-        datetime deletedAt "nullable, 관리자 소프트삭제"
+        string sharedLifestyleFields "배열"
+        datetime deletedAt "nullable, 소프트 삭제"
         datetime createdAt
         datetime updatedAt
     }
 
     COMMENT {
-        string id PK
+        string id PK "cuid"
         string postId FK
         string authorId FK
-        string parentId FK "nullable, 대댓글"
+        string parentId FK "nullable, 대댓글 자기참조"
         string body
-        datetime deletedAt "nullable, 관리자 소프트삭제"
+        datetime deletedAt "nullable, 소프트 삭제"
         datetime createdAt
         datetime updatedAt
     }
 
     CHAT_ROOM {
-        string id PK
+        string id PK "cuid"
         string roomId FK
         string guestId FK
         string hostId FK
-        string hiddenBy "string[]"
+        string hiddenBy "배열, 개인별 숨김"
         datetime createdAt
     }
 
     MESSAGE {
-        string id PK
+        string id PK "cuid"
         string chatRoomId FK
         string senderId FK
         string body "nullable"
-        string imageUrl "nullable, S3/CloudFront"
-        string readBy "string[]"
+        string imageUrl "nullable, S3"
+        string readBy "배열"
         datetime createdAt
     }
 
+    FRIEND_REQUEST {
+        string id PK "cuid"
+        string pairKey UK "중복 방지"
+        string requesterId FK
+        string receiverId FK
+        enum status "PENDING, ACCEPTED, REJECTED"
+        datetime createdAt
+        datetime updatedAt
+        datetime respondedAt "nullable"
+    }
+
     FRIENDSHIP {
-        string id PK
-        string userAId FK
-        string userBId FK
+        string id PK "cuid"
+        string userAId FK "정렬 저장"
+        string userBId FK "정렬 저장"
         datetime createdAt
     }
 
     DIRECT_CONVERSATION {
-        string id PK
-        string participantAId FK
-        string participantBId FK
-        string hiddenBy "string[]"
+        string id PK "cuid"
+        string participantAId FK "정렬 저장"
+        string participantBId FK "정렬 저장"
+        string hiddenBy "배열, 개인별 숨김"
         datetime createdAt
         datetime updatedAt
     }
 
     DIRECT_MESSAGE {
-        string id PK
+        string id PK "cuid"
         string conversationId FK
         string senderId FK
         string body "nullable"
         string imageUrl "nullable"
-        string readBy "string[]"
+        string readBy "배열"
         datetime createdAt
     }
 
     ROOMMATE_PREFERENCE {
-        string id PK
-        string userId FK,UK
+        string id PK "cuid"
+        string userId FK,UK "1:1"
         enum noise "QUIET, MODERATE, LIVELY"
         enum cleanliness "VERY_TIDY, MODERATE, RELAXED"
         enum smoking "NON_SMOKING_ONLY, OUTDOOR_OK, SMOKING_OK"
@@ -417,60 +505,43 @@ erDiagram
         enum sociability "PRIVATE, BALANCED, SOCIAL"
         enum sharedSpace "MINIMAL, MODERATE, COMMUNAL"
         enum drinking "NON_DRINKER, SOCIAL_DRINKER, FREQUENT"
-        string intro "nullable, 자유서술"
-        string keywords "string[], 규칙기반 추출"
-        boolean isCompleted
+        string intro "nullable, 주관식"
+        string keywords "배열, 규칙 기반 추출"
+        boolean isCompleted "match 진입 게이트"
         datetime createdAt
         datetime updatedAt
     }
 
     NOTIFICATION {
-        string id PK
+        string id PK "cuid"
         string userId FK
-        enum type "COMMENT, ROOM_APPROVED...RESERVATION (레거시 포함 20종)"
+        enum type "INQUIRY_*, FRIEND_*, RESERVATION_*, …"
         string title
         string body
         boolean read
-        string targetUrl "nullable"
         datetime createdAt
+        string targetUrl "nullable"
     }
-```
-
-**설계 포인트**
-- `Post.roomId`는 "이 숙소(하우스)의 게시판"을 의미 — 입주자 커뮤니티 게시판 구조. `Comment`는 "💬 N replies" UI에 대응.
-- `Friendship`, `DirectConversation`은 코드 주석상 `userAId/userBId`를 **정렬해서 저장** — 중복 관계 방지용 관례.
-- `ROOMMATE_PREFERENCE`는 User와 1:1(`@unique`) — 온보딩 설문, `/match` 알고리즘 진입 조건은 `isCompleted`.
-- `NotificationType`에 `MESSAGE`, `RESERVATION` 같은 "기존 알림 데이터 호환용" enum 값이 스키마 주석에 명시되어 있음 — 레거시 데이터 마이그레이션 흔적.
-
----
-
-## 3. Ops·Admin ERD
-
-```mermaid
-erDiagram
-    USER ||--o{ INQUIRY : submits
-    USER ||--o{ REPORT : "reports (reporter)"
-    USER ||--o{ REPORT : "reported (nullable)"
 
     INQUIRY {
-        string id PK
+        string id PK "cuid"
         string authorId FK
         string title
         string body
         enum status "RECEIVED, IN_PROGRESS, RESOLVED"
-        string answer "nullable"
+        string answer "nullable, 운영팀 답변"
         datetime answeredAt "nullable"
-        string answeredBy "nullable, 운영자 식별자(문자열)"
+        string answeredBy "nullable"
         datetime createdAt
         datetime updatedAt
     }
 
     REPORT {
-        string id PK
+        string id PK "cuid"
         string reporterId FK
-        string reportedUserId FK "nullable, onDelete SetNull"
+        string reportedUserId FK "nullable, 피신고자"
         enum targetType "ROOM, REVIEW, USER, MESSAGE, COMMUNITY_POST, COMMUNITY_COMMENT"
-        string targetId "다형 참조, FK 아님"
+        string targetId
         string reason
         enum status "RECEIVED, IN_REVIEW, RESOLVED"
         datetime reporterNotifiedAt "nullable"
@@ -481,7 +552,7 @@ erDiagram
     }
 
     NOTICE {
-        string id PK
+        string id PK "cuid"
         string title
         string body
         boolean pinned
@@ -490,40 +561,37 @@ erDiagram
     }
 
     BANNER {
-        string id PK
+        string id PK "cuid"
         string title
-        string color
-        string position
+        string color "hex"
+        string position "노출 위치"
         string linkUrl "nullable"
         string imageUrl "nullable"
-        boolean active
+        boolean active "홈 노출 필터"
         int order
         datetime createdAt
         datetime updatedAt
     }
 ```
 
-**설계 포인트**
-- `Report.targetType` + `targetId`로 다형 참조(polymorphic) — ROOM/REVIEW/USER/MESSAGE/게시글/댓글을 하나의 신고 테이블로 통합. `targetId`는 실제 FK 제약이 없는 문자열입니다.
-- `Report.answeredBy`(Inquiry)는 관리자 테이블과 FK로 연결돼 있지 않고 **문자열**로만 저장 — 별도 `Admin` 모델이 스키마에 없고, `User.role = ADMIN`으로 관리자를 구분하는 구조입니다. 앞서 초안에서 그렸던 `ADMIN_ROLE`/`PERMISSION` RBAC 테이블은 실제 스키마에는 없습니다.
-- `Notice`, `Banner`는 특정 유저와 관계없는 서비스 단위 콘텐츠 — FK 없음.
+### Community ERD — 설계 포인트
+
+- `Post.roomId`는 "이 숙소(하우스)의 게시판"을 의미 — 입주자 커뮤니티 게시판 구조. `Comment`는 `parentId` 자기참조로 대댓글(1단계)까지 지원.
+- `Post`·`Comment`에 `deletedAt` 소프트 삭제 — 관리자가 지워도 데이터는 남고, 휴지통(`/admin/trash`)에서 복구.
+- 친구 관계가 2단계로 분리 — `FriendRequest`(요청 워크플로우, PENDING/ACCEPTED/REJECTED, `pairKey` 유니크로 중복 방지)를 수락하면 `Friendship`(`userAId`/`userBId` 정렬 저장)으로 확정.
+- `DirectConversation`·`DirectMessage`는 사용자 간 1:1 DM — 참가자를 `participantA`/`B`로 정렬 저장(중복 방지)하고 `hiddenBy`로 개인별 숨김 처리.
+- `RoommatePreference`는 User와 1:1(`@unique`) — 9개 성향 답변 + 주관식(`intro`) → 규칙 기반 `keywords` 추출. `isCompleted`가 `/match` 진입 게이트.
+- `Inquiry`(고객센터 문의) — 로그인 사용자 1:N. 운영팀이 답변을 남기면 `InquiryStatus`가 RESOLVED로 바뀌고 작성자에게 `INQUIRY_ANSWERED` 알림.
+- `Report`는 대상 6종(ROOM/REVIEW/USER/MESSAGE/COMMUNITY_POST/COMMUNITY_COMMENT)을 다루며, 피신고자(`reportedUserId`)와 알림 타임스탬프를 함께 보관.
+- `NotificationType`에 `INQUIRY_*`·`ROOM_UNPUBLISHED`·`FRIEND_REQUESTED`/`ADDED`가 추가. 레거시 `MESSAGE`·`RESERVATION` 값은 기존 데이터 호환용으로 유지.
+- `Notice`·`Banner`는 사용자 관계가 없는 서비스 콘텐츠 — 관리자만 관리하며 홈/공지 페이지에 노출.
 
 ---
 
-## 이전 초안과의 주요 차이
+## 도메인 경계 참고
 
-| 항목 | 이전 초안(추정) | 실제 스키마 |
-|---|---|---|
-| PK 타입 | bigint auto-increment | `String @id @default(cuid())` |
-| 관리자 권한 | ADMIN_ROLE/PERMISSION RBAC | `User.role` enum(GUEST/HOST/ADMIN)만 존재, 별도 Admin 테이블 없음 |
-| 쿠폰 | Reservation과 FK 연결 | 스키마상 고아 테이블(연결 없음) |
-| 커뮤니티 | 플랫폼 전역 게시판 | `Room`(하우스) 단위 게시판 |
-| 예약 | 개인 예약만 | 공동 예약(companion), 계약변경(연장/조기퇴실) 지원 |
-| 채팅 | 없음 | 숙소 문의용 `ChatRoom` + 별도 `DirectConversation`(1:1 DM) 이원화 |
-| 추가 도메인 | — | 룸메이트 매칭 설문(`RoommatePreference`), 입주자 평가(`TenantReview`), 정산(`Settlement`) |
+**Core (21)** User, Room, Property, HostProfile, Image, Amenity, RoomAmenity, CalendarBlock, Reservation, ReservationCompanionMember, ContractChangeRequest, Payment, Settlement, Coupon, Review, TenantReview, Wishlist, Favorite, RefreshToken, PasswordResetToken, EmailVerificationToken
 
----
+**Community (15)** User, Post, Comment, ChatRoom, Message, FriendRequest, Friendship, DirectConversation, DirectMessage, RoommatePreference, Notification, Report, Inquiry, Notice, Banner
 
-## README 최신화 관련 메모
-
-레포 README에는 백엔드 배포처가 **Railway**로 적혀 있는데, 실제로는 **Render**를 쓰고 계신 것으로 보입니다 (공유해주신 Render 대시보드 링크 기준). README 업데이트 시 이 부분도 함께 고치는 걸 권장드립니다. 원하시면 README 원문을 가져와서 배포 섹션만 정정해드릴 수 있어요.
+> ※ User는 두 도메인의 중심 허브라 양쪽 다이어그램에 모두 표시됩니다. 총 모델 35개 = Core 21 + Community 15 − User 중복 1.
