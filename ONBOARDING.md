@@ -2,8 +2,8 @@
 
 코리빙/쉐어하우스 플랫폼. 이 문서는 **클론해서 로컬에서 띄우는 것**까지가 목표입니다.
 
-- 프론트: https://my-zeta-lake.vercel.app
-- API: https://nested-platform-production.up.railway.app
+- 프론트: https://my-zeta-lake.vercel.app *(⚠️ 확인 필요 — README에는 배포처가 Render로 바뀌어 있음, 아래 프론트 URL이 최신인지 팀에 확인해주세요)*
+- API: https://nested-platform-production.up.railway.app *(⚠️ 확인 필요 — 5번 배포 절에는 현재 백엔드가 Railway가 아니라 Render라고 나와 있음, 실제 API 도메인으로 갱신 필요)*
 
 ---
 
@@ -32,7 +32,9 @@ nested-platform/
 
 ### 사전 준비
 - Node 20+
-- Docker (로컬 DB용)
+- Docker (로컬 DB용) — **없어도 됩니다.** 회사·교육용 노트북은 BIOS 가상화가
+  IT 정책으로 막혀서 Docker Desktop이 `Virtualization support not detected`로
+  안 켜지는 경우가 흔합니다. 그럴 땐 아래 "Docker 없이 로컬 세팅"으로 가세요.
 
 ### 백엔드
 
@@ -49,10 +51,37 @@ cp .env.example .env
 # → JWT_ACCESS_SECRET / JWT_REFRESH_SECRET만 아무 값이나 채우세요.
 # → 소셜 로그인·결제·업로드 키는 비워둬도 앱은 뜹니다 (해당 기능만 안 됨).
 
-npx prisma db push     # 스키마를 DB에 반영
-npm run seed           # 샘플 데이터 (숙소·유저 등)
-npm run start:dev      # → http://localhost:4000
+npx prisma generate
+npx prisma migrate dev   # 마이그레이션 이력 기반으로 스키마 반영
+npm run seed              # 샘플 데이터 (숙소·유저 등)
+npm run start:dev         # → http://localhost:4000
 ```
+
+### Docker 없이 로컬 세팅
+
+**1) PostgreSQL** — [postgresql.org](https://www.postgresql.org/download/windows/)에서
+직접 설치 후:
+```sql
+CREATE USER nested WITH PASSWORD 'nested';
+ALTER USER nested CREATEDB;
+CREATE DATABASE nested OWNER nested;
+```
+`.env`의 `DATABASE_URL`을 `postgresql://nested:nested@localhost:5432/nested?schema=public`로.
+
+**2) Redis** — WSL(Ubuntu)에 설치:
+```powershell
+wsl --install -d Ubuntu   # 재부팅 필요할 수 있음
+```
+```bash
+# WSL 안에서
+sudo apt update && sudo apt install redis-server -y
+sudo service redis-server start
+redis-cli ping   # PONG 나오면 정상
+```
+⚠️ 컴퓨터를 켤 때마다 자동으로 안 켜져 있으니, 백엔드 실행 전에 매번
+`wsl -d Ubuntu` → `sudo service redis-server start`를 해줘야 합니다.
+
+이후 `docker compose up -d` 줄만 빼고 위 백엔드 순서를 그대로 따르면 됩니다.
 
 ### 프론트엔드
 
@@ -72,40 +101,15 @@ npm run dev            # → http://localhost:3000
 ## 3. 무엇이 진짜고 무엇이 목업인가 ★
 
 **가장 중요한 섹션입니다.** 화면은 다 그려져 있지만, **전부 실제로 도는 건 아닙니다.**
-"이거 왜 DB랑 다르지?" 싶으면 십중팔구 아래 표 때문입니다.
 
-### 실제 API 연동 완료
+> ⚠️ 이 섹션에 예전엔 기능별 표가 직접 있었는데, 실제 코드 상태랑 계속 벌어지는
+> 문제가 반복됐습니다(예: 관리자 대시보드·회원 관리·신고 관리·쿠폰 관리가 표에는
+> "데모/미구현"이라고 남아있었지만 실제로는 오래전에 완료된 상태). 같은 정보를
+> 문서 두 개에서 따로 관리하면 이렇게 벌어지기 쉬워서, **최신 상태는 이제
+> [`FEATURES.md`](./FEATURES.md) 하나로만 관리합니다.** 상태 열(✅완료 / 🟡연결·확인
+> 필요 / 🔴미구현)을 거기서 확인하세요.
 
-| 기능 | 경로 |
-|---|---|
-| 소셜 로그인 (구글·카카오·네이버) | `/` (로그인 모달) |
-| 숙소 검색·상세 | `/search`, `/homes/[id]` |
-| 찜 | `/me/wishlist` |
-| 메시지 (게스트↔호스트) | `/me/messages` |
-| 커뮤니티 게시판 | `/community` |
-| 알림 | `/me/notifications` |
-| 숙소 등록 (사진 업로드·주소 지오코딩) | `/host/listings/new` |
-| 숙소 관리 (승인 상태) | `/host/listings` |
-| 호스트 문의함 | `/host/inquiries` |
-| 호스트 리뷰 + 답글 | `/host/reviews` |
-| 관리자 승인/거부 | `/admin/approvals` |
-
-### 아직 데모 데이터 (= 손댈 거리)
-
-| 화면 | 경로 | 백엔드 상태 |
-|---|---|---|
-| 관리자 대시보드 | `/admin` | `/admin/stats` 있음 → **연결만 하면 됨** |
-| 회원 관리 | `/admin/members` | `/admin/members` 있음 → **연결만 하면 됨** |
-| 신고 관리 | `/admin/reports` | `/admin/reports` 있음 → **연결만 하면 됨** |
-| 통계·매출 | `/admin/stats`, `/admin/revenue` | 일부 있음 |
-| 쿠폰·배너·공지 | `/admin/coupons`, `/banners`, `/notices` | **백엔드 없음** |
-| 호스트 대시보드 | `/host` | 집계 API 필요 |
-| 호스트 캘린더 | `/host/calendar` | 예약 API로 조립 가능 |
-| 결제 내역 | `/me/payments` | 예약 API에 데이터 있음 |
-| 내 리뷰 | `/me/reviews` | `GET /reviews`는 `roomId` 필수 → **작성자 기준 조회 추가 필요** |
-| 설정 | `/me/settings` | 프로필 수정 API 필요 |
-
-**"연결만 하면 됨"** 항목이 신규 합류자에게 가장 좋은 첫 작업입니다.
+**"🟡 연결 필요"로 표시된 항목이 신규 합류자에게 가장 좋은 첫 작업입니다.**
 백엔드가 이미 있으니 `src/lib/api/`에 클라이언트 하나 쓰고 페이지를 바꾸면 끝입니다.
 `src/lib/api/admin.ts`나 `reviews.ts`를 그대로 본떠 쓰세요.
 
@@ -113,9 +117,10 @@ npm run dev            # → http://localhost:3000
 
 ## 4. 알아둘 것들 (삽질 방지)
 
-**Prisma 마이그레이션이 없습니다.** 지금까지 `prisma db push`로만 운영했습니다.
-스키마를 바꾸면 각자 `npx prisma db push`를 다시 돌려야 합니다.
-→ 여러 명이 스키마를 건드리기 시작하면 `prisma migrate`로 전환해야 합니다. **미해결 과제.**
+**Prisma 마이그레이션을 씁니다.** 스키마를 바꿀 땐 `schema.prisma` 수정 →
+`npx prisma migrate dev` → 생성된 마이그레이션 파일까지 커밋, 이 순서를 지켜주세요.
+`migrate dev`를 건너뛰고 스키마 파일만 고치면 로컬 DB엔 반영 안 된 채 코드는 새
+필드를 참조하게 돼서 `P2022`(컬럼 없음) 에러가 납니다.
 
 **권한(Role)은 JWT에 박혀 있습니다.** DB에서 role을 바꿔도 **다시 로그인해야** 반영됩니다.
 ```sql
@@ -134,13 +139,16 @@ S3 코드(`storage.service.ts`)도 남아 있지만 현재 미사용입니다.
 
 ## 5. 배포
 
-- `master`에 푸시 → **Vercel(프론트) + Railway(백엔드) 자동 배포**
-- 즉 **지금은 푸시가 곧 프로덕션 반영입니다.** 브랜치 전략 논의 필요. **미해결 과제.**
+- `master`에 푸시 → **Vercel(프론트) + Render(백엔드) 자동 배포**
+- 브랜치 전략은 이미 정해져 있습니다 — `master`에 직접 푸시하지 않고, 기능 단위
+  브랜치(`feat/`·`fix/`·`refactor/`·`docs/`)를 파서 PR로 Squash merge합니다.
+  자세한 규칙은 [README.md](./README.md#팀-개발-가이드)를 참고하세요.
 
-Railway 관련 함정:
-- 환경변수를 바꿔도 자동 재배포가 안 될 때가 있습니다 → 아무 변수나 재저장해 강제 트리거
-- Console은 **배포 후 새로 열어야** 최신 컨테이너에 붙습니다
-- Railway 빌드가 로컬보다 **엄격합니다** (`noUncheckedIndexedAccess`).
+Render 관련 함정:
+- 환경변수를 바꿔도 자동 재배포가 안 될 때가 있습니다 → 대시보드에서 수동으로
+  Manual Deploy 트리거
+- Shell/로그는 **재배포 후 새로 열어야** 최신 컨테이너에 붙습니다
+- Render 빌드가 로컬보다 **엄격합니다** (`noUncheckedIndexedAccess`).
   백엔드를 고쳤으면 푸시 전에 반드시:
   ```bash
   cd nested-mono/apps/api && npm run build
@@ -148,13 +156,12 @@ Railway 관련 함정:
 
 ---
 
-## 6. 기여 흐름 (제안)
+## 6. 기여 흐름
 
-정해진 게 없습니다. 첫 회의에서 합의할 것:
-
-1. **브랜치 전략** — `master` 직접 푸시를 막을지, PR 리뷰를 둘지
-2. **작업 분배** — 모듈 단위로 나누면 충돌이 적습니다 (admin / host / 결제 / 실시간)
-3. **환경 분리** — 지금 DB는 하나뿐입니다. 개발용 DB를 나눌지
+- **브랜치 전략** — 확정됨. 위 5번 참고.
+- **작업 분배** — `FEATURES.md`의 역할 분담 표를 참고하세요. 모듈 단위로
+  나뉘어 있어 충돌이 적습니다.
+- **환경 분리** — 지금 DB는 하나뿐입니다. 필요해지면 논의.
 
 ---
 
@@ -163,11 +170,13 @@ Railway 관련 함정:
 합류 직후 손대기 좋은 순서:
 
 1. **로컬 실행 성공** ← 여기서 막히면 바로 물어보세요
-2. **`/admin/members` 연결** — `GET /admin/members`가 이미 있습니다. 클라이언트 하나 쓰고
-   페이지를 바꾸면 끝. `src/lib/api/admin.ts`를 그대로 본뜨세요. (난이도 낮음)
-3. **`/admin/reports` 연결** — 같은 패턴 + 상태 변경 (난이도 중)
-4. **`/me/reviews`** — 백엔드에 "작성자 기준 리뷰 조회"를 새로 만들어야 합니다.
-   `GET /reviews/mine`(호스트용)이 이미 있으니 그걸 참고하세요. 풀스택 왕복 경험. (난이도 중)
-5. **`/host` 대시보드** — 집계 API 신규 설계 (난이도 상)
+2. **[`FEATURES.md`](./FEATURES.md)에서 🟡(연결·확인 필요) 항목 하나 골라서 연결** —
+   백엔드는 이미 있고 프론트만 실 데이터로 바꾸면 되는 것들이라 난이도가 낮습니다.
+   `src/lib/api/admin.ts`나 `reviews.ts`를 그대로 본뜨면 됩니다.
+3. **🔴(미구현) 항목 중 하나로 풀스택 왕복** — 백엔드부터 만들어야 해서 난이도는
+   올라가지만, 이 코드베이스의 프론트↔백 구조를 제대로 이해하게 됩니다.
 
-2번을 해보면 이 코드베이스의 프론트↔백 왕복이 한 번에 이해됩니다.
+> 예전엔 여기 구체적인 작업 이름(예: "`/admin/members` 연결", "`/me/reviews`")을
+> 하드코딩해뒀었는데, 다 완료된 뒤에도 이 목록이 안 지워져서 신규 합류자가 이미
+> 끝난 작업을 다시 집으려는 문제가 있었습니다. 지금 진짜로 남아있는 작업은 항상
+> `FEATURES.md`의 상태 열이 정답입니다.

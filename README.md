@@ -38,10 +38,10 @@ npm run dev            # http://localhost:3000
 # 백엔드
 cd nested-mono/apps/api
 npm install
-docker compose up -d          # Postgres + Redis
+docker compose up -d          # Postgres + Redis (Docker Desktop 필요)
 cp .env.example .env
 npx prisma generate
-npx prisma db push            # ⚠️ 아직 마이그레이션 이력 없이 db push로만 운영 중 (FEATURES.md #8 기술부채 참고)
+npx prisma migrate dev        # 마이그레이션 이력 기반으로 스키마 반영
 npm run seed
 npm run start:dev             # :4000
 
@@ -51,9 +51,37 @@ cp .env.local.example .env.local   # NEXT_PUBLIC_USE_REAL_API=true 로 변경
 npm run dev                        # :3000
 ```
 
+> **회사·교육용 노트북에서 Docker Desktop이 "Virtualization support not detected"로 안 켜지는 경우가 흔합니다** (BIOS 가상화 옵션이 IT 정책으로 잠긴 경우 등). 이럴 땐 Docker 없이 Postgres/Redis를 각각 직접 설치하면 됩니다 — 아래 "Docker 없이 로컬 세팅" 참고.
+
 자세한 연결 구조는 [INTEGRATION.md](./INTEGRATION.md)를, DB 구조는 [docs/reservation-platform-erd.md](./docs/reservation-platform-erd.md)를 참고하세요.
 
-> ⚠️ **Prisma 마이그레이션 미도입 상태입니다.** 현재 `db push`로만 스키마를 반영하고 있어 변경 이력·롤백이 없습니다. 여러 명이 동시에 스키마를 건드리면 충돌 위험이 있으니, 마이그레이션 도입 전까지는 스키마 변경 전 팀에 미리 공유해주세요. (FEATURES.md 기술부채 우선순위 0)
+> 스키마를 바꿀 때는 **`schema.prisma` 수정 → `npx prisma migrate dev` → 생성된 마이그레이션 파일을 커밋**까지 한 세트로 진행하세요. `migrate dev`를 건너뛰고 `schema.prisma`만 고치면, 로컬 DB엔 반영이 안 됐는데 코드는 새 필드를 참조하는 상태가 되어 `P2022`(컬럼 없음) 에러가 납니다 — 자주 겪는 문제라 아래 트러블슈팅에도 따로 적어뒀습니다.
+
+### Docker 없이 로컬 세팅
+
+Docker Desktop이 가상화 오류로 안 켜지면, 이렇게 네이티브로 설치하면 됩니다.
+
+**1) PostgreSQL** — [postgresql.org](https://www.postgresql.org/download/windows/)에서 설치 후:
+```sql
+CREATE USER nested WITH PASSWORD 'nested';
+ALTER USER nested CREATEDB;
+CREATE DATABASE nested OWNER nested;
+```
+`.env`의 `DATABASE_URL`을 `postgresql://nested:nested@localhost:5432/nested?schema=public`로 맞춥니다.
+
+**2) Redis** — WSL(Ubuntu) 안에 설치합니다.
+```powershell
+wsl --install -d Ubuntu   # WSL 자체가 없으면 먼저 설치, 재부팅 필요할 수 있음
+```
+```bash
+# WSL(Ubuntu) 안에서
+sudo apt update && sudo apt install redis-server -y
+sudo service redis-server start
+redis-cli ping   # PONG 나오면 정상
+```
+⚠️ WSL의 Redis는 컴퓨터를 켤 때마다 자동으로 안 켜져 있습니다. 백엔드 실행 전에 매번 `wsl -d Ubuntu` → `sudo service redis-server start`를 해줘야 합니다. Redis가 안 켜진 채로 백엔드를 켜면 `[ioredis] ECONNREFUSED` 로그가 계속 찍히다가 결국 `MaxRetriesPerRequestError`로 죽습니다.
+
+이후 `docker compose up -d` 줄만 빼고 위 "실서버 연결" 순서를 그대로 따르면 됩니다.
 
 ## 기술 스택
 
@@ -170,20 +198,60 @@ PSP 키 없이 개발할 때는 `paymentKey`를 `demo_`로 시작하게 보내�
 전역 컴포넌트에서 `useSearchParams()`를 쓰면 정적 페이지 프리렌더가 깨집니다.
 간단한 쿼리 읽기는 `window.location.search`로 대체하세요.
 
+**`The column "칼럼"/"칼럼은" does not exist in the current database` (P2022)**
+Postgres가 한국어 로케일로 에러 메시지를 내보내면, Prisma가 그 문장에서 실제
+컬럼명을 잘못 잘라내서 저렇게 깨진 이름으로 보여줍니다 — 컬럼명 자체는 무시하고,
+"스키마 파일과 실제 DB가 안 맞다"로 읽으면 됩니다. 두 가지 경우로 나뉩니다.
+- `schema.prisma`엔 필드가 있는데 `npx prisma generate`를 안 돌려서 **생성된 타입만
+낡은 경우** → `npx prisma generate` 한 번이면 해결됩니다.
+- **DB 자체에 컬럼이 없는 경우**(마이그레이션을 안 돌렸거나, `schema.prisma`만
+고치고 `migrate dev`를 건너뛴 경우) → `npx prisma migrate dev`까지 돌려야 합니다.
+
+`npx prisma migrate status`로 "적용 안 된 마이그레이션"이 있는지 먼저 확인하면
+둘 중 어느 쪽인지 빨리 구분됩니다.
+
+**로컬 백엔드가 안 뜨거나, `[ioredis] ECONNREFUSED`가 반복 출력됨**
+Redis(WSL)가 안 켜져 있는 상태입니다. 특히 컴퓨터를 새로 켠 직후에 자주 겪습니다.
+```bash
+wsl -d Ubuntu
+sudo service redis-server start
+```
+켜져 있는지 잊었다면 재시작 전에 `redis-cli ping`으로 먼저 확인하세요. Redis를
+나중에 켜도 이미 죽은 백엔드 프로세스는 자동으로 재연결되지 않을 때가 있어서,
+백엔드도 같이 껐다 켜는 게 확실합니다.
+
+**Docker Desktop `Virtualization support not detected`**
+회사·교육용 노트북에서 BIOS 가상화가 IT 정책으로 잠긴 경우 흔하게 겪습니다.
+억지로 뚫으려 하지 말고, 위 "Docker 없이 로컬 세팅" 절로 Postgres/Redis를
+네이티브로 설치하면 됩니다.
+
+**로컬에서는 잘 되는데 배포된 사이트에서만 옛 버전처럼 동작함**
+아래 순서로 "배포가 실제로 최신 커밋을 반영했는지"부터 확인하세요 — 코드
+버그보다 이 경우가 훨씬 잦습니다.
+```bash
+git log -1 --oneline                 # 로컬이 보고 있는 최신 커밋
+git log origin/master -1 --oneline   # 원격 master의 최신 커밋
+```
+두 해시가 같은데도 이상하면, 배포 플랫폼(Render/Vercel) Deploys 탭에서 실제
+배포에 찍힌 커밋 해시를 대조하세요. 배포가 실패하면 이전 버전이 계속 떠있는
+채로 아무 표시가 없기 때문에, "고쳤는데 반영이 안 된 것처럼" 보이는 원인의
+대부분이 여기 있습니다.
+
 ## 검증
 
-| 항목      | 결과            |
-| ------- | ------------- |
-| 프론트 빌드  | 79/79 페이지     |
-| 백엔드 테스트 | 24개 통과        |
-| 타입체크    | 양쪽 tsc exit 0 |
-
-PR을 열기 전 로컬에서 확인하세요:
+PR을 열기 전 로컬에서 아래를 돌려서 통과하는지 확인하세요. (구체적인 페이지 수·테스트 개수는
+기능이 계속 추가되면서 계속 바뀌므로, 여기 고정된 숫자를 적어두지 않습니다 — CI 로그의
+`Tests: N passed, N total`을 그때그때 확인하세요.)
 
 ```bash
 cd nested-mono/apps/api && npx tsc --noEmit && npm test
 cd coliving && npx tsc --noEmit && npm run build
 ```
+
+> 테스트가 실패하는데 내가 건드린 부분이 아닌 것 같다면, 실패한 스펙 파일이 최근에
+> 이름/enum 값이 바뀐 기능을 테스트하고 있는지 확인하세요 (예: 등급 이름을
+> `REGULAR`→`SPROUT`처럼 바꾸고 테스트를 안 고친 경우). 소스와 테스트 중 어느 쪽이
+> 최신 의도인지 헷갈리면 그 기능을 만든 사람에게 먼저 물어보고 고치는 게 안전합니다.
 
 ## 참고 문서
 
